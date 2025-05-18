@@ -2,14 +2,9 @@ module github.com/MamangRust/monolith-payment-gateway-withdraw
 
 go 1.23.4
 
-replace github.com/MamangRust/payment-gateway-monolith-grpc/shared => ../../shared
-
-replace github.com/MamangRust/payment-gateway-monolith-grpc/pkg => ../../pkg
-
 require (
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.1
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2
-	github.com/MamangRust/payment-gateway-monolith-grpc/pkg v0.0.0-00010101000000-000000000000
 	github.com/prometheus/client_golang v1.22.0
 	github.com/spf13/viper v1.20.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0

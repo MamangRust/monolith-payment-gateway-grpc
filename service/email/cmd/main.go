@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -8,28 +9,39 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/handler"
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/mailer"
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/metrics"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 func main() {
-	cfg := config.Config{
-		KafkaBrokers: []string{"localhost:9092"},
-		SMTPServer:   "smtp.ethereal.email",
-		SMTPPort:     587,
-		SMTPUser:     "julius.davis@ethereal.email",
-		SMTPPass:     "4vWXpZfTMPAazhVZFU",
-	}
+
 	logger, err := logger.NewLogger()
 	if err != nil {
 		log.Fatalf("Error creating logger: %v", err)
 	}
 
+	if err := dotenv.Viper(); err != nil {
+		logger.Fatal("Failed to load .env file", zap.Error(err))
+	}
+
+	cfg := config.Config{
+		KafkaBrokers: []string{viper.GetString("KAFKA_BROKERS")},
+		SMTPServer:   viper.GetString("SMTP_SERVER"),
+		SMTPPort:     viper.GetInt("SMTP_PORT"),
+		SMTPUser:     viper.GetString("SMTP_USER"),
+		SMTPPass:     viper.GetString("SMTP_PASS"),
+	}
+
+	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_EMAIL_ADDR"))
+
 	metrics.Register()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(":2112", nil))
+		log.Fatal(http.ListenAndServe(metricsAddr, nil))
 	}()
 
 	m := &mailer.Mailer{

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/auth"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/logger"
-	apimapper "github.com/MamangRust/payment-gateway-monolith-grpc/shared/mapper/response/api"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/shared/pb"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
+	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc"
 )

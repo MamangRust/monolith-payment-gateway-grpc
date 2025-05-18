@@ -3,6 +3,8 @@ module github.com/MamangRust/monolith-payment-gateway-transfer
 go 1.23.4
 
 require (
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2
 	github.com/prometheus/client_golang v1.22.0
 	github.com/spf13/viper v1.20.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
@@ -15,8 +17,6 @@ require (
 
 require (
 	github.com/IBM/sarama v1.45.1 // indirect
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2 // indirect
-	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

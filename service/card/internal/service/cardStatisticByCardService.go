@@ -33,13 +33,13 @@ func NewCardStatisticBycardService(
 	ctx context.Context,
 	cardStatisticRepository repository.CardStatisticByCardRepository, logger logger.LoggerInterface, mapper responseservice.CardResponseMapper) *cardStatisticBycardService {
 	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "card_statistic_request_count",
-		Help: "Number of card statistic requests CardStatisticService",
+		Name: "card_statistic_bycard_request_count",
+		Help: "Number of card statistic requests CardStatisticBycardService",
 	}, []string{"status"})
 
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "card_statistic_request_duration_seconds",
-		Help:    "Duration of card statistic requests CardStatisticService",
+		Name:    "card_statistic_bycard_request_duration_seconds",
+		Help:    "Duration of card statistic requests CardStatisticBycardService",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"status"})
 

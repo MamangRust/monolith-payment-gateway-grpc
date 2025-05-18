@@ -3,8 +3,8 @@ module github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway
 go 1.23.4
 
 require (
-	github.com/MamangRust/payment-gateway-monolith-grpc/pkg v0.0.0-00010101000000-000000000000
-	github.com/MamangRust/payment-gateway-monolith-grpc/shared v0.0.0-00010101000000-000000000000
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/labstack/echo-jwt/v4 v4.3.1
 	github.com/labstack/echo/v4 v4.13.3
@@ -56,7 +56,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/MamangRust/payment-gateway-monolith-grpc/shared => ../../shared
-
-replace github.com/MamangRust/payment-gateway-monolith-grpc/pkg => ../../pkg

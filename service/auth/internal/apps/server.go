@@ -134,7 +134,12 @@ func (s *Server) Run() {
 		s.Logger.Fatal("Failed to listen", zap.Error(err))
 	}
 
-	metricsLis, err := net.Listen("tcp", ":8080")
+	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRICS_AUTH_ADDR"))
+	metricsLis, err := net.Listen("tcp", metricsAddr)
+	if err != nil {
+		s.Logger.Fatal("failed to listen on", zap.Error(err))
+	}
+
 	if err != nil {
 		log.Fatalf("Failed to listen for metrics: %v", err)
 	}
@@ -160,7 +165,7 @@ func (s *Server) Run() {
 
 	go func() {
 		defer wg.Done()
-		s.Logger.Info("Metrics server listening on :8080")
+		s.Logger.Info("Metrics server listening on :8081")
 		if err := http.Serve(metricsLis, metricsServer); err != nil {
 			s.Logger.Fatal("Failed to start metrics server", zap.Error(err))
 		}

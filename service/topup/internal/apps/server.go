@@ -80,7 +80,7 @@ func NewServer() (*Server, error) {
 
 	repositories := repository.NewRepositories(depsRepo)
 
-	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKER")})
+	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Topup-service", ctx)
 	if err != nil {
@@ -121,10 +121,11 @@ func (s *Server) Run() {
 	if err != nil {
 		s.Logger.Fatal("Failed to listen", zap.Error(err))
 	}
-	metricsLis, err := net.Listen("tcp", ":8085")
 
+	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_TOPUP_ADDR"))
+	metricsLis, err := net.Listen("tcp", metricsAddr)
 	if err != nil {
-		s.Logger.Fatal("Failed to listen for metrics", zap.Error(err))
+		s.Logger.Fatal("failed to listen on", zap.Error(err))
 	}
 
 	grpcServer := grpc.NewServer(
@@ -148,7 +149,7 @@ func (s *Server) Run() {
 
 	go func() {
 		defer wg.Done()
-		s.Logger.Info("Metrics server listening on :8085")
+		s.Logger.Info("Metrics server listening on :8087")
 		if err := http.Serve(metricsLis, metricsServer); err != nil {
 			s.Logger.Fatal("Metrics server error", zap.Error(err))
 		}

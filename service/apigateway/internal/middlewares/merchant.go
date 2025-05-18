@@ -3,7 +3,7 @@ package middlewares
 import (
 	"net/http"
 
-	"github.com/MamangRust/payment-gateway-monolith-grpc/shared/pb"
+	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/labstack/echo/v4"
 )
 
