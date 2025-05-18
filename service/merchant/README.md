@@ -1,0 +1,2 @@
+### Merchant GRPC Server
+``MerchantService`` adalah layanan gRPC yang menangani seluruh kebutuhan manajemen merchant, termasuk data dasar merchant, transaksi, statistik bulanan/tahunan, serta fitur penghapusan dan pemulihan data (soft delete & restore).

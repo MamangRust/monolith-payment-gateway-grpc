@@ -1,0 +1,49 @@
+package kafka
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/IBM/sarama"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/service"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+)
+
+type saldoKafkaHandler struct {
+	saldoService service.SaldoCommandService
+}
+
+func NewSaldoKafkaHandler(saldoService service.SaldoCommandService) sarama.ConsumerGroupHandler {
+	return &saldoKafkaHandler{
+		saldoService: saldoService,
+	}
+}
+
+func (s *saldoKafkaHandler) Setup(session sarama.ConsumerGroupSession) error {
+	return nil
+}
+
+func (s *saldoKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+	return nil
+}
+
+func (s *saldoKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		var payload map[string]interface{}
+
+		if err := json.Unmarshal(msg.Value, &payload); err != nil {
+			return err
+		}
+
+		_, errRes := s.saldoService.CreateSaldo(&requests.CreateSaldoRequest{
+			CardNumber:   payload["card_number"].(string),
+			TotalBalance: int(payload["total_balance"].(float64)),
+		})
+
+		if errRes != nil {
+			return fmt.Errorf("card service error: %v", errRes.Message)
+		}
+	}
+
+	return nil
+}

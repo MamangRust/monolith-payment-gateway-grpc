@@ -1,0 +1,2 @@
+### Transaction GRPC Server
+``TransactionService`` adalah layanan gRPC yang menangani proses pencatatan dan pengelolaan transaksi pengguna, termasuk statistik bulanan/tahunan serta fitur soft delete & restore.
