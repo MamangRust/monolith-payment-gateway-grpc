@@ -4,23 +4,24 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 
 
 ## 🛠️ Technologies Used
-  - **gRPC** — Provides high-performance, strongly-typed APIs.
-  - **Kafka** — Used to publish balance-related events (e.g., after card creation).
-  - **Prometheus** — Collects metrics like request count and latency for each RPC method.
-  - **OpenTelemetry (OTel)** — Enables distributed tracing for observability.
-  - **Go (Golang)** — Implementation language.
-  - **Echo** — HTTP framework for Go.
-  - **Zap Logger** — Structured logging for debugging and operations.
-  - **Sqlc** — SQL code generator for Go.
-  - **Goose** — Database migration tool.
-  - **Docker** — Containerization tool.
-  - **Docker Compose** — Simplifies containerization for development and production environments.
-  - **PostgreSQL** — Relational database for storing user data.
-  - **Swago** — API documentation generator.
-  - **Zookeeper** — Distributed configuration management.
-  - **Nginx** — Reverse proxy for HTTP traffic.
-  - **Jaeger** — Distributed tracing for observability.
-  - **Grafana** — Monitoring and visualization tool.
+- 🚀 **gRPC** — Provides high-performance, strongly-typed APIs.
+- 📡 **Kafka** — Used to publish balance-related events (e.g., after card creation).
+- 📈 **Prometheus** — Collects metrics like request count and latency for each RPC method.
+- 🛰️ **OpenTelemetry (OTel)** — Enables distributed tracing for observability.
+- 🧠 **Go (Golang)** — Implementation language.
+- 🌐 **Echo** — HTTP framework for Go.
+- 🪵 **Zap Logger** — Structured logging for debugging and operations.
+- 📦 **Sqlc** — SQL code generator for Go.
+- 🧳 **Goose** — Database migration tool.
+- 🐳 **Docker** — Containerization tool.
+- 🧱 **Docker Compose** — Simplifies containerization for development and production environments.
+- 🐘 **PostgreSQL** — Relational database for storing user data.
+- 📃 **Swago** — API documentation generator.
+- 🧭 **Zookeeper** — Distributed configuration management.
+- 🔀 **Nginx** — Reverse proxy for HTTP traffic.
+- 🔍 **Jaeger** — Distributed tracing for observability.
+- 📊 **Grafana** — Monitoring and visualization tool.
+- 🧪 **Bruno** — Lightweight, Git-friendly API client (Postman alternative).
 
 
 
@@ -129,6 +130,29 @@ This schema represents the database design for a **Digital Payment Platform** su
 ---
 
 ## Service
+
+### ApiGateway
+
+The API Gateway acts as a single entry point for all client requests, simplifying interactions with various microservices such as `AuthService`, `UserService`, `TransactionService`, and others. Using a framework like Echo, the API Gateway handles several important aspects:
+
+- **Request Routing**: Forwards HTTP requests from clients to the appropriate microservice via gRPC.
+- **Security**: Manages authentication and authorization, including JWT token validation.
+- **Data Transformation**: Adjusts request and response formats as needed between clients and microservices.
+
+
+### 🔄 Request Flow Through the API Gateway
+
+Here's a general flow of a client request through the API Gateway:
+
+1. **Client Sends a Request**: An HTTP request is made to the API Gateway.
+2. **Validation & Security**: The gateway validates the request, including authentication and authorization.
+3. **Routing to Microservice**: The request is forwarded to the appropriate microservice via gRPC.
+5. **Response to Client**: The gateway sends the microservice's response back to the client.
+
+
+----
+
+
 
 ### Auth Service
 
@@ -1305,94 +1329,92 @@ The WithdrawService publishes withdrawal events to Kafka to enable asynchronous 
 
 
 
-## 📦 Go Runtime Metrics - Memory & GC
+
+## 📦 Go Runtime Metrics – Memory & GC
 
 ### 🔧 Memory: Off-Heap
 
-- `go_memstats_mspan_inuse_bytes`  
-  Jumlah byte yang sedang digunakan oleh struktur internal *mspan* (manajemen span memory kecil di Go).
+- **`go_memstats_mspan_inuse_bytes`**  
+  Number of bytes currently in use by the internal *mspan* structure (used for managing memory spans).
 
-- `go_memstats_mspan_sys_bytes`  
-  Jumlah total byte yang dialokasikan oleh sistem untuk *mspan*, termasuk yang belum digunakan.
+- **`go_memstats_mspan_sys_bytes`**  
+  Total bytes allocated from the system for *mspan*, including unused space.
 
-- `go_memstats_mcache_inuse_bytes`  
-  Byte yang digunakan oleh cache allocator thread-local Go (*mcache*).
+- **`go_memstats_mcache_inuse_bytes`**  
+  Bytes used by the thread-local memory allocator cache (*mcache*).
 
-- `go_memstats_mcache_sys_bytes`  
-  Total byte yang dialokasikan oleh sistem untuk *mcache*, digunakan untuk meningkatkan alokasi objek kecil.
+- **`go_memstats_mcache_sys_bytes`**  
+  Total bytes allocated from the system for *mcache*, used to accelerate small object allocations.
 
-- `go_memstats_buck_hash_sys_bytes`  
-  Byte yang digunakan oleh struktur hash bucket internal Go (untuk tracking map, profiling, dsb).
+- **`go_memstats_buck_hash_sys_bytes`**  
+  Bytes used by internal bucket hash structures (used for maps, profiling, etc.).
 
-- `go_memstats_gc_sys_bytes`  
-  Byte yang dialokasikan oleh sistem untuk keperluan Garbage Collector, termasuk struktur pendukung GC.
+- **`go_memstats_gc_sys_bytes`**  
+  Bytes allocated from the system for the Garbage Collector, including GC-related metadata.
 
-- `go_memstats_other_sys_bytes`  
-  Byte dari alokasi sistem lainnya oleh Go runtime, yang tidak termasuk dalam kategori lainnya.
+- **`go_memstats_other_sys_bytes`**  
+  Other system memory allocations by the Go runtime that don’t fall under any specific category.
 
 ---
 
 ### 🧠 Memory: In-Heap
 
-- `go_memstats_heap_alloc_bytes`  
-  Byte yang saat ini digunakan dalam heap untuk menyimpan objek aktif (yang bisa diakses aplikasi).
+- **`go_memstats_heap_alloc_bytes`**  
+  Bytes currently allocated in the heap for active (reachable) objects.
 
-- `go_memstats_heap_sys_bytes`  
-  Total byte heap yang diminta dari OS (baik digunakan maupun belum digunakan).
+- **`go_memstats_heap_sys_bytes`**  
+  Total heap bytes requested from the OS (used or unused).
 
-- `go_memstats_heap_idle_bytes`  
-  Byte heap yang tidak digunakan dan dapat dikembalikan ke OS.
+- **`go_memstats_heap_idle_bytes`**  
+  Heap memory that is not currently in use and may be returned to the OS.
 
-- `go_memstats_heap_inuse_bytes`  
-  Byte heap yang sedang digunakan oleh objek Go (aktif di memory heap).
+- **`go_memstats_heap_inuse_bytes`**  
+  Heap memory actively being used by Go objects.
 
-- `go_memstats_heap_released_bytes`  
-  Byte yang sudah dikembalikan ke OS oleh Go runtime dari heap yang tidak dipakai.
+- **`go_memstats_heap_released_bytes`**  
+  Heap memory that has been returned to the OS by the Go runtime.
 
 ---
 
 ### 📚 Memory: Stack
 
-- `go_memstats_stack_inuse_bytes`  
-  Jumlah byte yang digunakan oleh stack goroutine aktif.
+- **`go_memstats_stack_inuse_bytes`**  
+  Bytes used by active goroutine stacks.
 
-- `go_memstats_stack_sys_bytes`  
-  Total byte yang dialokasikan oleh sistem untuk stack goroutine.
+- **`go_memstats_stack_sys_bytes`**  
+  Total stack memory allocated from the system for all goroutines.
 
 ---
 
 ### 📊 Memory: Total Usage
 
-- `go_memstats_sys_bytes`  
-  Total seluruh byte yang dialokasikan oleh Go runtime dari OS (termasuk heap, stack, off-heap, dsb).
+- **`go_memstats_sys_bytes`**  
+  Total bytes allocated from the OS by the Go runtime (includes heap, stack, off-heap, etc.).
 
 ---
 
 ### 🔢 Live Object Counter
 
-- `go_memstats_mallocs_total - go_memstats_frees_total`  
-  Jumlah objek hidup (aktif) di memori saat ini. Ini menghitung total objek yang dialokasikan dikurangi yang dibebaskan.
+- **`go_memstats_mallocs_total - go_memstats_frees_total`**  
+  Number of live (active) objects in memory. Calculated as total allocations minus total frees.
 
 ---
 
 ### 📈 Allocation Rate
 
-- `rate(go_memstats_mallocs_total[1m])`  
-  Rata-rata jumlah alokasi objek per detik selama 1 menit terakhir.
+- **`rate(go_memstats_mallocs_total[1m])`**  
+  Average object allocation rate per second over the last 1 minute.
 
 ---
 
-### 🧵 Goroutine
+### 🧵 Goroutines
 
-- `go_goroutines`  
-  Jumlah goroutine aktif saat ini di aplikasi.
+- **`go_goroutines`**  
+  Number of currently active goroutines in the application.
 
 ---
 
 ### ♻️ Garbage Collection (GC)
 
-- `go_gc_duration_seconds`  
-  Histogram durasi GC dalam detik. Mengukur waktu yang dihabiskan untuk setiap siklus GC.
-
----
-
+- **`go_gc_duration_seconds`**  
+  Histogram of GC durations in seconds. Measures time spent during each GC cycle.
