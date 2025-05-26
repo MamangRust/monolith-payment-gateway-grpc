@@ -1,0 +1,27 @@
+meta {
+  name: Create Merchant
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:5000/api/merchants/create
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"name":"New Merchant","user_id":1}
+}
+
+docs {
+  Generated from cURL: curl -X POST http://localhost:5000/api/merchants/create \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"New Merchant","user_id":1}'
+}

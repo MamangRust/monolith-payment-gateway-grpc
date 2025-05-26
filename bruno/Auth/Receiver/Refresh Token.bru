@@ -1,0 +1,32 @@
+meta {
+  name: Refresh Token
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://localhost:5000/api/auth/refresh-token
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_receiver}}
+}
+
+body:json {
+  {
+      "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MiIsImF1ZCI6WyJyZWZyZXNoIl0sImV4cCI6MTc0NTYzMDQ5NX0.qoTsjP_ulRz7L9hLOcnyAfH0oocU75pLRGCssk0ccbA"
+  }
+}
+
+docs {
+  Generated from cURL: curl -X POST \
+    http://localhost:5000/api/auth/refresh-token \
+    -H 'Content-Type: application/json' \
+    -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsImF1ZCI6WyJhY2Nlc3MiXSwiZXhwIjoxNzM1Nzg2MTYxfQ.yEx98MCuT0fg8b63VuLl9XcPxszYG2BTlQtRVvEsMbI' \
+    -d '{
+      "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsImF1ZCI6WyJyZWZyZXNoIl0sImV4cCI6MTczNTc4NjE2MX0.Ti5BTb8xMbMUYDNE-vFU8MVbr6o7zQLWJ-CIetByFd4"
+  }'
+}

@@ -5,6 +5,7 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 )
 
+//go:generate mockgen -source=interfaces.go -destination=mocks/mock.go
 type UserRepository interface {
 	FindByEmail(email string) (*record.UserRecord, error)
 	FindById(id int) (*record.UserRecord, error)

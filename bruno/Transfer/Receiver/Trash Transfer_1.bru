@@ -1,0 +1,20 @@
+meta {
+  name: Trash Transfer_1
+  type: http
+  seq: 9
+}
+
+post {
+  url: http://localhost:5000/api/transfers/trashed/123
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/transfers/trashed/123" \
+    -H "Authorization: Bearer {{secret_key_sender}}"
+}

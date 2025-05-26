@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,13 +13,13 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 func main() {
-
 	logger, err := logger.NewLogger()
 	if err != nil {
 		log.Fatalf("Error creating logger: %v", err)
@@ -27,6 +28,8 @@ func main() {
 	if err := dotenv.Viper(); err != nil {
 		logger.Fatal("Failed to load .env file", zap.Error(err))
 	}
+
+	ctx := context.Background()
 
 	cfg := config.Config{
 		KafkaBrokers: []string{viper.GetString("KAFKA_BROKERS")},
@@ -39,19 +42,33 @@ func main() {
 	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_EMAIL_ADDR"))
 
 	metrics.Register()
+
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		log.Fatal(http.ListenAndServe(metricsAddr, nil))
 	}()
 
-	m := &mailer.Mailer{
-		Server:   cfg.SMTPServer,
-		Port:     cfg.SMTPPort,
-		User:     cfg.SMTPUser,
-		Password: cfg.SMTPPass,
+	m := mailer.NewMailer(
+		ctx,
+		cfg.SMTPServer,
+		cfg.SMTPPort,
+		cfg.SMTPUser,
+		cfg.SMTPPass,
+	)
+
+	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Email-service", ctx)
+
+	if err != nil {
+		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
 	}
 
-	h := &handler.EmailHandler{Mailer: m}
+	defer func() {
+		if err := shutdownTracerProvider(ctx); err != nil {
+			logger.Fatal("Failed to shutdown tracer provider", zap.Error(err))
+		}
+	}()
+
+	h := handler.NewEmailHandler(ctx, logger, m)
 
 	myKafka := kafka.NewKafka(logger, cfg.KafkaBrokers)
 

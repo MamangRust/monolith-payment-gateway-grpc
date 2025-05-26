@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
@@ -29,10 +28,7 @@ func NewRoleRepository(db *db.Queries, ctx context.Context, mapping recordmapper
 func (r *roleRepository) FindById(id int) (*record.RoleRecord, error) {
 	res, err := r.db.GetRole(r.ctx, int32(id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("role not found with ID: %d", id)
-		}
-		return nil, fmt.Errorf("failed to find role by ID %d: %w", id, err)
+		return nil, role_errors.ErrRoleNotFound
 	}
 	return r.mapping.ToRoleRecord(res), nil
 }

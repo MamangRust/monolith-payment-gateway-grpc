@@ -1,0 +1,39 @@
+meta {
+  name: Create Card
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:5000/api/card/create
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+      "user_id": 41,
+      "card_type": "Credit",
+      "expire_date": "2025-12-31T00:00:00Z",
+      "cvv": "123",
+      "card_provider": "Visa"
+  }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://0.0.0.0:5000/api/card/create" \
+  -H "Authorization: Bearer <YOUR_BEARER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "card_type": "Credit",
+    "expire_date": "2025-12-31T00:00:00Z",
+    "cvv": "123",
+    "card_provider": "Visa"
+  }'
+}

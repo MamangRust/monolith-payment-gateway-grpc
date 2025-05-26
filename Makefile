@@ -1,3 +1,6 @@
+COMPOSE_FILE=deployments/local/docker-compose.yml
+SERVICES := apigateway migrate auth user role card merchant saldo topup transaction transfer withdraw email
+
 migrate:
 	go run service/migrate/main.go up
 
@@ -15,10 +18,8 @@ generate-swagger:
 seeder:
 	go run service/seeder/main.go
 
-
 api-gateway:
 	go run service/apigateway/cmd/main.go
-
 
 auth-service:
 	go run service/auth/cmd/main.go
@@ -55,3 +56,19 @@ withdraw-service:
 email-service:
 	go run service/email/cmd/main.go
 
+
+build-image:
+	@for service in $(SERVICES); do \
+		echo "🔨 Building $$service-service..."; \
+		docker build -t $$service-service:1.0 -f service/$$service/Dockerfile service/$$service || exit 1; \
+	done
+	@echo "✅ All services built successfully."
+
+up:
+	docker-compose -f $(COMPOSE_FILE) up -d
+
+down:
+	docker-compose -f $(COMPOSE_FILE) down
+
+build-up:
+	make build-image && make up

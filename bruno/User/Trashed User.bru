@@ -1,0 +1,22 @@
+meta {
+  name: Trashed User
+  type: http
+  seq: 8
+}
+
+post {
+  url: http://localhost:5000/api/user/trashed/14
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/user/trashed/1 \
+  -H 'Content-Type: application/json' \
+    -H 'Authorization: Bearer {{vault:json-web-token}}'
+}

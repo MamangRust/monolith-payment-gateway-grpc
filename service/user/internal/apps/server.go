@@ -33,7 +33,7 @@ var (
 )
 
 func init() {
-	port = viper.GetInt("GRPC_USER_ADDR")
+	port = viper.GetInt("GRPC_USER_PORT")
 	if port == 0 {
 		port = 50055
 	}

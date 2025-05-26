@@ -34,7 +34,7 @@ var (
 )
 
 func init() {
-	port = viper.GetInt("GRCP_TOPUP_ADDR")
+	port = viper.GetInt("GRCP_TOPUP_PORT")
 	if port == 0 {
 		port = 50057
 	}

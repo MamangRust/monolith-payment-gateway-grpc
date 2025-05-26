@@ -1,0 +1,35 @@
+meta {
+  name: Create Topup
+  type: http
+  seq: 7
+}
+
+post {
+  url: http://localhost:5000/api/topups/create
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+      "card_number": "1234567890",
+      "topup_amount": 100000,
+      "topup_method": "bank_transfer"
+    }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/topups/create" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "card_number": "1234567890",
+      "topup_amount": 100000,
+      "topup_method": "bank_transfer"
+    }'
+}

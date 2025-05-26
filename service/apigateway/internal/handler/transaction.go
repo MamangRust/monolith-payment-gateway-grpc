@@ -3,7 +3,9 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors"
@@ -17,17 +19,21 @@ import (
 )
 
 type transactionHandler struct {
+	kafka       kafka.Kafka
 	transaction pb.TransactionServiceClient
 	logger      logger.LoggerInterface
 	mapping     apimapper.TransactionResponseMapper
 }
 
-func NewHandlerTransaction(transaction pb.TransactionServiceClient, merchant pb.MerchantServiceClient, router *echo.Echo, logger logger.LoggerInterface, mapping apimapper.TransactionResponseMapper) *transactionHandler {
+func NewHandlerTransaction(transaction pb.TransactionServiceClient, merchant pb.MerchantServiceClient, router *echo.Echo, logger logger.LoggerInterface, mapping apimapper.TransactionResponseMapper, kafka kafka.Kafka) *transactionHandler {
 	transactionHandler := transactionHandler{
 		transaction: transaction,
 		logger:      logger,
 		mapping:     mapping,
+		kafka:       kafka,
 	}
+
+	transactionMiddleware := middlewares.NewApiKeyValidator(&kafka, "request-transaction", "response-transaction", 5*time.Second)
 
 	routerTransaction := router.Group("/api/transactions")
 
@@ -59,8 +65,8 @@ func NewHandlerTransaction(transaction pb.TransactionServiceClient, merchant pb.
 	routerTransaction.GET("/merchant/:merchant_id", transactionHandler.FindByTransactionMerchantId)
 	routerTransaction.GET("/active", transactionHandler.FindByActiveTransaction)
 	routerTransaction.GET("/trashed", transactionHandler.FindByTrashedTransaction)
-	routerTransaction.POST("/create", middlewares.ApiKeyMiddleware(merchant)(transactionHandler.Create))
-	routerTransaction.POST("/update/:id", middlewares.ApiKeyMiddleware(merchant)(transactionHandler.Update))
+	routerTransaction.POST("/create", transactionMiddleware.Middleware()(transactionHandler.Create))
+	routerTransaction.POST("/update/:id", transactionMiddleware.Middleware()(transactionHandler.Update))
 
 	routerTransaction.POST("/restore/:id", transactionHandler.RestoreTransaction)
 	routerTransaction.POST("/trashed/:id", transactionHandler.TrashedTransaction)

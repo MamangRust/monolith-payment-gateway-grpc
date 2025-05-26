@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/handler"
+	myhandlerkafka "github.com/MamangRust/monolith-payment-gateway-merchant/internal/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/service"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
@@ -32,7 +33,7 @@ var (
 )
 
 func init() {
-	port = viper.GetInt("GRPC_MERCHANT_ADDR")
+	port = viper.GetInt("GRPC_MERCHANT_PORT")
 	if port == 0 {
 		port = 50054
 	}
@@ -97,6 +98,14 @@ func NewServer() (*Server, error) {
 		Repositories: repositories,
 		Logger:       logger,
 	})
+
+	handler_kafka_merchant := myhandlerkafka.NewMerchantKafkaHandler(services.MerchantQuery, logger)
+
+	err = myKafka.StartConsumers([]string{"request-transaction"}, "merchant-transaction", handler_kafka_merchant)
+
+	if err != nil {
+		logger.Fatal("Failed to start kafka consumer", zap.Error(err))
+	}
 
 	handlers := handler.NewHandler(handler.Deps{
 		Service: *services,

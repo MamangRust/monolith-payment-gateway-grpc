@@ -1,0 +1,20 @@
+meta {
+  name: Topup Trashed
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://localhost:5000/api/topups/trashed/1
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/topups/trashed/123" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}

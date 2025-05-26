@@ -1,0 +1,20 @@
+meta {
+  name: Restore All Topup
+  type: http
+  seq: 12
+}
+
+post {
+  url: http://localhost:5000/api/topups/restore/all
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_receiver}}
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/topups/restore/all" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}

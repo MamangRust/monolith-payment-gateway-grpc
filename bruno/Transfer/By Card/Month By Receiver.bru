@@ -1,0 +1,25 @@
+meta {
+  name: Month By Receiver
+  type: http
+  seq: 6
+}
+
+get {
+  url: http://localhost:5000/api/transfers/monthly-by-receiver?year=2025&card_number=9876543210
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+  card_number: 9876543210
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/transfers/monthly-by-receiver?year=2025&card_number=9876543210" \
+    -H "Authorization: Bearer {{secret_key_sender}}"
+}

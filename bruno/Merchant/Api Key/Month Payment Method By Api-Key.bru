@@ -1,0 +1,25 @@
+meta {
+  name: Month Payment Method By Api-Key
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://localhost:5000/api/merchants/monthly-payment-methods-by-apikey?year=2025&api_key=ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+  api_key: ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/merchants/monthly-payment-methods-by-apikey?year=2025&api_key=abc123" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}

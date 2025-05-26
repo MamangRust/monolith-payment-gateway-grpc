@@ -1,0 +1,22 @@
+meta {
+  name: Find Trashed Card
+  type: http
+  seq: 3
+}
+
+get {
+  url: http://localhost:5000/api/card/trashed
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_receiver}}
+  Content-Type: application/json
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://0.0.0.0:5000/api/card/trashed" \
+  -H "Authorization: Bearer <YOUR_BEARER_TOKEN>" \
+  -H "Content-Type: application/json"
+}

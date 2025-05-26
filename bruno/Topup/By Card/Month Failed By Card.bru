@@ -1,0 +1,26 @@
+meta {
+  name: Month Failed By Card
+  type: http
+  seq: 3
+}
+
+get {
+  url: http://localhost:5000/api/topups/monthly-failed-by-card?year=2025&month=07&card_number=1234567890
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+  month: 07
+  card_number: 1234567890
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/topups/monthly-failed-by-card?year=2025&month=07&card_number=1234567890" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}

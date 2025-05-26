@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: topup-service
+  namespace: payment-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: topup-service
+  template:
+    metadata:
+      labels:
+        app: topup-service
+    spec:
+      containers:
+      - name: topup-service
+        image: topup-service:1.0
+        ports:
+        - containerPort: 50057
+        - containerPort: 8087
+        envFrom:
+        - configMapRef:
+            name: app-config

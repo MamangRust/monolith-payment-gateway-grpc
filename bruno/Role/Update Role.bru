@@ -1,0 +1,29 @@
+meta {
+  name: Update Role
+  type: http
+  seq: 7
+}
+
+post {
+  url: http://localhost:5000/api/role/5
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+body:json {
+  {
+      "name": "MyDota 2"
+  }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/role/1" \
+       -H "Content-Type: application/json" \
+       -H 'Authorization: Bearer {{vault:json-web-token}}' \
+       -d '{"id": 1, "name": "Super Admin"}'
+}

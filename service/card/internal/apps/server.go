@@ -32,7 +32,7 @@ var (
 )
 
 func init() {
-	port = viper.GetInt("GRPC_CARD_ADDR")
+	port = viper.GetInt("GRPC_CARD_PORT")
 	if port == 0 {
 		port = 50053
 	}
@@ -113,7 +113,7 @@ func (s *Server) Run() {
 	if err != nil {
 		s.Logger.Fatal("Failed to listen", zap.Error(err))
 	}
-	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRICS_CARD_ADDR"))
+	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_CARD_ADDR"))
 	metricsLis, err := net.Listen("tcp", metricsAddr)
 	if err != nil {
 		s.Logger.Fatal("failed to listen on", zap.Error(err))

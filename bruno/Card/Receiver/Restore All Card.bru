@@ -1,0 +1,22 @@
+meta {
+  name: Restore All Card
+  type: http
+  seq: 12
+}
+
+post {
+  url: http://localhost:5000/api/card/restore/all
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_receiver}}
+}
+
+docs {
+  Generated from cURL: curl -X PUT "http://localhost:5000/api/role/restore-all \
+       -H 'Content-Type: application/json' \
+       -H 'Authorization: Bearer {{vault:json-web-token}}'
+}

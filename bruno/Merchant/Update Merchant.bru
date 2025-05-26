@@ -1,0 +1,27 @@
+meta {
+  name: Update Merchant
+  type: http
+  seq: 6
+}
+
+post {
+  url: http://localhost:5000/api/merchants/updates/1
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"merchant_id":123,"name":"Updated Merchant","user_id":1,"status":"active"}
+}
+
+docs {
+  Generated from cURL: curl -X POST http://localhost:5000/api/merchants/updates/123 \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"merchant_id":123,"name":"Updated Merchant","user_id":1,"status":"active"}'
+}

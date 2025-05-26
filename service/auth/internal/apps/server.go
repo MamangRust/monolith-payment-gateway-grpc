@@ -40,9 +40,9 @@ var (
 )
 
 func init() {
-	port = viper.GetInt("GRPC_AUTH_ADDR")
+	port = viper.GetInt("GRPC_AUTH_PORT")
 	if port == 0 {
-		port = 50053
+		port = 50051
 	}
 
 	flag.IntVar(&port, "port", port, "gRPC server port")
@@ -134,7 +134,7 @@ func (s *Server) Run() {
 		s.Logger.Fatal("Failed to listen", zap.Error(err))
 	}
 
-	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRICS_AUTH_ADDR"))
+	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_AUTH_ADDR"))
 	metricsLis, err := net.Listen("tcp", metricsAddr)
 	if err != nil {
 		s.Logger.Fatal("failed to listen on", zap.Error(err))

@@ -5,6 +5,7 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+//go:generate mockgen -source=interfaces.go -destination=mocks/mock.go
 type RegistrationService interface {
 	Register(request *requests.RegisterRequest) (*response.UserResponse, *response.ErrorResponse)
 }

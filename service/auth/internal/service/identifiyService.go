@@ -54,6 +54,8 @@ func NewIdentityService(ctx context.Context, token auth.TokenManager, refreshTok
 		[]string{"method"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	return &identityService{
 		ctx:             ctx,
 		trace:           otel.Tracer("identity-service"),

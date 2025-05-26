@@ -157,7 +157,7 @@ func (s *merchantDocumentCommandService) CreateMerchantDocument(request *request
 		return nil, merchant_errors.ErrFailedSendEmail
 	}
 
-	err = s.kafka.SendMessage("email-service-topic-merchant-created", strconv.Itoa(merchantDocument.ID), payloadBytes)
+	err = s.kafka.SendMessage("email-service-topic-merchant-document-created", strconv.Itoa(merchantDocument.ID), payloadBytes)
 	if err != nil {
 		traceID := traceunic.GenerateTraceID("MERCHANT_CREATE_EMAIL_ERR")
 		s.logger.Error("Failed to send merchant creation email message", zap.String("trace_id", traceID), zap.Error(err))

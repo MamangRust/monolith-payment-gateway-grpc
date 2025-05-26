@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: payment-gateway
+data:
+  APP_ENV: "docker"
+  KAFKA_BROKERS: "kafka-service:9092"
+  DB_URL: "postgres://DRAGON:DRAGON@postgres-service/PAYMENT_GATEWAY"
+  POSTGRES_USER: "DRAGON"
+  POSTGRES_PASSWORD: "DRAGON"
+  POSTGRES_DB: "PAYMENT_GATEWAY"
+  GF_SECURITY_ADMIN_PASSWORD: "admin"

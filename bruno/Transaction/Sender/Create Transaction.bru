@@ -1,0 +1,41 @@
+meta {
+  name: Create Transaction
+  type: http
+  seq: 7
+}
+
+post {
+  url: http://localhost:5000/api/transactions/create
+  body: json
+  auth: none
+}
+
+headers {
+  X-Api-Key: ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+body:json {
+  {
+      "card_number": "1234567890",
+      "amount": 50000,
+      "payment_method": "credit_card",
+      "merchant_id": 456,
+      "transaction_time": "2025-07-15T14:30:00Z"
+    }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/transactions/create" \
+    -H "X-Api-Key: YOUR_MERCHANT_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "card_number": "1234567890",
+      "amount": 50000,
+      "payment_method": "credit_card",
+      "merchant_id": 456,
+      "transaction_time": "2025-07-15T14:30:00Z"
+    }'
+  
+}

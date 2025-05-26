@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: role-service
+  namespace: payment-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: role-service
+  template:
+    metadata:
+      labels:
+        app: role-service
+    spec:
+      containers:
+      - name: role-service
+        image: role-service:1.0
+        ports:
+        - containerPort: 50052
+        - containerPort: 8082
+        envFrom:
+        - configMapRef:
+            name: app-config

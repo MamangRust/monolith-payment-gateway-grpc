@@ -1,0 +1,22 @@
+meta {
+  name: Delete All Permanent Saldo_1
+  type: http
+  seq: 12
+}
+
+delete {
+  url: http://localhost:5000/api/saldo/permanent/all
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_receiver}}
+}
+
+docs {
+  Generated from cURL: curl -X DELETE "http://localhost:5000/api/role/permanent-all \
+       -H 'Content-Type: application/json' \
+       -H 'Authorization: Bearer {{vault:json-web-token}}'
+}

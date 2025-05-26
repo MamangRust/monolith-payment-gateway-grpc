@@ -1,0 +1,31 @@
+meta {
+  name: Login
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://0.0.0.0:5000/api/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+      "email": "jane.doe@example.com",
+      "password": "password123"
+  }
+}
+
+docs {
+  Generated from cURL: curl -X POST http://0.0.0.0:5000/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{
+       "email": "jane.doe@example.com",
+    "password": "password123"
+    }'
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Find All Transaction
+  type: http
+  seq: 16
+}
+
+get {
+  url: http://localhost:5000/api/merchants/transactions?page=1&page_size=10&search=test
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 10
+  search: test
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/merchants/transactions?page=1&page_size=10&search=test" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+  
+}

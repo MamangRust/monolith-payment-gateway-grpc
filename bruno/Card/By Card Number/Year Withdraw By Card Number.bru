@@ -1,0 +1,25 @@
+meta {
+  name: Year Withdraw By Card Number
+  type: http
+  seq: 8
+}
+
+get {
+  url: http://localhost:5000/api/card/yearly-withdraw-amount-by-card?year=2025&card_number=2003039399393
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+  card_number: 2003039399393
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/card/yearly-withdraw-amount-by-card?year=2025&card_number=2003039399393" \
+    -H "Authorization: Bearer $JWT_TOKEN"
+}

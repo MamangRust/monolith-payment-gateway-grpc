@@ -1,0 +1,33 @@
+meta {
+  name: Create Saldo
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://localhost:5000/api/saldo/create
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "card_number": "1234567890",
+    "total_balance": 5000
+  }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://0.0.0.0:5000/api/saldo/create" \
+  -H "Authorization: Bearer <YOUR_BEARER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "card_number": "1234567890",
+    "total_balance": 5000
+  }'
+}

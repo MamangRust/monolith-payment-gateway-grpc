@@ -1,0 +1,37 @@
+meta {
+  name: Update Transfer
+  type: http
+  seq: 8
+}
+
+post {
+  url: http://localhost:5000/api/transfers/update/123
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+      "transfer_id": 123,
+      "transfer_from": "1234567890",
+      "transfer_to": "9876543210",
+      "transfer_amount": 150000
+    }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/transfers/update/123" \
+    -H "Authorization: Bearer {{secret_key_sender}}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "transfer_id": 123,
+      "transfer_from": "1234567890",
+      "transfer_to": "9876543210",
+      "transfer_amount": 150000
+    }'
+}

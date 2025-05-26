@@ -1,0 +1,20 @@
+meta {
+  name: Restore All Merchant
+  type: http
+  seq: 12
+}
+
+post {
+  url: http://localhost:5000/api/merchants/restore/all
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X POST http://localhost:5000/api/merchants/restore/all \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}

@@ -52,16 +52,16 @@ func NewTopupCommandService(
 
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "topup_query_service_request_total",
-			Help: "Total number of requests to the TopupQueryService",
+			Name: "topup_command_service_request_total",
+			Help: "Total number of requests to the TopupCommandService",
 		},
 		[]string{"method", "status"},
 	)
 
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "topup_query_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the TopupQueryService",
+			Name:    "topup_command_service_request_duration_seconds",
+			Help:    "Histogram of request durations for the TopupCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method"},

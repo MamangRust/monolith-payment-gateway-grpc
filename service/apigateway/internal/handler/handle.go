@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
@@ -24,6 +25,7 @@ type ServiceConnections struct {
 
 type Deps struct {
 	Conn               *grpc.ClientConn
+	Kafka              kafka.Kafka
 	Token              auth.TokenManager
 	E                  *echo.Echo
 	Logger             logger.LoggerInterface
@@ -48,7 +50,7 @@ func NewHandler(deps Deps) {
 	NewHandlerUser(clientUser, deps.E, deps.Logger, deps.Mapping.UserResponseMapper)
 	NewHandlerCard(clientCard, deps.E, deps.Logger, deps.Mapping.CardResponseMapper)
 	NewHandlerMerchant(clientMerchant, deps.E, deps.Logger, deps.Mapping.MerchantResponseMapper)
-	NewHandlerTransaction(clientTransaction, clientMerchant, deps.E, deps.Logger, deps.Mapping.TransactionResponseMapper)
+	NewHandlerTransaction(clientTransaction, clientMerchant, deps.E, deps.Logger, deps.Mapping.TransactionResponseMapper, deps.Kafka)
 	NewHandlerSaldo(clientSaldo, deps.E, deps.Logger, deps.Mapping.SaldoResponseMapper)
 	NewHandlerTopup(clientTopup, deps.E, deps.Logger, deps.Mapping.TopupResponseMapper)
 	NewHandlerTransfer(clientTransfer, deps.E, deps.Logger, deps.Mapping.TransferResponseMapper)

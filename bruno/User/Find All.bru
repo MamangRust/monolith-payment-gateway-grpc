@@ -1,0 +1,22 @@
+meta {
+  name: Find All
+  type: http
+  seq: 2
+}
+
+get {
+  url: http://localhost:5000/api/user
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/user \
+       -H 'Content-Type: application/json' \
+       -H 'Authorization: Bearer {{vault:json-web-token}}'
+}

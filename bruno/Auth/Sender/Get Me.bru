@@ -1,0 +1,22 @@
+meta {
+  name: Get Me
+  type: http
+  seq: 2
+}
+
+get {
+  url: http://localhost:5000/api/auth/me
+  body: none
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET http://localhost:5000/api/auth/me \
+    -H 'Content-Type: application/json' \
+    -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsImF1ZCI6WyJhY2Nlc3MiXSwiZXhwIjoxNzM1ODI5MDk0fQ.0MAChuYO1G458hK_HqVmFYAOdOnmeYkqFbTjbY0QDi8'
+}

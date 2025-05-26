@@ -1,0 +1,24 @@
+meta {
+  name: Month Amount
+  type: http
+  seq: 8
+}
+
+get {
+  url: http://localhost:5000/api/withdraws/monthly-amount?year=2025
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/withdraws/monthly-amount?year=2025" \
+    -H "Authorization: Bearer {{secret_key_sender}}"
+}

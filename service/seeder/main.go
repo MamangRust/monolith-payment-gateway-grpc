@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/database"
-	db "github.com/MamangRust/payment-gateway-monolith-grpc/pkg/database/schema"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/database/seeder"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/dotenv"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/hash"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/database/seeder"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -17,7 +16,7 @@ import (
 func main() {
 	logger, err := logger.NewLogger()
 	if err != nil {
-		fmt.Errorf("failed to initialize logger: %w", err)
+		logger.Fatal("Failed to create logger", zap.Error(err))
 	}
 
 	if err := dotenv.Viper(); err != nil {

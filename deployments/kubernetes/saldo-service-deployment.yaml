@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: saldo-service
+  namespace: payment-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: saldo-service
+  template:
+    metadata:
+      labels:
+        app: saldo-service
+    spec:
+      containers:
+      - name: saldo-service
+        image: saldo-service:1.0
+        ports:
+        - containerPort: 50056
+        - containerPort: 8086
+        envFrom:
+        - configMapRef:
+            name: app-config

@@ -1,0 +1,36 @@
+meta {
+  name: Create Transfer
+  type: http
+  seq: 7
+}
+
+post {
+  url: http://localhost:5000/api/transfers/create
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+      "transfer_from": "1234567890",
+      "transfer_to": "9876543210",
+      "transfer_amount": 100000
+    }
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/transfers/create" \
+    -H "Authorization: Bearer {{secret_key_sender}}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "transfer_from": "1234567890",
+      "transfer_to": "9876543210",
+      "transfer_amount": 100000
+    }'
+  
+}

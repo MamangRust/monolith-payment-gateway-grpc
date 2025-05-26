@@ -1,3 +1,4 @@
+//go:generate mockgen -source=interfaces.go -destination=mocks/mock_auth_handle.go -package=mocks
 package handler
 
 import (

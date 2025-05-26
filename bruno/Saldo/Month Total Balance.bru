@@ -1,0 +1,25 @@
+meta {
+  name: Month Total Balance
+  type: http
+  seq: 3
+}
+
+get {
+  url: http://localhost:5000/api/saldos/monthly-total-balance?year=2025&month=05
+  body: none
+  auth: none
+}
+
+params:query {
+  year: 2025
+  month: 05
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X GET "http://localhost:5000/api/saldos/monthly-total-balance?year=2025&month=05" \
+    -H "Authorization: Bearer $JWT_TOKEN"
+}

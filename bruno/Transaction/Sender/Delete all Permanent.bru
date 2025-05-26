@@ -1,0 +1,20 @@
+meta {
+  name: Delete all Permanent
+  type: http
+  seq: 13
+}
+
+post {
+  url: http://localhost:5000/api/transactions/permanent/all
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{secret_key_sender}}
+}
+
+docs {
+  Generated from cURL: curl -X POST "http://localhost:5000/api/transactions/permanent/all" \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+}
