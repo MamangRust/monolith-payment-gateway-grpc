@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: payment-gateway
+data:
+  APP_ENV: "kubernetes"
+  KAFKA_BROKERS: "kafka:9092"
+  OTEL_ENDPOINT: "otel-collector:4317"
+  DB_URL: "postgres://DRAGON:DRAGON@postgres/PAYMENT_GATEWAY"
+  POSTGRES_USER: "DRAGON"
+  POSTGRES_DB: "PAYMENT_GATEWAY"

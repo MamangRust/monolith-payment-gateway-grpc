@@ -22,6 +22,8 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 - 🔍 **Jaeger** — Distributed tracing for observability.
 - 📊 **Grafana** — Monitoring and visualization tool.
 - 🧪 **Bruno** — Lightweight, Git-friendly API client (Postman alternative).
+- ☸️ **Kubernetes** — Container orchestration platform for deployment, scaling, and management.
+- 🧰 **Redis** — In-memory key-value store used for caching and fast data access.
 
 ----
 
@@ -44,8 +46,8 @@ This schema represents the database design for a **Digital Payment Platform** su
 
 ### Users
 
-- **Table:** `users`  
-- Stores user personal data such as first name, last name, email, password, verification code, and timestamps.  
+- **Table:** `users`
+- Stores user personal data such as first name, last name, email, password, verification code, and timestamps.
 - Relationships:
   - One user can have multiple **cards**.
   - One user can register multiple **merchants**.
@@ -54,82 +56,82 @@ This schema represents the database design for a **Digital Payment Platform** su
 
 ### Reset Tokens
 
-- **Table:** `reset_tokens`  
+- **Table:** `reset_tokens`
 - Stores tokens used for password resets linked to users.
 - One-to-one relationship with `users`.
 
 ### Cards
 
-- **Table:** `cards`  
-- Represents payment cards owned by users.  
+- **Table:** `cards`
+- Represents payment cards owned by users.
 - Each card has details like card number, type, expiration date, CVV, and provider.
 
 ### Merchants
 
-- **Table:** `merchants`  
-- Registered businesses associated with users.  
+- **Table:** `merchants`
+- Registered businesses associated with users.
 - Each merchant has a unique API key and a status (`pending`, `approved`, etc.).
 
 ### Merchant Documents
 
-- **Table:** `merchant_documents`  
-- Stores uploaded verification documents for merchants.  
+- **Table:** `merchant_documents`
+- Stores uploaded verification documents for merchants.
 - Linked to merchants via `merchant_id`.
 
 ### Saldos (Balances)
 
-- **Table:** `saldos`  
+- **Table:** `saldos`
 - Contains card balance and withdrawal information linked to cards.
 
 ### Transactions
 
-- **Table:** `transactions`  
-- Logs transactions made with cards at merchants.  
+- **Table:** `transactions`
+- Logs transactions made with cards at merchants.
 - Includes amount, payment method, status, and timestamps.
 
 ### Transfers
 
-- **Table:** `transfers`  
+- **Table:** `transfers`
 - Records transfers between two cards, including amount and status.
 
 ### Topups
 
-- **Table:** `topups`  
+- **Table:** `topups`
 - Tracks top-up activities for cards.
 
 ### Withdraws
 
-- **Table:** `withdraws`  
+- **Table:** `withdraws`
 - Records withdrawal activities from cards.
 
 ### Roles
 
-- **Table:** `roles`  
+- **Table:** `roles`
 - Stores different user roles such as `admin`, `merchant`, or `customer`.
 
 ### User Roles
 
-- **Table:** `user_roles`  
+- **Table:** `user_roles`
 - Connects users and roles in a many-to-many relationship.
 
 ### Refresh Tokens
 
-- **Table:** `refresh_tokens`  
+- **Table:** `refresh_tokens`
 - Manages JWT refresh tokens for user sessions.
 
 ---
 
 ## Relationships Summary
 
-- `users` 1 — N `cards`  
-- `users` 1 — N `merchants`  
-- `users` 1 — 1 `reset_tokens`  
-- `users` 1 — N `refresh_tokens`  
-- `users` M — N `roles` via `user_roles`  
-- `merchants` 1 — N `merchant_documents`  
-- `cards` 1 — 1 `saldos`  
-- `cards` 1 — N `transactions`, `topups`, `transfers`, `withdraws`  
-- `merchants` 1 — N `transactions`  
+- `users` 1 — N `cards`
+- `users` 1 — N `merchants`
+- `users` 1 — 1 `reset_tokens`
+- `users` 1 — N `refresh_tokens`
+- `users` M — N `roles` via `user_roles`
+- `merchants` 1 — N `merchant_documents`
+- `cards` 1 — 1 `saldos`
+- `cards` 1 — N `transactions`, `topups`, `transfers`, `withdraws`
+- `merchants` 1 — N `transactions`
 
 
 ---
@@ -170,20 +172,20 @@ Here's a general flow of a client request through the API Gateway:
 
 The AuthService is organized into multiple specialized service interfaces to separate concerns and improve maintainability:
 
-- **RegistrationService:** Handles user registration and creation of new accounts.  
-- **LoginService:** Responsible for authenticating users and issuing JWT tokens.  
-- **PasswordResetService:** Manages the password reset flow, including sending OTP codes, verifying them, and resetting passwords.  
+- **RegistrationService:** Handles user registration and creation of new accounts.
+- **LoginService:** Responsible for authenticating users and issuing JWT tokens.
+- **PasswordResetService:** Manages the password reset flow, including sending OTP codes, verifying them, and resetting passwords.
 - **IdentifyService:** Deals with token refreshing and retrieving information about the authenticated user.
 
 All services integrate with:
 
-- **Kafka** for publishing events like registration confirmations and OTP emails to the email-service.  
-- **Prometheus metrics** to track request counts and durations for observability.  
-- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.  
+- **Kafka** for publishing events like registration confirmations and OTP emails to the email-service.
+- **Prometheus metrics** to track request counts and durations for observability.
+- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.
 - **Structured logging** with Zap for detailed error and operational logs.
 
 
---- 
+---
 
 
 ### 📌 Available RPC Methods
@@ -277,15 +279,15 @@ Communication is done via **gRPC**, and observability is built-in through **Prom
 
 The `UserService` is split into two primary services for separation of concerns and scalability:
 
-- **userCommandService**  
+- **userCommandService**
   Handles all **write** operations such as `Create`, `Update`, `TrashedUser`, `RestoreUser`, and `DeleteUserPermanent`.
 
-- **userQueryService**  
+- **userQueryService**
   Handles all **read** operations such as `FindAll`, `FindById`, `FindByActive`, and `FindByTrashed`.
 
 All services integrate with:
-- **Prometheus metrics** to track request counts and durations for observability.  
-- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.  
+- **Prometheus metrics** to track request counts and durations for observability.
+- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.
 - **Structured logging** with Zap for detailed error and operational logs.
 
 
@@ -349,7 +351,7 @@ Each service is assigned a tracer for distributed tracing:
 
 The RoleService separates command and query responsibilities into two dedicated service components for better scalability and maintainability:
 
-- **roleCommandService:** Handles all write operations such as create, update, trash, restore, and delete.  
+- **roleCommandService:** Handles all write operations such as create, update, trash, restore, and delete.
 - **roleQueryService:** Handles read operations including fetching roles by various criteria.
 
 Both services integrate with:
@@ -426,8 +428,8 @@ This service communicates via gRPC, tracks observability via Prometheus and Open
 
 All services are instrumented with:
 - **Kafka** to produce and consume balance creation events.
-- **Prometheus metrics** to track request counts and durations for observability.  
-- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.  
+- **Prometheus metrics** to track request counts and durations for observability.
+- **OpenTelemetry tracing** to provide distributed tracing for requests, helping with debugging and performance tuning.
 - **Structured logging** with Zap for detailed error and operational logs.
 
 ----
@@ -526,7 +528,7 @@ When a card is created, CardService emits an event to the saldo-service-topic-cr
 
 
 
------- 
+------
 
 ### Email Service
 
@@ -835,7 +837,7 @@ Each service component exposes standardized metrics:
 
 Distributed tracing is implemented with dedicated tracers:
 - `merchant-command-service`
-- `merchant-query-service` 
+- `merchant-query-service`
 - `merchant-document-command-service`
 - `merchant-document-query-service`
 - `merchant-transaction-service`
@@ -1264,7 +1266,7 @@ The WithdrawService publishes withdrawal events to Kafka to enable asynchronous 
 
 | Kafka Topic                                            | Purpose                                                               | Consumer Group        |
 | ------------------------------------------------------ | --------------------------------------------------------------------- | --------------------- |
-| `email-service-topic-withdraw-created`                 | Notify user when a new withdraw is successfully created               | `email-service-group` | 
+| `email-service-topic-withdraw-created`                 | Notify user when a new withdraw is successfully created               | `email-service-group` |
 ----
 
 ## Screenshoot
@@ -1278,7 +1280,7 @@ The WithdrawService publishes withdrawal events to Kafka to enable asynchronous 
 <img src="./images/Payment Gateway.png" alt="hello-erd-documentation" />
 
 
-### Grafana Dashboard(Prometheus & OpenTelemetry(Jaeger)) 
+### Grafana Dashboard(Prometheus & OpenTelemetry(Jaeger))
 
 #### Node Exporter
 
@@ -1343,87 +1345,87 @@ The WithdrawService publishes withdrawal events to Kafka to enable asynchronous 
 
 ### 🔧 Memory: Off-Heap
 
-- **`go_memstats_mspan_inuse_bytes`**  
+- **`go_memstats_mspan_inuse_bytes`**
   Number of bytes currently in use by the internal *mspan* structure (used for managing memory spans).
 
-- **`go_memstats_mspan_sys_bytes`**  
+- **`go_memstats_mspan_sys_bytes`**
   Total bytes allocated from the system for *mspan*, including unused space.
 
-- **`go_memstats_mcache_inuse_bytes`**  
+- **`go_memstats_mcache_inuse_bytes`**
   Bytes used by the thread-local memory allocator cache (*mcache*).
 
-- **`go_memstats_mcache_sys_bytes`**  
+- **`go_memstats_mcache_sys_bytes`**
   Total bytes allocated from the system for *mcache*, used to accelerate small object allocations.
 
-- **`go_memstats_buck_hash_sys_bytes`**  
+- **`go_memstats_buck_hash_sys_bytes`**
   Bytes used by internal bucket hash structures (used for maps, profiling, etc.).
 
-- **`go_memstats_gc_sys_bytes`**  
+- **`go_memstats_gc_sys_bytes`**
   Bytes allocated from the system for the Garbage Collector, including GC-related metadata.
 
-- **`go_memstats_other_sys_bytes`**  
+- **`go_memstats_other_sys_bytes`**
   Other system memory allocations by the Go runtime that don’t fall under any specific category.
 
 ---
 
 ### 🧠 Memory: In-Heap
 
-- **`go_memstats_heap_alloc_bytes`**  
+- **`go_memstats_heap_alloc_bytes`**
   Bytes currently allocated in the heap for active (reachable) objects.
 
-- **`go_memstats_heap_sys_bytes`**  
+- **`go_memstats_heap_sys_bytes`**
   Total heap bytes requested from the OS (used or unused).
 
-- **`go_memstats_heap_idle_bytes`**  
+- **`go_memstats_heap_idle_bytes`**
   Heap memory that is not currently in use and may be returned to the OS.
 
-- **`go_memstats_heap_inuse_bytes`**  
+- **`go_memstats_heap_inuse_bytes`**
   Heap memory actively being used by Go objects.
 
-- **`go_memstats_heap_released_bytes`**  
+- **`go_memstats_heap_released_bytes`**
   Heap memory that has been returned to the OS by the Go runtime.
 
 ---
 
 ### 📚 Memory: Stack
 
-- **`go_memstats_stack_inuse_bytes`**  
+- **`go_memstats_stack_inuse_bytes`**
   Bytes used by active goroutine stacks.
 
-- **`go_memstats_stack_sys_bytes`**  
+- **`go_memstats_stack_sys_bytes`**
   Total stack memory allocated from the system for all goroutines.
 
 ---
 
 ### 📊 Memory: Total Usage
 
-- **`go_memstats_sys_bytes`**  
+- **`go_memstats_sys_bytes`**
   Total bytes allocated from the OS by the Go runtime (includes heap, stack, off-heap, etc.).
 
 ---
 
 ### 🔢 Live Object Counter
 
-- **`go_memstats_mallocs_total - go_memstats_frees_total`**  
+- **`go_memstats_mallocs_total - go_memstats_frees_total`**
   Number of live (active) objects in memory. Calculated as total allocations minus total frees.
 
 ---
 
 ### 📈 Allocation Rate
 
-- **`rate(go_memstats_mallocs_total[1m])`**  
+- **`rate(go_memstats_mallocs_total[1m])`**
   Average object allocation rate per second over the last 1 minute.
 
 ---
 
 ### 🧵 Goroutines
 
-- **`go_goroutines`**  
+- **`go_goroutines`**
   Number of currently active goroutines in the application.
 
 ---
 
 ### ♻️ Garbage Collection (GC)
 
-- **`go_gc_duration_seconds`**  
+- **`go_gc_duration_seconds`**
   Histogram of GC durations in seconds. Measures time spent during each GC cycle.

@@ -92,7 +92,6 @@ func (s *userHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdUserR
 	so := s.mapping.ToProtoResponseUser("success", "Successfully fetched user", user)
 
 	return so, nil
-
 }
 
 func (s *userHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllUserRequest) (*pb.ApiResponsePaginationUserDeleteAt, error) {

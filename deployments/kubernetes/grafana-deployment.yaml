@@ -16,8 +16,11 @@ spec:
       containers:
       - name: grafana
         image: grafana/grafana:latest
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: GF_SECURITY_ADMIN_PASSWORD
         ports:
         - containerPort: 3000
-        envFrom:
-        - configMapRef:
-            name: app-config

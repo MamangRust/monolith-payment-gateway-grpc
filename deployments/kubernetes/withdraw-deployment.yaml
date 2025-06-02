@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: apigateway
+  name: withdraw
   namespace: payment-gateway
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: apigateway
+      app: withdraw
   template:
     metadata:
       labels:
-        app: apigateway
+        app: withdraw
     spec:
       containers:
-      - name: apigateway
-        image: apigateway:1.0
+      - name: withdraw
+        image: withdraw-service:1.0
         envFrom:
         - configMapRef:
             name: app-config
         - secretRef:
             name: app-secrets
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
