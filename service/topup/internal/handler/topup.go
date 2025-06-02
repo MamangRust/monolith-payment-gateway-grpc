@@ -4,12 +4,14 @@ import (
 	"context"
 	"math"
 
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors"
 	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/service"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -20,15 +22,17 @@ type topupHandleGrpc struct {
 	topupStatisByCard service.TopupStatisticByCardService
 	topupCommand      service.TopupCommandService
 	mapping           protomapper.TopupProtoMapper
+	logger            logger.LoggerInterface
 }
 
-func NewTopupHandleGrpc(service service.Service) *topupHandleGrpc {
+func NewTopupHandleGrpc(service service.Service, logger logger.LoggerInterface) *topupHandleGrpc {
 	return &topupHandleGrpc{
 		topupQuery:        service.TopupQuery,
 		topupStatistic:    service.TopupStatistic,
 		topupStatisByCard: service.TopupStatisticByCard,
 		topupCommand:      service.TopupCommand,
 		mapping:           protomapper.NewTopupProtoMapper(),
+		logger:            logger,
 	}
 }
 
@@ -36,6 +40,11 @@ func (s *topupHandleGrpc) FindAllTopup(ctx context.Context, req *pb.FindAllTopup
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
+
+	s.logger.Debug("Fetching topup",
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("search", search))
 
 	if page <= 0 {
 		page = 1
@@ -53,6 +62,7 @@ func (s *topupHandleGrpc) FindAllTopup(ctx context.Context, req *pb.FindAllTopup
 	topups, totalRecords, err := s.topupQuery.FindAll(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -75,6 +85,12 @@ func (s *topupHandleGrpc) FindAllTopupByCardNumber(ctx context.Context, req *pb.
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
 
+	s.logger.Debug("Fetching topup by card number",
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("search", search),
+		zap.String("card_number", card_number))
+
 	if page <= 0 {
 		page = 1
 	}
@@ -92,6 +108,7 @@ func (s *topupHandleGrpc) FindAllTopupByCardNumber(ctx context.Context, req *pb.
 	topups, totalRecords, err := s.topupQuery.FindAllByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -111,13 +128,18 @@ func (s *topupHandleGrpc) FindAllTopupByCardNumber(ctx context.Context, req *pb.
 func (s *topupHandleGrpc) FindByIdTopup(ctx context.Context, req *pb.FindByIdTopupRequest) (*pb.ApiResponseTopup, error) {
 	id := int(req.GetTopupId())
 
+	s.logger.Debug("Fetching topup by id",
+		zap.Int("id", id))
+
 	if id == 0 {
+		s.logger.Error("Failed to fetch topup by id", zap.Int("id", id))
 		return nil, topup_errors.ErrGrpcTopupInvalidID
 	}
 
 	topup, err := s.topupQuery.FindById(id)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch topup by id", zap.Int("id", id), zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -130,11 +152,17 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusSuccess(ctx context.Context, req
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 
+	s.logger.Debug("Fetching monthly topup status success",
+		zap.Int("year", year),
+		zap.Int("month", month))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if month <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Int("month", month))
 		return nil, topup_errors.ErrGrpcTopupInvalidMonth
 	}
 
@@ -146,6 +174,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusSuccess(ctx context.Context, req
 	records, err := s.topupStatistic.FindMonthTopupStatusSuccess(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Any("error", err), zap.Int("year", year), zap.Int("month", month))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -157,13 +186,18 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusSuccess(ctx context.Context, req
 func (s *topupHandleGrpc) FindYearlyTopupStatusSuccess(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupYearStatusSuccess, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup status success",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup status success", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	records, err := s.topupStatistic.FindYearlyTopupStatusSuccess(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup status success", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -176,11 +210,17 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusFailed(ctx context.Context, req 
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 
+	s.logger.Debug("Fetching monthly topup status Failed",
+		zap.Int("year", year),
+		zap.Int("month", month))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status Failed", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if month <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status Failed", zap.Int("month", month))
 		return nil, topup_errors.ErrGrpcTopupInvalidMonth
 	}
 
@@ -192,6 +232,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusFailed(ctx context.Context, req 
 	records, err := s.topupStatistic.FindMonthTopupStatusFailed(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup status Failed", zap.Any("error", err), zap.Int("year", year), zap.Int("month", month))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -203,13 +244,18 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusFailed(ctx context.Context, req 
 func (s *topupHandleGrpc) FindYearlyTopupStatusFailed(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupYearStatusFailed, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup status Failed",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup status Failed", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	records, err := s.topupStatistic.FindYearlyTopupStatusFailed(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup status Failed", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -223,15 +269,23 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusSuccessByCardNumber(ctx context.
 	month := int(req.GetMonth())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching monthly topup status success",
+		zap.Int("year", year),
+		zap.Int("month", month),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if month <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Int("month", month))
 		return nil, topup_errors.ErrGrpcTopupInvalidMonth
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -244,6 +298,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusSuccessByCardNumber(ctx context.
 	records, err := s.topupStatisByCard.FindMonthTopupStatusSuccessByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup status success", zap.Any("error", err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -255,11 +310,17 @@ func (s *topupHandleGrpc) FindYearlyTopupStatusSuccessByCardNumber(ctx context.C
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching yearly topup status success",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup status success", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch yearly topup status success", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -271,6 +332,7 @@ func (s *topupHandleGrpc) FindYearlyTopupStatusSuccessByCardNumber(ctx context.C
 	records, err := s.topupStatisByCard.FindYearlyTopupStatusSuccessByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup status success", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -283,15 +345,23 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusFailedByCardNumber(ctx context.C
 	month := int(req.GetMonth())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching monthly topup status failed",
+		zap.Int("year", year),
+		zap.Int("month", month),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status failed", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if month <= 0 {
+		s.logger.Error("Failed to fetch monthly topup status failed", zap.Int("month", month))
 		return nil, topup_errors.ErrGrpcTopupInvalidMonth
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch monthly topup status failed", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -304,6 +374,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupStatusFailedByCardNumber(ctx context.C
 	records, err := s.topupStatisByCard.FindMonthTopupStatusFailedByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup status failed", zap.Any("error", err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -315,11 +386,17 @@ func (s *topupHandleGrpc) FindYearlyTopupStatusFailedByCardNumber(ctx context.Co
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching yearly topup status failed",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup status failed", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch yearly topup status failed", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -331,6 +408,7 @@ func (s *topupHandleGrpc) FindYearlyTopupStatusFailedByCardNumber(ctx context.Co
 	records, err := s.topupStatisByCard.FindYearlyTopupStatusFailedByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup status failed", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -341,13 +419,18 @@ func (s *topupHandleGrpc) FindYearlyTopupStatusFailedByCardNumber(ctx context.Co
 func (s *topupHandleGrpc) FindMonthlyTopupMethods(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupMonthMethod, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly topup methods",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup methods", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	methods, err := s.topupStatistic.FindMonthlyTopupMethods(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup methods", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -359,13 +442,18 @@ func (s *topupHandleGrpc) FindMonthlyTopupMethods(ctx context.Context, req *pb.F
 func (s *topupHandleGrpc) FindYearlyTopupMethods(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupYearMethod, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup methods",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup methods", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	methods, err := s.topupStatistic.FindYearlyTopupMethods(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup methods", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -377,13 +465,18 @@ func (s *topupHandleGrpc) FindYearlyTopupMethods(ctx context.Context, req *pb.Fi
 func (s *topupHandleGrpc) FindMonthlyTopupAmounts(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupMonthAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly topup amounts",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup amounts", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	amounts, err := s.topupStatistic.FindMonthlyTopupAmounts(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup amounts", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -395,13 +488,18 @@ func (s *topupHandleGrpc) FindMonthlyTopupAmounts(ctx context.Context, req *pb.F
 func (s *topupHandleGrpc) FindYearlyTopupAmounts(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupYearAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup amounts",
+		zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup amounts", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	amounts, err := s.topupStatistic.FindYearlyTopupAmounts(year)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup amounts", zap.Any("error", err), zap.Int("year", year))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -414,11 +512,17 @@ func (s *topupHandleGrpc) FindMonthlyTopupMethodsByCardNumber(ctx context.Contex
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching monthly topup methods by card number",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -430,6 +534,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupMethodsByCardNumber(ctx context.Contex
 	methods, err := s.topupStatisByCard.FindMonthlyTopupMethodsByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -442,11 +547,17 @@ func (s *topupHandleGrpc) FindYearlyTopupMethodsByCardNumber(ctx context.Context
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching yearly topup methods by card number",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -458,6 +569,7 @@ func (s *topupHandleGrpc) FindYearlyTopupMethodsByCardNumber(ctx context.Context
 	methods, err := s.topupStatisByCard.FindYearlyTopupMethodsByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -470,11 +582,17 @@ func (s *topupHandleGrpc) FindMonthlyTopupAmountsByCardNumber(ctx context.Contex
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching monthly topup amounts by card number",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch monthly topup amounts by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch monthly topup amounts by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -486,6 +604,7 @@ func (s *topupHandleGrpc) FindMonthlyTopupAmountsByCardNumber(ctx context.Contex
 	amounts, err := s.topupStatisByCard.FindMonthlyTopupAmountsByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch monthly topup amounts by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -498,11 +617,17 @@ func (s *topupHandleGrpc) FindYearlyTopupAmountsByCardNumber(ctx context.Context
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
+	s.logger.Debug("Fetching yearly topup amounts by card number",
+		zap.Int("year", year),
+		zap.String("card_number", cardNumber))
+
 	if year <= 0 {
+		s.logger.Error("Failed to fetch yearly topup amounts by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
+		s.logger.Error("Failed to fetch yearly topup amounts by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -513,6 +638,7 @@ func (s *topupHandleGrpc) FindYearlyTopupAmountsByCardNumber(ctx context.Context
 
 	amounts, err := s.topupStatisByCard.FindYearlyTopupAmountsByCardNumber(&reqService)
 	if err != nil {
+		s.logger.Error("Failed to fetch yearly topup amounts by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -525,6 +651,11 @@ func (s *topupHandleGrpc) FindByActive(ctx context.Context, req *pb.FindAllTopup
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
+
+	s.logger.Debug("Fetching active topup",
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("search", search))
 
 	if page <= 0 {
 		page = 1
@@ -542,6 +673,8 @@ func (s *topupHandleGrpc) FindByActive(ctx context.Context, req *pb.FindAllTopup
 	res, totalRecords, err := s.topupQuery.FindByActive(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch topup", zap.Any("error", err))
+
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -563,6 +696,11 @@ func (s *topupHandleGrpc) FindByTrashed(ctx context.Context, req *pb.FindAllTopu
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
 
+	s.logger.Debug("Fetching trashed topup",
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("search", search))
+
 	if page <= 0 {
 		page = 1
 	}
@@ -579,6 +717,7 @@ func (s *topupHandleGrpc) FindByTrashed(ctx context.Context, req *pb.FindAllTopu
 	res, totalRecords, err := s.topupQuery.FindByTrashed(&reqService)
 
 	if err != nil {
+		s.logger.Error("Failed to fetch topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -603,13 +742,20 @@ func (s *topupHandleGrpc) CreateTopup(ctx context.Context, req *pb.CreateTopupRe
 		TopupMethod: req.GetTopupMethod(),
 	}
 
+	s.logger.Debug("Creating topup",
+		zap.String("card_number", request.CardNumber),
+		zap.Int("topup_amount", request.TopupAmount),
+		zap.String("topup_method", request.TopupMethod))
+
 	if err := request.Validate(); err != nil {
+		s.logger.Error("Failed to create topup", zap.Any("error", err))
 		return nil, topup_errors.ErrGrpcValidateCreateTopup
 	}
 
 	res, err := s.topupCommand.CreateTopup(&request)
 
 	if err != nil {
+		s.logger.Error("Failed to create topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -621,7 +767,14 @@ func (s *topupHandleGrpc) CreateTopup(ctx context.Context, req *pb.CreateTopupRe
 func (s *topupHandleGrpc) UpdateTopup(ctx context.Context, req *pb.UpdateTopupRequest) (*pb.ApiResponseTopup, error) {
 	id := int(req.GetTopupId())
 
+	s.logger.Debug("Updating topup",
+		zap.Int("topup_id", id),
+		zap.String("card_number", req.GetCardNumber()),
+		zap.Int("topup_amount", int(req.GetTopupAmount())),
+		zap.String("topup_method", req.GetTopupMethod()))
+
 	if id == 0 {
+		s.logger.Error("Failed to update topup", zap.Int("topup_id", id))
 		return nil, topup_errors.ErrGrpcTopupInvalidID
 	}
 
@@ -633,12 +786,14 @@ func (s *topupHandleGrpc) UpdateTopup(ctx context.Context, req *pb.UpdateTopupRe
 	}
 
 	if err := request.Validate(); err != nil {
+		s.logger.Error("Failed to update topup", zap.Any("error", err))
 		return nil, topup_errors.ErrGrpcValidateUpdateTopup
 	}
 
 	res, err := s.topupCommand.UpdateTopup(&request)
 
 	if err != nil {
+		s.logger.Error("Failed to update topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -650,13 +805,18 @@ func (s *topupHandleGrpc) UpdateTopup(ctx context.Context, req *pb.UpdateTopupRe
 func (s *topupHandleGrpc) TrashedTopup(ctx context.Context, req *pb.FindByIdTopupRequest) (*pb.ApiResponseTopupDeleteAt, error) {
 	id := int(req.GetTopupId())
 
+	s.logger.Debug("Trashing topup",
+		zap.Int("topup_id", id))
+
 	if id == 0 {
+		s.logger.Error("Failed to trash topup", zap.Int("topup_id", id))
 		return nil, topup_errors.ErrGrpcTopupInvalidID
 	}
 
 	res, err := s.topupCommand.TrashedTopup(id)
 
 	if err != nil {
+		s.logger.Error("Failed to trash topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -668,13 +828,18 @@ func (s *topupHandleGrpc) TrashedTopup(ctx context.Context, req *pb.FindByIdTopu
 func (s *topupHandleGrpc) RestoreTopup(ctx context.Context, req *pb.FindByIdTopupRequest) (*pb.ApiResponseTopupDeleteAt, error) {
 	id := int(req.GetTopupId())
 
+	s.logger.Debug("Restoring topup",
+		zap.Int("topup_id", id))
+
 	if id == 0 {
+		s.logger.Error("Failed to restore topup", zap.Int("topup_id", id))
 		return nil, topup_errors.ErrGrpcTopupInvalidID
 	}
 
 	res, err := s.topupCommand.RestoreTopup(id)
 
 	if err != nil {
+		s.logger.Error("Failed to restore topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -686,13 +851,18 @@ func (s *topupHandleGrpc) RestoreTopup(ctx context.Context, req *pb.FindByIdTopu
 func (s *topupHandleGrpc) DeleteTopupPermanent(ctx context.Context, req *pb.FindByIdTopupRequest) (*pb.ApiResponseTopupDelete, error) {
 	id := int(req.GetTopupId())
 
+	s.logger.Debug("Deleting topup permanently",
+		zap.Int("topup_id", id))
+
 	if id == 0 {
+		s.logger.Error("Failed to delete topup permanently", zap.Int("topup_id", id))
 		return nil, topup_errors.ErrGrpcTopupInvalidID
 	}
 
 	_, err := s.topupCommand.DeleteTopupPermanent(id)
 
 	if err != nil {
+		s.logger.Error("Failed to delete topup permanently", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -702,9 +872,12 @@ func (s *topupHandleGrpc) DeleteTopupPermanent(ctx context.Context, req *pb.Find
 }
 
 func (s *topupHandleGrpc) RestoreAllTopup(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseTopupAll, error) {
+	s.logger.Debug("Restoring all topup")
+
 	_, err := s.topupCommand.RestoreAllTopup()
 
 	if err != nil {
+		s.logger.Error("Failed to restore all topup", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -714,9 +887,12 @@ func (s *topupHandleGrpc) RestoreAllTopup(ctx context.Context, _ *emptypb.Empty)
 }
 
 func (s *topupHandleGrpc) DeleteAllTopupPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseTopupAll, error) {
+	s.logger.Debug("Deleting all topup permanently")
+
 	_, err := s.topupCommand.DeleteAllTopupPermanent()
 
 	if err != nil {
+		s.logger.Error("Failed to delete all topup permanently", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 

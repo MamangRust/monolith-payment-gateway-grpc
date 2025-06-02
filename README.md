@@ -23,13 +23,18 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 - 📊 **Grafana** — Monitoring and visualization tool.
 - 🧪 **Bruno** — Lightweight, Git-friendly API client (Postman alternative).
 
+----
 
+> [!WARNING]
+> Important Notice: This Digital Payment Platform is currently under active development and is not production-ready. Some core features may be incomplete or subject to change. This project is intended for personal use and learning purposes only.
 
+---
 
 ## Architecture Digital Payment Platform
 
 <img src="./images/architecture.png" alt="hello-architecture">
 
+---
 
 ## Database Schema Overview
 
@@ -1274,6 +1279,10 @@ The WithdrawService publishes withdrawal events to Kafka to enable asynchronous 
 
 
 ### Grafana Dashboard(Prometheus & OpenTelemetry(Jaeger)) 
+
+#### Node Exporter
+
+<img src="./images//node-exporter.png" alt="hello-node-exporter-grafana-dashboard">
 
 #### Email Service
 

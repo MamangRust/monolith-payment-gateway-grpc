@@ -5,18 +5,18 @@ meta {
 }
 
 get {
-  url: http://localhost:5000/api/merchants/monthly-payment-methods-by-apikey?year=2025&api_key=ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+  url: http://localhost:5000/api/merchants/monthly-payment-methods-by-apikey?year=2025&api_key=5c84c350c0b923bd8853ddae106206f5b49811ba35841e5e943cbd8b288bcfb4
   body: none
   auth: none
 }
 
 params:query {
   year: 2025
-  api_key: ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+  api_key: 5c84c350c0b923bd8853ddae106206f5b49811ba35841e5e943cbd8b288bcfb4
 }
 
 headers {
-  Authorization: Bearer {{secret_key_sender}}
+  Authorization: Bearer {{SENDER}}
 }
 
 docs {

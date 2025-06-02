@@ -9,14 +9,14 @@ import (
 	"os/signal"
 	"time"
 
+	_ "github.com/MamangRust/monolith-payment-gateway-apigateway/docs"
+	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/handler"
+	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
-	_ "github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway/docs"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway/internal/handler"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway/internal/middlewares"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/spf13/viper"
@@ -112,15 +112,7 @@ func RunClient() {
 
 	mapping := apimapper.NewResponseApiMapper()
 
-	handle_kafka_request := middlewares.NewResponseHandler()
-
 	myKafka := kafka.NewKafka(logger, []string{os.Getenv("KAFKA_BROKERS")})
-
-	err = myKafka.StartConsumers([]string{"response-transaction"}, "api-gateway-group", handle_kafka_request)
-
-	if err != nil {
-		logger.Fatal("Failed to start kafka consumer", zap.Error(err))
-	}
 
 	depsHandler := handler.Deps{
 		Conn:               connections.Auth,

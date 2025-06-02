@@ -20,9 +20,9 @@ import (
 
 type emailHandler struct {
 	ctx             context.Context
+	trace           trace.Tracer
 	logger          logger.LoggerInterface
 	Mailer          *mailer.Mailer
-	trace           trace.Tracer
 	requestCounter  *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 }
@@ -42,7 +42,7 @@ func NewEmailHandler(ctx context.Context, logger logger.LoggerInterface, mailer 
 			Help:    "Histogram of request durations for the EmailService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
@@ -51,7 +51,7 @@ func NewEmailHandler(ctx context.Context, logger logger.LoggerInterface, mailer 
 		ctx:             ctx,
 		logger:          logger,
 		Mailer:          mailer,
-		trace:           otel.Tracer("email-service"),
+		trace:           otel.Tracer("email-handler"),
 		requestCounter:  requestCounter,
 		requestDuration: requestDuration,
 	}
@@ -112,5 +112,5 @@ func (h *emailHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sara
 
 func (s *emailHandler) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

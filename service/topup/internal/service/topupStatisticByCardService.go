@@ -5,22 +5,23 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-topup/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-topup/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type topupStatisticByCardService struct {
 	ctx                            context.Context
+	mencache                       mencache.TopupStatisticByCardCache
+	errorhandler                   errorhandler.TopupStatisticByCardErrorHandler
 	trace                          trace.Tracer
 	topupStatisticByCardRepository repository.TopupStatisticByCardRepository
 	logger                         logger.LoggerInterface
@@ -29,7 +30,8 @@ type topupStatisticByCardService struct {
 	requestDuration                *prometheus.HistogramVec
 }
 
-func NewTopupStatisticByCardService(ctx context.Context, topupStatisticByCard repository.TopupStatisticByCardRepository, logger logger.LoggerInterface, mapping responseservice.TopupResponseMapper) *topupStatisticByCardService {
+func NewTopupStatisticByCardService(ctx context.Context, mencache mencache.TopupStatisticByCardCache,
+	errorhandler errorhandler.TopupStatisticByCardErrorHandler, topupStatisticByCard repository.TopupStatisticByCardRepository, logger logger.LoggerInterface, mapping responseservice.TopupResponseMapper) *topupStatisticByCardService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "topup_statistic_by_card_service_request_total",
@@ -44,13 +46,15 @@ func NewTopupStatisticByCardService(ctx context.Context, topupStatisticByCard re
 			Help:    "Histogram of request durations for the TopupStatisticByCardService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &topupStatisticByCardService{
 		ctx:                            ctx,
+		mencache:                       mencache,
+		errorhandler:                   errorhandler,
 		trace:                          otel.Tracer("topup-statistic-by-card-service"),
 		topupStatisticByCardRepository: topupStatisticByCard,
 		logger:                         logger,
@@ -83,23 +87,21 @@ func (s *topupStatisticByCardService) FindMonthTopupStatusSuccessByCardNumber(re
 
 	s.logger.Debug("Fetching monthly topup status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 
+	if data := s.mencache.GetMonthTopupStatusSuccessByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly topup status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+		return data, nil
+	}
+
 	records, err := s.topupStatisticByCardRepository.GetMonthTopupStatusSuccessByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TOPUP_STATUS_SUCCESS_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly topup status success", zap.Error(err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly topup status success")
-		status = "failed_to_fetch_monthly_topup_status_success"
-
-		return nil, topup_errors.ErrFailedFindMonthTopupStatusSuccessByCard
+		return s.errorhandler.HandleMonthTopupStatusSuccessByCardNumber(err, "FindMonthTopupStatusSuccessByCardNumber", "FAILED_FIND_MONTHLY_METHODS_BY_CARD", span, &status, zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 	}
+	so := s.mapping.ToTopupResponsesMonthStatusSuccess(records)
+
+	s.mencache.SetMonthTopupStatusSuccessByCardNumberCache(req, so)
 
 	s.logger.Debug("Successfully fetched monthly topup status success", zap.Int("year", year), zap.Int("month", month))
-
-	so := s.mapping.ToTopupResponsesMonthStatusSuccess(records)
 
 	return so, nil
 }
@@ -125,22 +127,20 @@ func (s *topupStatisticByCardService) FindYearlyTopupStatusSuccessByCardNumber(r
 
 	s.logger.Debug("Fetching yearly topup status success", zap.Int("year", year), zap.String("card_number", card_number))
 
-	records, err := s.topupStatisticByCardRepository.GetYearlyTopupStatusSuccessByCardNumber(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TOPUP_STATUS_SUCCESS_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly topup status success", zap.Error(err), zap.Int("year", year), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly topup status success")
-		status = "failed_to_fetch_yearly_topup_status_success"
-
-		return nil, topup_errors.ErrFailedFindYearlyTopupStatusSuccessByCard
+	if data := s.mencache.GetYearlyTopupStatusSuccessByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly topup status success", zap.Int("year", year), zap.String("card_number", card_number))
+		return data, nil
 	}
 
-	s.logger.Debug("Successfully fetched yearly topup status success", zap.Int("year", year))
-
+	records, err := s.topupStatisticByCardRepository.GetYearlyTopupStatusSuccessByCardNumber(req)
+	if err != nil {
+		return s.errorhandler.HandleYearlyTopupStatusSuccessByCardNumber(err, "FindYearlyTopupStatusSuccessByCardNumber", "FAILED_FIND_YEARLY_METHODS_BY_CARD", span, &status, zap.Int("year", year), zap.String("card_number", card_number))
+	}
 	so := s.mapping.ToTopupResponsesYearStatusSuccess(records)
+
+	s.mencache.SetYearlyTopupStatusSuccessByCardNumberCache(req, so)
+
+	s.logger.Debug("Successfully fetched yearly topup status success", zap.Int("year", year))
 
 	return so, nil
 }
@@ -168,22 +168,20 @@ func (s *topupStatisticByCardService) FindMonthTopupStatusFailedByCardNumber(req
 
 	s.logger.Debug("Fetching monthly topup status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 
-	records, err := s.topupStatisticByCardRepository.GetMonthTopupStatusFailedByCardNumber(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TOPUP_STATUS_FAILED_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly topup status Failed", zap.Error(err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly topup status Failed")
-		status = "failed_to_fetch_monthly_topup_status_failed"
-
-		return nil, topup_errors.ErrFailedFindMonthTopupStatusFailedByCard
+	if data := s.mencache.GetMonthTopupStatusFailedByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly topup status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+		return data, nil
 	}
 
-	s.logger.Debug("Failedfully fetched monthly topup status Failed", zap.Int("year", year), zap.Int("month", month))
-
+	records, err := s.topupStatisticByCardRepository.GetMonthTopupStatusFailedByCardNumber(req)
+	if err != nil {
+		return s.errorhandler.HandleMonthTopupStatusFailedByCardNumber(err, "FindMonthTopupStatusFailedByCardNumber", "FAILED_FIND_MONTHLY_METHODS_BY_CARD", span, &status, zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+	}
 	so := s.mapping.ToTopupResponsesMonthStatusFailed(records)
+
+	s.mencache.SetMonthTopupStatusFailedByCardNumberCache(req, so)
+
+	s.logger.Debug("Failedfully fetched monthly topup status Failed", zap.Int("year", year), zap.Int("month", month))
 
 	return so, nil
 }
@@ -209,21 +207,21 @@ func (s *topupStatisticByCardService) FindYearlyTopupStatusFailedByCardNumber(re
 
 	s.logger.Debug("Fetching yearly topup status Failed", zap.Int("year", year), zap.String("card_number", card_number))
 
-	records, err := s.topupStatisticByCardRepository.GetYearlyTopupStatusFailedByCardNumber(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TOPUP_STATUS_FAILED_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly topup status Failed", zap.Error(err), zap.Int("year", year), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly topup status Failed")
-		status = "failed_to_fetch_yearly_topup_status_failed"
-		return nil, topup_errors.ErrFailedFindYearlyTopupStatusFailedByCard
+	if data := s.mencache.GetYearlyTopupStatusFailedByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly topup status Failed", zap.Int("year", year), zap.String("card_number", card_number))
+		return data, nil
 	}
 
-	s.logger.Debug("Failedfully fetched yearly topup status Failed", zap.Int("year", year))
+	records, err := s.topupStatisticByCardRepository.GetYearlyTopupStatusFailedByCardNumber(req)
 
+	if err != nil {
+		return s.errorhandler.HandleYearlyTopupStatusFailedByCardNumber(err, "FindYearlyTopupStatusFailedByCardNumber", "FAILED_FIND_YEARLY_AMOUNTS_BY_CARD", span, &status, zap.Int("year", year), zap.String("card_number", card_number))
+	}
 	so := s.mapping.ToTopupResponsesYearStatusFailed(records)
+
+	s.mencache.SetYearlyTopupStatusFailedByCardNumberCache(req, so)
+
+	s.logger.Debug("Failedfully fetched yearly topup status Failed", zap.Int("year", year))
 
 	return so, nil
 }
@@ -249,20 +247,19 @@ func (s *topupStatisticByCardService) FindMonthlyTopupMethodsByCardNumber(req *r
 
 	s.logger.Debug("Fetching monthly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetMonthlyTopupMethodsByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.topupStatisticByCardRepository.GetMonthlyTopupMethodsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TOPUP_METHODS_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly topup methods by card number")
-		status = "failed_to_fetch_monthly_topup_methods_by_card"
-
-		return nil, topup_errors.ErrFailedFindMonthlyTopupMethodsByCard
+		return s.errorhandler.HandleMonthlyTopupMethodsByCardNumber(err, "FindMonthlyTopupMethodsByCardNumber", "FAILED_FIND_MONTHLY_METHODS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTopupMonthlyMethodResponses(records)
+
+	s.mencache.SetMonthlyTopupMethodsByCardNumberCache(req, responses)
 
 	s.logger.Debug("Successfully fetched monthly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -290,20 +287,19 @@ func (s *topupStatisticByCardService) FindYearlyTopupMethodsByCardNumber(req *re
 
 	s.logger.Debug("Fetching yearly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetYearlyTopupMethodsByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.topupStatisticByCardRepository.GetYearlyTopupMethodsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TOPUP_METHODS_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly topup methods by card number")
-		status = "failed_to_fetch_yearly_topup_methods_by_card"
-
-		return nil, topup_errors.ErrFailedFindYearlyTopupMethodsByCard
+		return s.errorhandler.HandleYearlyTopupMethodsByCardNumber(err, "FindYearlyTopupMethodsByCardNumber", "FAILED_FIND_YEARLY_TOPUP_METHODS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTopupYearlyMethodResponses(records)
+
+	s.mencache.SetYearlyTopupMethodsByCardNumberCache(req, responses)
 
 	s.logger.Debug("Successfully fetched yearly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -330,20 +326,19 @@ func (s *topupStatisticByCardService) FindMonthlyTopupAmountsByCardNumber(req *r
 	)
 	s.logger.Debug("Fetching monthly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetMonthlyTopupAmountsByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.topupStatisticByCardRepository.GetMonthlyTopupAmountsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TOPUP_AMOUNTS_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly topup amounts by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly topup amounts by card number")
-		status = "failed_to_fetch_monthly_topup_amounts_by_card"
-
-		return nil, topup_errors.ErrFailedFindMonthlyTopupAmountsByCard
+		return s.errorhandler.HandleMonthlyTopupAmountsByCardNumber(err, "FindMonthlyTopupAmountsByCardNumber", "FAILED_FIND_MONTHLY_AMOUNTS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTopupMonthlyAmountResponses(records)
+
+	s.mencache.SetMonthlyTopupAmountsByCardNumberCache(req, responses)
 
 	s.logger.Debug("Successfully fetched monthly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -371,20 +366,19 @@ func (s *topupStatisticByCardService) FindYearlyTopupAmountsByCardNumber(req *re
 
 	s.logger.Debug("Fetching yearly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetYearlyTopupAmountsByCardNumberCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.topupStatisticByCardRepository.GetYearlyTopupAmountsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TOPUP_AMOUNTS_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly topup amounts by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly topup amounts by card number")
-		status = "failed_to_fetch_yearly_topup_amounts_by_card"
-
-		return nil, topup_errors.ErrFailedFindYearlyTopupAmountsByCard
+		return s.errorhandler.HandleYearlyTopupAmountsByCardNumber(err, "FindYearlyTopupAmountsByCardNumber", "FAILED_FIND_YEARLY_TOPUP_AMOUNTS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTopupYearlyAmountResponses(records)
+
+	s.mencache.SetYearlyTopupAmountsByCardNumberCache(req, responses)
 
 	s.logger.Debug("Successfully fetched yearly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -393,5 +387,5 @@ func (s *topupStatisticByCardService) FindYearlyTopupAmountsByCardNumber(req *re
 
 func (s *topupStatisticByCardService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

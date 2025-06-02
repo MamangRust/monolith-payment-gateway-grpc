@@ -5,22 +5,24 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type transactionQueryService struct {
 	ctx                        context.Context
+	mencache                   mencache.TransactinQueryCache
+	errorhandler               errorhandler.TransactionQueryErrorHandler
 	trace                      trace.Tracer
 	transactionQueryRepository repository.TransactionQueryRepository
 	logger                     logger.LoggerInterface
@@ -29,7 +31,8 @@ type transactionQueryService struct {
 	requestDuration            *prometheus.HistogramVec
 }
 
-func NewTransactionQueryService(ctx context.Context, transactionQueryRepository repository.TransactionQueryRepository, logger logger.LoggerInterface, mapping responseservice.TransactionResponseMapper) *transactionQueryService {
+func NewTransactionQueryService(ctx context.Context, mencache mencache.TransactinQueryCache,
+	errorhandler errorhandler.TransactionQueryErrorHandler, transactionQueryRepository repository.TransactionQueryRepository, logger logger.LoggerInterface, mapping responseservice.TransactionResponseMapper) *transactionQueryService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "transaction_query_service_request_total",
@@ -44,13 +47,15 @@ func NewTransactionQueryService(ctx context.Context, transactionQueryRepository 
 			Help:    "Histogram of request durations for the TransactionQueryService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &transactionQueryService{
 		ctx:                        ctx,
+		mencache:                   mencache,
+		errorhandler:               errorhandler,
 		trace:                      otel.Tracer("transaction-query-service"),
 		transactionQueryRepository: transactionQueryRepository,
 		logger:                     logger,
@@ -71,8 +76,7 @@ func (s *transactionQueryService) FindAll(req *requests.FindAllTransactions) ([]
 	_, span := s.trace.Start(s.ctx, "FindAll")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -86,45 +90,27 @@ func (s *transactionQueryService) FindAll(req *requests.FindAllTransactions) ([]
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedTransactionsCache(req); found {
+		s.logger.Debug("Successfully fetched transaction from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	transactions, totalRecords, err := s.transactionQueryRepository.FindAllTransactions(req)
-
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_TRANSACTION")
-
-		s.logger.Error("Failed to fetch transaction",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch transaction")
-
-		status = "failed_find_all_transaction"
-
-		return nil, nil, transaction_errors.ErrFailedFindAllTransactions
+		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_ALL", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToTransactionsResponse(transactions)
+	responseData := s.mapping.ToTransactionsResponse(transactions)
 
-	s.logger.Debug("Successfully fetched transaction",
+	s.mencache.SetCachedTransactionsCache(req, responseData, totalRecords)
+
+	s.logger.Debug("Successfully fetched transaction from database",
 		zap.Int("totalRecords", *totalRecords),
 		zap.Int("page", page),
 		zap.Int("pageSize", pageSize))
 
-	return so, totalRecords, nil
+	return responseData, totalRecords, nil
 }
 
 func (s *transactionQueryService) FindAllByCardNumber(req *requests.FindAllTransactionCardNumber) ([]*response.TransactionResponse, *int, *response.ErrorResponse) {
@@ -161,30 +147,21 @@ func (s *transactionQueryService) FindAllByCardNumber(req *requests.FindAllTrans
 		pageSize = 10
 	}
 
+	if data, total, found := s.mencache.GetCachedTransactionByCardNumberCache(req); found {
+		s.logger.Debug("Successfully fetched transaction from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
+	}
+
 	transactions, totalRecords, err := s.transactionQueryRepository.FindAllTransactionByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_TRANSACTION_BY_CARD_NUMBER")
-
-		s.logger.Error("Failed to fetch transaction",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch transaction")
-
-		status = "failed_find_all_transaction_by_card_number"
-
-		return nil, nil, transaction_errors.ErrFailedFindAllByCardNumber
+		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAllByCardNumber", "FAILED_FIND_ALL_BYCARD", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransactionsResponse(transactions)
+
+	s.mencache.SetCachedTransactionByCardNumberCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched transaction",
 		zap.Int("totalRecords", *totalRecords),
@@ -211,21 +188,20 @@ func (s *transactionQueryService) FindById(transactionID int) (*response.Transac
 
 	s.logger.Debug("Fetching transaction by ID", zap.Int("transaction_id", transactionID))
 
+	if data := s.mencache.GetCachedTransactionCache(transactionID); data != nil {
+		s.logger.Debug("Successfully fetched transaction from cache")
+		return data, nil
+	}
+
 	transaction, err := s.transactionQueryRepository.FindById(transactionID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRANSACTION_BY_ID")
-
-		s.logger.Error("failed to fetch transaction by ID", zap.String("trace.id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch transaction by ID")
-		status = "failed_find_transaction_by_id"
-
-		return nil, transaction_errors.ErrTransactionNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_TRANSACTION", span, &status, transaction_errors.ErrTransactionNotFound, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransactionResponse(transaction)
+
+	s.mencache.SetCachedTransactionCache(so)
 
 	s.logger.Debug("Successfully fetched transaction", zap.Int("transaction_id", transactionID))
 
@@ -243,8 +219,7 @@ func (s *transactionQueryService) FindByActive(req *requests.FindAllTransactions
 	_, span := s.trace.Start(s.ctx, "FindByActive")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -266,29 +241,21 @@ func (s *transactionQueryService) FindByActive(req *requests.FindAllTransactions
 		pageSize = 10
 	}
 
+	if data, total, found := s.mencache.GetCachedTransactionActiveCache(req); found {
+		s.logger.Debug("Successfully fetched active transaction from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
+	}
+
 	transactions, totalRecords, err := s.transactionQueryRepository.FindByActive(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_BY_ACTIVE_TRANSACTION")
-
-		s.logger.Error("Failed to fetch active transaction",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch active transaction")
-		status = "failed_find_by_active_transaction"
-
-		return nil, nil, transaction_errors.ErrFailedFindByActiveTransactions
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_BY_ACTIVE", span, &status, transaction_errors.ErrFailedFindByActiveTransactions, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransactionsResponseDeleteAt(transactions)
+
+	s.mencache.SetCachedTransactionActiveCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched active transaction",
 		zap.Int("totalRecords", *totalRecords),
@@ -309,8 +276,7 @@ func (s *transactionQueryService) FindByTrashed(req *requests.FindAllTransaction
 	_, span := s.trace.Start(s.ctx, "FindByTrashed")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -332,29 +298,21 @@ func (s *transactionQueryService) FindByTrashed(req *requests.FindAllTransaction
 		pageSize = 10
 	}
 
+	if data, total, found := s.mencache.GetCachedTransactionTrashedCache(req); found {
+		s.logger.Debug("Successfully fetched trashed transaction from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
+	}
+
 	transactions, totalRecords, err := s.transactionQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_BY_TRASHED_TRANSACTION")
-
-		s.logger.Error("Failed to fetch trashed transaction",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch trashed transaction")
-		status = "failed_find_by_trashed_transaction"
-
-		return nil, nil, transaction_errors.ErrFailedFindByTrashedTransactions
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_BY_TRASHED", span, &status, transaction_errors.ErrFailedFindByTrashedTransactions, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransactionsResponseDeleteAt(transactions)
+
+	s.mencache.SetCachedTransactionTrashedCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched trashed transaction",
 		zap.Int("totalRecords", *totalRecords),
@@ -364,10 +322,9 @@ func (s *transactionQueryService) FindByTrashed(req *requests.FindAllTransaction
 	return so, totalRecords, nil
 }
 
-func (s *transactionQueryService) FindTransactionByMerchantId(merchant_id int) ([]*response.TransactionResponse, *response.ErrorResponse) {
+func (s *transactionQueryService) FindTransactionByMerchantId(merchantID int) ([]*response.TransactionResponse, *response.ErrorResponse) {
 	start := time.Now()
 	status := "success"
-
 	defer func() {
 		s.recordMetrics("FindTransactionByMerchantId", status, start)
 	}()
@@ -375,36 +332,38 @@ func (s *transactionQueryService) FindTransactionByMerchantId(merchant_id int) (
 	_, span := s.trace.Start(s.ctx, "FindTransactionByMerchantId")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Int("merchant_id", merchant_id),
-	)
+	span.SetAttributes(attribute.Int("merchant_id", merchantID))
+	s.logger.Debug("Starting FindTransactionByMerchantId process", zap.Int("merchant_id", merchantID))
 
-	s.logger.Debug("Starting FindTransactionByMerchantId process",
-		zap.Int("merchantID", merchant_id),
-	)
-
-	res, err := s.transactionQueryRepository.FindTransactionByMerchantId(merchant_id)
-
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRANSACTION_BY_MERCHANT_ID")
-
-		s.logger.Error("Failed to find transaction by merchant ID", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find transaction by merchant ID")
-		status = "failed_find_transaction_by_merchant_id"
-
-		return nil, transaction_errors.ErrFailedFindByMerchantID
+	if data := s.mencache.GetCachedTransactionByMerchantIdCache(merchantID); data != nil {
+		s.logger.Debug("Successfully fetched transaction from cache", zap.Int("merchant_id", merchantID))
+		return data, nil
 	}
 
-	so := s.mapping.ToTransactionsResponse(res)
+	res, err := s.transactionQueryRepository.FindTransactionByMerchantId(merchantID)
+	if err != nil {
+		return s.errorhandler.HanldeRepositoryListError(err, "FindTransactionByMerchantId", "FAILED_FIND_TRANSACTION_BY_MERCHANT_ID", span, &status, transaction_errors.ErrFailedFindByMerchantID, zap.Error(err))
+	}
 
-	s.logger.Debug("Successfully fetched transaction by merchant ID", zap.Int("merchant_id", merchant_id))
+	responseData := s.mapping.ToTransactionsResponse(res)
 
-	return so, nil
+	s.mencache.SetCachedTransactionByMerchantIdCache(merchantID, responseData)
+
+	s.logger.Debug("Successfully fetched transaction by merchant ID", zap.Int("merchant_id", merchantID))
+	return responseData, nil
 }
 
 func (s *transactionQueryService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+}
+
+func (s *transactionQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
 }

@@ -4,22 +4,23 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type cardDashboardService struct {
 	ctx                     context.Context
+	errorhandler            errorhandler.CardDashboardErrorHandler
+	mencache                mencache.CardDashboardCache
 	trace                   trace.Tracer
 	cardDashboardRepository repository.CardDashboardRepository
 	logger                  logger.LoggerInterface
@@ -30,24 +31,28 @@ type cardDashboardService struct {
 
 func NewCardDashboardService(
 	ctx context.Context,
+	errorhandler errorhandler.CardDashboardErrorHandler,
+	mencache mencache.CardDashboardCache,
 	cardDashboardRepository repository.CardDashboardRepository,
 	logger logger.LoggerInterface,
 	mapper responseservice.CardResponseMapper) *cardDashboardService {
 	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "card_dashboard_request_count",
 		Help: "Number of card dashboard requests CardDashboardService",
-	}, []string{"status"})
+	}, []string{"method", "status"})
 
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "card_dashboard_request_duration_seconds",
 		Help:    "Duration of card dashboard requests CardDashboardService",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"status"})
+	}, []string{"method", "status"})
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cardDashboardService{
 		ctx:                     ctx,
+		errorhandler:            errorhandler,
+		mencache:                mencache,
 		trace:                   otel.Tracer("card-dashboard-service"),
 		cardDashboardRepository: cardDashboardRepository,
 		logger:                  logger,
@@ -65,79 +70,50 @@ func (s *cardDashboardService) DashboardCard() (*response.DashboardCard, *respon
 		s.recordMetrics("DashboardCard", status, startTime)
 	}()
 
+	if data, found := s.mencache.GetDashboardCardCache(); found {
+		s.logger.Debug("DashboardCard cache hit")
+		return data, nil
+	}
+	s.logger.Debug("DashboardCard cache miss")
+
 	_, span := s.trace.Start(s.ctx, "DashboardCard")
 
 	s.logger.Debug("Starting DashboardCard service")
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalances()
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_BALANCE_NOT_FOUND")
-
-		s.logger.Error("Failed to get total balance", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total balance not found")
-		status = "total_balance_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalBalances
+		return s.errorhandler.HandleTotalBalanceError(err, "DashboardCard", "FAILED_FIND_TOTAL_BALANCE", span, &status, zap.Error(err))
 	}
 
 	totalTopup, err := s.cardDashboardRepository.GetTotalTopAmount()
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TOP_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total top amount", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total top amount not found")
-		status = "total_top_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTopAmount
+		return s.errorhandler.HandleTotalTopupAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TOPUP", span, &status, zap.Error(err))
 	}
 
 	totalWithdraw, err := s.cardDashboardRepository.GetTotalWithdrawAmount()
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_WITHDRAW_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total withdraw amount", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total withdraw amount not found")
-		status = "total_withdraw_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalWithdrawAmount
+		return s.errorhandler.HandleTotalWithdrawAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_WITHDRAW", span, &status, zap.Error(err))
 	}
 
 	totalTransaction, err := s.cardDashboardRepository.GetTotalTransactionAmount()
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TRANSACTION_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total transaction amount", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total transaction amount not found")
-		status = "total_transaction_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTransactionAmount
+		return s.errorhandler.HandleTotalTransactionAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TRANSACTION", span, &status, zap.Error(err))
 	}
 
 	totalTransfer, err := s.cardDashboardRepository.GetTotalTransferAmount()
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TRANSFER_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total transfer amount", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total transfer amount not found")
-		status = "total_transfer_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTransferAmount
+		return s.errorhandler.HandleTotalTransferAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TRANSFER", span, &status, zap.Error(err))
 	}
+
+	result := &response.DashboardCard{
+		TotalBalance:     totalBalance,
+		TotalTopup:       totalTopup,
+		TotalWithdraw:    totalWithdraw,
+		TotalTransaction: totalTransaction,
+		TotalTransfer:    totalTransfer,
+	}
+
+	s.mencache.SetDashboardCardCache(result)
 
 	s.logger.Debug("Completed DashboardCard service",
 		zap.Int("total_balance", int(*totalBalance)),
@@ -147,13 +123,7 @@ func (s *cardDashboardService) DashboardCard() (*response.DashboardCard, *respon
 		zap.Int("total_transfer", int(*totalTransfer)),
 	)
 
-	return &response.DashboardCard{
-		TotalBalance:     totalBalance,
-		TotalTopup:       totalTopup,
-		TotalWithdraw:    totalWithdraw,
-		TotalTransaction: totalTransaction,
-		TotalTransfer:    totalTransfer,
-	}, nil
+	return result, nil
 }
 
 func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
@@ -164,6 +134,12 @@ func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*resp
 		s.recordMetrics("DashboardCardCardNumber", status, startTime)
 	}()
 
+	if data, found := s.mencache.GetDashboardCardCardNumberCache(cardNumber); found {
+		s.logger.Debug("DashboardCardCardNumber cache hit", zap.String("card_number", cardNumber))
+		return data, nil
+	}
+	s.logger.Debug("DashboardCardCardNumber cache miss", zap.String("card_number", cardNumber))
+
 	_, span := s.trace.Start(s.ctx, "DashboardCardCardNumber")
 	span.SetAttributes(attribute.String("card_number", cardNumber))
 
@@ -173,87 +149,44 @@ func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*resp
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalanceByCardNumber(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_BALANCE_NOT_FOUND")
-
-		s.logger.Error("Failed to get total balance", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total balance not found")
-		status = "total_balance_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalBalanceByCard
+		return s.errorhandler.HandleTotalBalanceCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_BALANCE_BY_CARD", span, &status, zap.Error(err))
 	}
 
 	totalTopup, err := s.cardDashboardRepository.GetTotalTopupAmountByCardNumber(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TOP_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total top amount", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total top amount not found")
-		status = "total_top_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTopupAmountByCard
+		return s.errorhandler.HandleTotalTopupAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TOPUP_BY_CARD", span, &status, zap.Error(err))
 	}
 
 	totalWithdraw, err := s.cardDashboardRepository.GetTotalWithdrawAmountByCardNumber(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_WITHDRAW_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total withdraw amount", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total withdraw amount not found")
-		status = "total_withdraw_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalWithdrawAmountByCard
+		return s.errorhandler.HandleTotalWithdrawAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_WITHDRAW_BY_CARD", span, &status, zap.Error(err))
 	}
 
 	totalTransaction, err := s.cardDashboardRepository.GetTotalTransactionAmountByCardNumber(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TRANSACTION_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total transaction amount", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total transaction amount not found")
-		status = "total_transaction_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTransactionAmountByCard
+		return s.errorhandler.HandleTotalTransactionAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSACTION_BY_CARD", span, &status, zap.Error(err))
 	}
 
 	totalTransferSent, err := s.cardDashboardRepository.GetTotalTransferAmountBySender(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TRANSFER_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total transfer amount sent by card",
-			zap.String("card_number", cardNumber),
-			zap.Error(err),
-		)
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total transfer amount not found")
-		status = "total_transfer_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTransferAmountBySender
+		return s.errorhandler.HandleTotalTransferAmountBySender(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSFER_BY_CARD", span, &status, zap.Error(err))
 	}
 
 	totalTransferReceived, err := s.cardDashboardRepository.GetTotalTransferAmountByReceiver(cardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("TOTAL_TRANSFER_AMOUNT_NOT_FOUND")
-
-		s.logger.Error("Failed to get total transfer amount received by card",
-			zap.String("card_number", cardNumber),
-			zap.Error(err),
-		)
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Total transfer amount not found")
-		status = "total_transfer_amount_not_found"
-
-		return nil, card_errors.ErrFailedFindTotalTransferAmountByReceiver
+		return s.errorhandler.HandleTotalTransferAmountByReceiver(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSFER_BY_CARD", span, &status, zap.Error(err))
 	}
+
+	result := &response.DashboardCardCardNumber{
+		TotalBalance:          totalBalance,
+		TotalTopup:            totalTopup,
+		TotalWithdraw:         totalWithdraw,
+		TotalTransaction:      totalTransaction,
+		TotalTransferSend:     totalTransferSent,
+		TotalTransferReceiver: totalTransferReceived,
+	}
+
+	s.mencache.SetDashboardCardCardNumberCache(cardNumber, result)
 
 	s.logger.Debug("Completed DashboardCardCardNumber service",
 		zap.String("card_number", cardNumber),
@@ -265,17 +198,10 @@ func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*resp
 		zap.Int("total_transfer_received", int(*totalTransferReceived)),
 	)
 
-	return &response.DashboardCardCardNumber{
-		TotalBalance:          totalBalance,
-		TotalTopup:            totalTopup,
-		TotalWithdraw:         totalWithdraw,
-		TotalTransaction:      totalTransaction,
-		TotalTransferSend:     totalTransferSent,
-		TotalTransferReceiver: totalTransferReceived,
-	}, nil
+	return result, nil
 }
 
 func (s *cardDashboardService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

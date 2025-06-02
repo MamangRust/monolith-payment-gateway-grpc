@@ -6,25 +6,26 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type cardCommandService struct {
 	ctx                   context.Context
+	errorhandler          errorhandler.CardCommandErrorHandler
+	mencache              mencache.CardCommandCache
 	trace                 trace.Tracer
 	kafka                 kafka.Kafka
 	userRepository        repository.UserRepository
@@ -35,7 +36,7 @@ type cardCommandService struct {
 	requestDuration       *prometheus.HistogramVec
 }
 
-func NewCardCommandService(ctx context.Context, kafka kafka.Kafka, userRepository repository.UserRepository, cardCommentRepository repository.CardCommandRepository, logger logger.LoggerInterface, mapper responseservice.CardResponseMapper) *cardCommandService {
+func NewCardCommandService(ctx context.Context, errorHandler errorhandler.CardCommandErrorHandler, mencache mencache.CardCommandCache, kafka kafka.Kafka, userRepository repository.UserRepository, cardCommentRepository repository.CardCommandRepository, logger logger.LoggerInterface, mapper responseservice.CardResponseMapper) *cardCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "card_command_service_requests_total",
@@ -50,13 +51,15 @@ func NewCardCommandService(ctx context.Context, kafka kafka.Kafka, userRepositor
 			Help:    "Histogram of request durations for the CardCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cardCommandService{
 		ctx:                   ctx,
+		errorhandler:          errorHandler,
+		mencache:              mencache,
 		trace:                 otel.Tracer("card-command-service"),
 		kafka:                 kafka,
 		userRepository:        userRepository,
@@ -88,28 +91,13 @@ func (s *cardCommandService) CreateCard(request *requests.CreateCardRequest) (*r
 	_, err := s.userRepository.FindById(request.UserID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("EMAIL_NOT_FOUND")
-
-		s.logger.Error("Failed to get user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-
-		return nil, user_errors.ErrUserNotFoundRes
+		return s.errorhandler.HandleFindByIdUserError(err, "CreateCard", "FAILED_USER_NOT_FOUND", span, &status, zap.Error(err))
 	}
 
 	res, err := s.cardCommentRepository.CreateCard(request)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_CREATE_CARD")
-
-		s.logger.Error("Failed to create card", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create card")
-		status = "failed_create_card"
-		return nil, card_errors.ErrFailedCreateCard
+		return s.errorhandler.HandleCreateCardError(err, "CreateCard", "FAILED_CREATE_CARD", span, &status, zap.Error(err))
 	}
 
 	saldoPayload := map[string]any{
@@ -120,29 +108,13 @@ func (s *cardCommandService) CreateCard(request *requests.CreateCardRequest) (*r
 	payloadBytes, err := json.Marshal(saldoPayload)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_JSON_MARSHAL")
-
-		s.logger.Error("Failed to marshal saldo payload", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to marshal saldo payload")
-		status = "failed_json_marshal"
-
-		return nil, card_errors.ErrFailedCreateCard
+		return errorhandler.HandleMarshalError[*response.CardResponse](s.logger, err, "CreateCard", "FAILED_CREATE_CARD", span, &status, card_errors.ErrFailedCreateCard, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("saldo-service-topic-create-saldo", strconv.Itoa(res.ID), payloadBytes)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_MESSAGE_SALDO_CREATE")
-
-		s.logger.Error("Failed to send message to saldo service", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send message to saldo service")
-		status = "failed_message_saldo_create"
-
-		return nil, card_errors.ErrFailedCreateCard
+		return errorhandler.HandleSendEmailError[*response.CardResponse](s.logger, err, "CreateCard", "FAILED_CREATE_CARD", span, &status, card_errors.ErrFailedCreateCard, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
@@ -172,32 +144,18 @@ func (s *cardCommandService) UpdateCard(request *requests.UpdateCardRequest) (*r
 	_, err := s.userRepository.FindById(request.UserID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("EMAIL_NOT_FOUND")
-
-		s.logger.Error("Failed to get user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-
-		return nil, user_errors.ErrUserNotFoundRes
+		return s.errorhandler.HandleFindByIdUserError(err, "UpdateCard", "FAILED_USER_NOT_FOUND", span, &status, zap.Error(err))
 	}
 
 	res, err := s.cardCommentRepository.UpdateCard(request)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_CARD")
-
-		s.logger.Error("Failed to update card", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update card")
-		status = "failed_update_card"
-
-		return nil, card_errors.ErrFailedUpdateCard
+		return s.errorhandler.HandleUpdateCardError(err, "UpdateCard", "FAILED_UPDATE_CARD", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
+
+	s.mencache.DeleteCardCommandCache(request.CardID)
 
 	s.logger.Debug("Successfully updated card", zap.Int("cardID", so.ID))
 
@@ -224,17 +182,12 @@ func (s *cardCommandService) TrashedCard(card_id int) (*response.CardResponse, *
 	res, err := s.cardCommentRepository.TrashedCard(card_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASH_CARD")
-
-		s.logger.Error("Failed to trash card", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trash card")
-		status = "failed_trash_card"
-		return nil, card_errors.ErrFailedTrashCard
+		return s.errorhandler.HandleTrashedCardError(err, "TrashedCard", "FAILED_TO_TRASH_CARD", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
+
+	s.mencache.DeleteCardCommandCache(card_id)
 
 	s.logger.Debug("Successfully trashed card", zap.Int("card_id", so.ID))
 
@@ -261,15 +214,7 @@ func (s *cardCommandService) RestoreCard(card_id int) (*response.CardResponse, *
 	res, err := s.cardCommentRepository.RestoreCard(card_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_CARD")
-
-		s.logger.Error("Failed to restore card", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore card")
-		status = "failed_restore_card"
-
-		return nil, card_errors.ErrFailedRestoreCard
+		return s.errorhandler.HandleRestoreCardError(err, "RestoreCard", "FAILED_TO_RESTORE_CARD", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
@@ -299,15 +244,7 @@ func (s *cardCommandService) DeleteCardPermanent(card_id int) (bool, *response.E
 	_, err := s.cardCommentRepository.DeleteCardPermanent(card_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_CARD")
-
-		s.logger.Error("Failed to permanently delete card", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete card")
-		status = "failed_delete_card"
-
-		return false, card_errors.ErrFailedDeleteCard
+		return s.errorhandler.HandleDeleteCardPermanentError(err, "DeleteCardPermanent", "FAILED_TO_DELETE_CARD_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted card permanently", zap.Int("card_id", card_id))
@@ -331,15 +268,7 @@ func (s *cardCommandService) RestoreAllCard() (bool, *response.ErrorResponse) {
 	_, err := s.cardCommentRepository.RestoreAllCard()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_CARDS")
-
-		s.logger.Error("Failed to restore all cards", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all cards")
-		status = "failed_restore_all_cards"
-
-		return false, card_errors.ErrFailedRestoreAllCards
+		return s.errorhandler.HandleRestoreAllCardError(err, "RestoreAllCard", "FAILED_TO_RESTORE_ALL_CARDS", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully restored all cards")
@@ -362,14 +291,7 @@ func (s *cardCommandService) DeleteAllCardPermanent() (bool, *response.ErrorResp
 	_, err := s.cardCommentRepository.DeleteAllCardPermanent()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_CARDS")
-
-		s.logger.Error("Failed to permanently delete all cards", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete all cards")
-		status = "failed_delete_all_cards"
-		return false, card_errors.ErrFailedDeleteAllCards
+		return s.errorhandler.HandleDeleteAllCardPermanentError(err, "DeleteAllCardPermanent", "FAILED_TO_DELETE_ALL_CARDS_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted all cards permanently")
@@ -379,5 +301,5 @@ func (s *cardCommandService) DeleteAllCardPermanent() (bool, *response.ErrorResp
 
 func (s *cardCommandService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

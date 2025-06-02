@@ -11,15 +11,15 @@ post {
 }
 
 headers {
-  Authorization: Bearer {{secret_key_sender}}
+  Authorization: Bearer {{SENDER}}
   Content-Type: application/json
 }
 
 body:json {
   {
-      "card_number": "1234567890",
+      "card_number": "4506169645833752",
       "topup_amount": 100000,
-      "topup_method": "bank_transfer"
+      "topup_method": "indomart"
     }
 }
 

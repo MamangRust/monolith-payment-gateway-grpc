@@ -5,23 +5,23 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-saldo/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type saldoCommandService struct {
 	ctx                    context.Context
+	errorhandler           errorhandler.SaldoCommandErrorHandler
+	mencache               mencache.SaldoCommandCache
 	trace                  trace.Tracer
 	cardRepository         repository.CardRepository
 	logger                 logger.LoggerInterface
@@ -31,7 +31,8 @@ type saldoCommandService struct {
 	requestDuration        *prometheus.HistogramVec
 }
 
-func NewSaldoCommandService(ctx context.Context, saldo repository.SaldoCommandRepository, card repository.CardRepository, logger logger.LoggerInterface, mapping responseservice.SaldoResponseMapper) *saldoCommandService {
+func NewSaldoCommandService(ctx context.Context, errorhandler errorhandler.SaldoCommandErrorHandler,
+	mencache mencache.SaldoCommandCache, saldo repository.SaldoCommandRepository, card repository.CardRepository, logger logger.LoggerInterface, mapping responseservice.SaldoResponseMapper) *saldoCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "saldo_command_service_request_total",
@@ -46,13 +47,15 @@ func NewSaldoCommandService(ctx context.Context, saldo repository.SaldoCommandRe
 			Help:    "Histogram of request durations for the SaldoCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &saldoCommandService{
 		ctx:                    ctx,
+		errorhandler:           errorhandler,
+		mencache:               mencache,
 		trace:                  otel.Tracer("saldo-command-service"),
 		saldoCommandRepository: saldo,
 		cardRepository:         card,
@@ -83,26 +86,13 @@ func (s *saldoCommandService) CreateSaldo(request *requests.CreateSaldoRequest) 
 	_, err := s.cardRepository.FindCardByCardNumber(request.CardNumber)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_CARD_BY_CARD_NUMBER")
-
-		s.logger.Error("Card not found for card number",
-			zap.String("card_number", request.CardNumber),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Card not found for card number")
-		status = "card_not_found_for_card_number"
-
-		return nil, card_errors.ErrCardNotFoundRes
+		return s.errorhandler.HandleFindCardByNumberError(err, "CreateSaldo", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.String("card_number", request.CardNumber))
 	}
 
 	res, err := s.saldoCommandRepository.CreateSaldo(request)
 
 	if err != nil {
-		s.logger.Error("Failed to create saldo record",
-			zap.Error(err))
-
-		return nil, saldo_errors.ErrFailedCreateSaldo
+		return s.errorhandler.HandleCreateSaldoError(err, "CreateSaldo", "FAILED_CREATE_SALDO", span, &status, zap.String("card_number", request.CardNumber))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
@@ -132,27 +122,18 @@ func (s *saldoCommandService) UpdateSaldo(request *requests.UpdateSaldoRequest) 
 	_, err := s.cardRepository.FindCardByCardNumber(request.CardNumber)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_CARD_BY_CARD_NUMBER")
-
-		s.logger.Error("Card not found for card number",
-			zap.String("card_number", request.CardNumber),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Card not found for card number")
-		status = "card_not_found_for_card_number"
-
-		return nil, card_errors.ErrCardNotFoundRes
+		return s.errorhandler.HandleFindCardByNumberError(err, "UpdateSaldo", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.String("card_number", request.CardNumber))
 	}
 
 	res, err := s.saldoCommandRepository.UpdateSaldo(request)
 
 	if err != nil {
-		s.logger.Error("Failed to update saldo", zap.Error(err), zap.String("card_number", request.CardNumber))
-		return nil, saldo_errors.ErrFailedUpdateSaldo
+		return s.errorhandler.HandleUpdateSaldoError(err, "UpdateSaldo", "FAILED_UPDATE_SALDO", span, &status, zap.String("card_number", request.CardNumber))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
+
+	s.mencache.DeleteSaldoCache(res.ID)
 
 	s.logger.Debug("Successfully updated saldo", zap.String("card_number", request.CardNumber), zap.Int("saldo_id", res.ID))
 
@@ -179,19 +160,11 @@ func (s *saldoCommandService) TrashSaldo(saldo_id int) (*response.SaldoResponse,
 	res, err := s.saldoCommandRepository.TrashedSaldo(saldo_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASH_SALDO")
-
-		s.logger.Error("Failed to trash saldo",
-			zap.Int("saldo_id", saldo_id),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trash saldo")
-		status = "failed_to_trash_saldo"
-
-		return nil, saldo_errors.ErrFailedTrashSaldo
+		return s.errorhandler.HandleTrashSaldoError(err, "TrashSaldo", "FAILED_TRASH_SALDO", span, &status, zap.Int("saldo_id", saldo_id))
 	}
 	so := s.mapping.ToSaldoResponse(res)
+
+	s.mencache.DeleteSaldoCache(saldo_id)
 
 	s.logger.Debug("Successfully trashed saldo", zap.Int("saldo_id", saldo_id))
 
@@ -218,17 +191,7 @@ func (s *saldoCommandService) RestoreSaldo(saldo_id int) (*response.SaldoRespons
 	res, err := s.saldoCommandRepository.RestoreSaldo(saldo_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_SALDO")
-
-		s.logger.Error("Failed to restore saldo",
-			zap.Int("saldo_id", saldo_id),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore saldo")
-		status = "failed_to_restore_saldo"
-
-		return nil, saldo_errors.ErrFailedRestoreSaldo
+		return s.errorhandler.HandleRestoreSaldoError(err, "RestoreSaldo", "FAILED_RESTORE_SALDO", span, &status, zap.Int("saldo_id", saldo_id))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
@@ -258,17 +221,7 @@ func (s *saldoCommandService) DeleteSaldoPermanent(saldo_id int) (bool, *respons
 	_, err := s.saldoCommandRepository.DeleteSaldoPermanent(saldo_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_SALDO_PERMANENT")
-
-		s.logger.Error("Failed to permanently delete saldo",
-			zap.Int("saldo_id", saldo_id),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete saldo")
-		status = "failed_to_permanently_delete_saldo"
-
-		return false, saldo_errors.ErrFailedDeleteSaldoPermanent
+		return s.errorhandler.HandleDeleteSaldoPermanentError(err, "DeleteSaldoPermanent", "FAILED_DELETE_SALDO_PERMANENT", span, &status, zap.Int("saldo_id", saldo_id))
 	}
 
 	s.logger.Debug("Successfully deleted saldo permanently", zap.Int("saldo_id", saldo_id))
@@ -290,15 +243,7 @@ func (s *saldoCommandService) RestoreAllSaldo() (bool, *response.ErrorResponse) 
 	_, err := s.saldoCommandRepository.RestoreAllSaldo()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_SALDO")
-
-		s.logger.Error("Failed to restore all saldo", zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all saldo")
-		status = "failed_to_restore_all_saldo"
-
-		return false, saldo_errors.ErrFailedRestoreAllSaldo
+		return s.errorhandler.HandleRestoreAllSaldoError(err, "RestoreAllSaldo", "FAILED_RESTORE_ALL_SALDO", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully restored all saldo")
@@ -321,15 +266,7 @@ func (s *saldoCommandService) DeleteAllSaldoPermanent() (bool, *response.ErrorRe
 	_, err := s.saldoCommandRepository.DeleteAllSaldoPermanent()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_SALDO_PERMANENT")
-
-		s.logger.Error("Failed to permanently delete all saldo", zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete all saldo")
-		status = "failed_to_permanently_delete_all_saldo"
-
-		return false, saldo_errors.ErrFailedDeleteAllSaldoPermanent
+		return s.errorhandler.HandleDeleteAllSaldoPermanentError(err, "DeleteAllSaldoPermanent", "FAILED_DELETE_ALL_SALDO_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted all saldo permanently")
@@ -338,5 +275,5 @@ func (s *saldoCommandService) DeleteAllSaldoPermanent() (bool, *response.ErrorRe
 
 func (s *saldoCommandService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

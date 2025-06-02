@@ -7,38 +7,44 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/email"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type merchantCommandService struct {
-	kafka                     kafka.Kafka
 	ctx                       context.Context
+	redis                     *redis.Client
+	kafka                     kafka.Kafka
 	trace                     trace.Tracer
+	errorHandler              errorhandler.MerchantCommandErrorHandler
 	userRepository            repository.UserRepository
 	merchantQueryRepository   repository.MerchantQueryRepository
 	merchantCommandRepository repository.MerchantCommandRepository
 	logger                    logger.LoggerInterface
 	mapping                   responseservice.MerchantResponseMapper
+	mencache                  mencache.MerchantCommandCache
 	requestCounter            *prometheus.CounterVec
 	requestDuration           *prometheus.HistogramVec
 }
 
 func NewMerchantCommandService(kafka kafka.Kafka, ctx context.Context,
+	errorHandler errorhandler.MerchantCommandErrorHandler,
+	mencache mencache.MerchantCommandCache,
 	userRepository repository.UserRepository,
 	merchantQueryRepository repository.MerchantQueryRepository,
 	merchantCommandRepository repository.MerchantCommandRepository, logger logger.LoggerInterface, mapping responseservice.MerchantResponseMapper) *merchantCommandService {
@@ -56,7 +62,7 @@ func NewMerchantCommandService(kafka kafka.Kafka, ctx context.Context,
 			Help:    "Histogram of request durations for the MerchantCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
@@ -64,6 +70,8 @@ func NewMerchantCommandService(kafka kafka.Kafka, ctx context.Context,
 	return &merchantCommandService{
 		kafka:                     kafka,
 		ctx:                       ctx,
+		errorHandler:              errorHandler,
+		mencache:                  mencache,
 		trace:                     otel.Tracer("merchant-command-service"),
 		merchantCommandRepository: merchantCommandRepository,
 		userRepository:            userRepository,
@@ -95,29 +103,13 @@ func (s *merchantCommandService) CreateMerchant(request *requests.CreateMerchant
 	user, err := s.userRepository.FindById(request.UserID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_USER")
-
-		s.logger.Error("Failed to find user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find user")
-		status = "failed_to_find_user"
-
-		return nil, user_errors.ErrUserNotFoundRes
+		return errorhandler.HandleRepositorySingleError[*response.MerchantResponse](s.logger, err, "CreateMerchant", "FAILED_FIND_USER_BY_ID", span, &status, user_errors.ErrUserNotFoundRes, zap.Int("user_id", request.UserID))
 	}
 
 	res, err := s.merchantCommandRepository.CreateMerchant(request)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_CREATE_MERCHANT")
-
-		s.logger.Error("Failed to create merchant", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create merchant")
-		status = "failed_to_create_merchant"
-
-		return nil, merchant_errors.ErrFailedCreateMerchant
+		return s.errorHandler.HandleCreateMerchantError(err, "CreateMerchant", "FAILED_CREATE_MERCHANT", span, &status, zap.Int("user_id", request.UserID))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -135,22 +127,12 @@ func (s *merchantCommandService) CreateMerchant(request *requests.CreateMerchant
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("MERCHANT_CREATE_EMAIL_ERR")
-		s.logger.Error("Failed to marshal merchant creation email payload", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to marshal merchant creation email payload")
-		return nil, merchant_errors.ErrFailedSendEmail
+		return errorhandler.HandleMarshalError[*response.MerchantResponse](s.logger, err, "CreateMerchant", "FAILED_MARSHAL_EMAIL_PAYLOAD", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("user_id", user.ID))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-merchant-created", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("MERCHANT_CREATE_EMAIL_ERR")
-		s.logger.Error("Failed to send merchant creation email message", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send merchant creation email")
-		return nil, merchant_errors.ErrFailedSendEmail
+		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "CreateMerchant", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("user_id", user.ID))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
@@ -180,18 +162,15 @@ func (s *merchantCommandService) UpdateMerchant(request *requests.UpdateMerchant
 	res, err := s.merchantCommandRepository.UpdateMerchant(request)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_MERCHANT")
-
-		s.logger.Error("Failed to update merchant", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update merchant")
-		status = "failed_to_update_merchant"
-
-		return nil, merchant_errors.ErrFailedUpdateMerchant
+		return s.errorHandler.HandleUpdateMerchantError(err, "UpdateMerchant", "FAILED_UPDATE_MERCHANT", span, &status, zap.Int("merchant_id", *request.MerchantID))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
+
+	cacheKey := fmt.Sprintf("merchant:id:%d", *request.MerchantID)
+	if err := s.redis.Del(s.ctx, cacheKey).Err(); err != nil {
+		s.logger.Error("Failed to delete merchant from cache", zap.Error(err))
+	}
 
 	s.logger.Debug("Successfully updated merchant", zap.Int("merchant_id", res.ID))
 
@@ -218,44 +197,19 @@ func (s *merchantCommandService) UpdateMerchantStatus(request *requests.UpdateMe
 	merchant, err := s.merchantQueryRepository.FindById(*request.MerchantID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MERCHANT")
-
-		s.logger.Error("Failed to find merchant", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find merchant")
-		status = "failed_to_find_merchant"
-
-		return nil, merchant_errors.ErrMerchantNotFoundRes
+		return errorhandler.HandleRepositorySingleError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_FIND_MERCHANT_BY_ID", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Int("merchant_id", *request.MerchantID))
 	}
 
 	user, err := s.userRepository.FindById(merchant.UserID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_USER")
-
-		s.logger.Error("Failed to find user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find user")
-		status = "failed_to_find_user"
-
-		return nil, user_errors.ErrUserNotFoundRes
+		return errorhandler.HandleRepositorySingleError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_FIND_USER_BY_ID", span, &status, user_errors.ErrUserNotFoundRes, zap.Int("user_id", merchant.UserID))
 	}
 
 	res, err := s.merchantCommandRepository.UpdateMerchantStatus(request)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_MERCHANT_STATUS")
-
-		s.logger.Error("Failed to update merchant status", zap.String("trace_id", traceID), zap.Error(err))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update merchant status")
-		status = "failed_to_update_merchant_status"
-
-		return nil, merchant_errors.ErrFailedUpdateMerchant
+		return s.errorHandler.HandleUpdateMerchantStatusError(err, "UpdateMerchantStatus", "FAILED_UPDATE_MERCHANT_STATUS", span, &status, zap.Int("merchant_id", *request.MerchantID))
 	}
 
 	statusReq := request.Status
@@ -293,25 +247,16 @@ func (s *merchantCommandService) UpdateMerchantStatus(request *requests.UpdateMe
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("MERCHANT_STATUS_UPDATE_EMAIL_ERR")
-		s.logger.Error("Failed to marshal merchant status update email payload", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to marshal merchant status update email payload")
-		return nil, merchant_errors.ErrFailedSendEmail
+		return errorhandler.HandleMarshalError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_MARSHAL_EMAIL_PAYLOAD", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("merchant_id", *request.MerchantID))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-merchant-update-status", strconv.Itoa(*request.MerchantID), payloadBytes)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("MERCHANT_STATUS_UPDATE_EMAIL_ERR")
-		s.logger.Error("Failed to send merchant status update email", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send merchant status update email")
-		return nil, merchant_errors.ErrFailedSendEmail
+		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("merchant_id", *request.MerchantID))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
+	s.mencache.DeleteCachedMerchant(res.ID)
 
 	s.logger.Debug("Successfully updated merchant status", zap.Int("merchant_id", res.ID))
 
@@ -338,20 +283,13 @@ func (s *merchantCommandService) TrashedMerchant(merchant_id int) (*response.Mer
 	res, err := s.merchantCommandRepository.TrashedMerchant(merchant_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASH_MERCHANT")
-
-		s.logger.Error("Failed to trash merchant", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trash merchant")
-		status = "failed_to_trash_merchant"
-
-		return nil, merchant_errors.ErrFailedTrashMerchant
+		return s.errorHandler.HandleTrashedMerchantError(err, "TrashedMerchant", "FAILED_TRASHED_MERCHANT", span, &status, zap.Int("merchant_id", merchant_id))
 	}
+	so := s.mapping.ToMerchantResponse(res)
+
+	s.mencache.DeleteCachedMerchant(res.ID)
 
 	s.logger.Debug("Successfully trashed merchant", zap.Int("merchant_id", merchant_id))
-
-	so := s.mapping.ToMerchantResponse(res)
 
 	return so, nil
 }
@@ -376,15 +314,7 @@ func (s *merchantCommandService) RestoreMerchant(merchant_id int) (*response.Mer
 	res, err := s.merchantCommandRepository.RestoreMerchant(merchant_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_MERCHANT")
-
-		s.logger.Error("Failed to restore merchant", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore merchant")
-		status = "failed_to_restore_merchant"
-
-		return nil, merchant_errors.ErrFailedRestoreMerchant
+		return s.errorHandler.HandleRestoreMerchantError(err, "RestoreMerchant", "FAILED_RESTORE_MERCHANT", span, &status, zap.Int("merchant_id", merchant_id))
 	}
 	s.logger.Debug("Successfully restored merchant", zap.Int("merchant_id", merchant_id))
 
@@ -409,15 +339,7 @@ func (s *merchantCommandService) DeleteMerchantPermanent(merchant_id int) (bool,
 	_, err := s.merchantCommandRepository.DeleteMerchantPermanent(merchant_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_MERCHANT")
-
-		s.logger.Error("Failed to delete merchant permanently", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete merchant permanently")
-		status = "failed_to_delete_merchant"
-
-		return false, merchant_errors.ErrFailedDeleteMerchant
+		return s.errorHandler.HandleDeleteMerchantPermanentError(err, "DeleteMerchantPermanent", "FAILED_DELETE_MERCHANT_PERMANENT", span, &status, zap.Int("merchant_id", merchant_id))
 	}
 
 	s.logger.Debug("Successfully deleted merchant permanently", zap.Int("merchant_id", merchant_id))
@@ -441,14 +363,7 @@ func (s *merchantCommandService) RestoreAllMerchant() (bool, *response.ErrorResp
 	_, err := s.merchantCommandRepository.RestoreAllMerchant()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_MERCHANTS")
-
-		s.logger.Error("Failed to restore all merchants", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all merchants")
-		status = "failed_to_restore_all_merchants"
-		return false, merchant_errors.ErrFailedRestoreAllMerchants
+		return s.errorHandler.HandleRestoreAllMerchantError(err, "RestoreAllMerchant", "FAILED_RESTORE_ALL_MERCHANT", span, &status)
 	}
 
 	s.logger.Debug("Successfully restored all merchants")
@@ -471,15 +386,7 @@ func (s *merchantCommandService) DeleteAllMerchantPermanent() (bool, *response.E
 	_, err := s.merchantCommandRepository.DeleteAllMerchantPermanent()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_MERCHANTS")
-
-		s.logger.Error("Failed to permanently delete all merchants", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete all merchants")
-		status = "failed_delete_all_merchants"
-
-		return false, merchant_errors.ErrFailedDeleteAllMerchants
+		return s.errorHandler.HandleDeleteAllMerchantPermanentError(err, "DeleteAllMerchantPermanent", "FAILED_DELETE_ALL_MERCHANT_PERMANENT", span, &status)
 	}
 
 	s.logger.Debug("Successfully deleted all merchants permanently")
@@ -488,5 +395,5 @@ func (s *merchantCommandService) DeleteAllMerchantPermanent() (bool, *response.E
 
 func (s *merchantCommandService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

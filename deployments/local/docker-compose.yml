@@ -18,12 +18,36 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7.4
+    container_name: redis
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app_network
+
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter
+    container_name: node-exporter
+    pid: "host"
+    networks:
+      - app_network
+    volumes:
+      - "/:/host:ro,rslave"
+    command:
+      - '--path.rootfs=/host'
+
   migrate:
     image: migrate:1.0
     container_name: migrate
     volumes:
       - ./docker.env:/app/docker.env
-      - ./pkg/database/migrations:/app/pkg/database/migrations
+      - ../../pkg/database/migrations:/app/pkg/database/migrations
     env_file: ./docker.env
     environment:
       APP_ENV: docker
@@ -91,7 +115,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -108,7 +137,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -125,7 +159,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -142,7 +181,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -159,7 +203,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -176,7 +225,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -193,7 +247,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -210,7 +269,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -227,9 +291,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
+      - REDIS_PASSWORD=dragon_knight
 
   email:
     image: email-service:1.0
@@ -242,7 +312,10 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -259,7 +332,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -308,12 +386,13 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - ../../observability/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
     networks:
       - app_network
     depends_on:
       - otel-collector
     restart: unless-stopped
+
 
   grafana:
     image: grafana/grafana:latest
@@ -328,20 +407,6 @@ services:
       - prometheus
       - jaeger
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: otel-collector
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./observability/otel-collector.yaml:/etc/otel-collector-config.yaml
-    ports:
-      - "4317:4317"     
-      - "4318:4318"      
-      - "13133:13133"
-      - "8889:8889"
-    networks:
-      - app_network
-    restart: unless-stopped
 
   nginx:
     image: nginx:alpine
@@ -349,21 +414,39 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ../../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - apigateway
     networks:
       - app_network
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ../../observability/otel-collector.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"     
+      - "4318:4318"      
+      - "13133:13133"
+      - "8889:8889"
+    depends_on:
+      - jaeger
+    networks:
+      - app_network
+    restart: unless-stopped
 
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     container_name: jaeger
     ports:
-      - "6831:6831/udp"
-      - "16686:16686"
+      - "16686:16686"       
+      - "14250:14250"        
     networks:
       - app_network
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
 
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.9.0
@@ -389,6 +472,7 @@ services:
 volumes:
   postgres_data:
   kafka_data:
+  redis_data:
 
 networks:
   app_network:

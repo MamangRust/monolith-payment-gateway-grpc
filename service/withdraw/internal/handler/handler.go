@@ -1,13 +1,13 @@
 package handler
 
 import (
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/service"
 )
 
 type Deps struct {
 	Service service.Service
-	Mapper  protomapper.ProtoMapper
+	Logger  logger.LoggerInterface
 }
 
 type Handler struct {
@@ -16,6 +16,6 @@ type Handler struct {
 
 func NewHandler(deps Deps) *Handler {
 	return &Handler{
-		Withdraw: NewWithdrawHandleGrpc(deps.Service),
+		Withdraw: NewWithdrawHandleGrpc(deps.Service, deps.Logger),
 	}
 }

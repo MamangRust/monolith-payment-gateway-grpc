@@ -8,8 +8,12 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/handler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
@@ -57,27 +61,34 @@ type Server struct {
 	Ctx          context.Context
 }
 
-func NewServer() (*Server, error) {
+func NewServer() (*Server, func(context.Context) error, error) {
 	flag.Parse()
 
 	logger, err := logger.NewLogger()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
 	if err := dotenv.Viper(); err != nil {
 		logger.Fatal("Failed to load .env file", zap.Error(err))
+
+		return nil, nil, err
 	}
 
 	tokenManager, err := auth.NewManager(viper.GetString("SECRET_KEY"))
 	if err != nil {
 		logger.Fatal("Failed to create token manager", zap.Error(err))
+
+		return nil, nil, err
 	}
 
 	conn, err := database.NewClient(logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
+
+		return nil, nil, err
 	}
+
 	DB := db.New(conn)
 
 	ctx := context.Background()
@@ -94,18 +105,39 @@ func NewServer() (*Server, error) {
 
 	kafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
-	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Auth-service", ctx)
+	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("auth-service", ctx)
+
 	if err != nil {
 		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
 	}
-	defer func() {
-		if err := shutdownTracerProvider(ctx); err != nil {
-			logger.Fatal("Failed to shutdown tracer provider", zap.Error(err))
-		}
-	}()
+
+	myredis := redis.NewClient(&redis.Options{
+		Addr:         viper.GetString("REDIS_URL"),
+		Password:     viper.GetString("REDIS_PASSWORD"),
+		DB:           viper.GetInt("REDIS_DB_AUTH"),
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 3,
+	})
+
+	if err := myredis.Ping(ctx).Err(); err != nil {
+		logger.Fatal("Failed to ping redis", zap.Error(err))
+	}
+
+	mencache := mencache.NewMencache(&mencache.Deps{
+		Ctx:    ctx,
+		Redis:  myredis,
+		Logger: logger,
+	})
+
+	errorhandler := errorhandler.NewErrorHandler(logger)
 
 	services := service.NewService(service.Deps{
 		Context:      ctx,
+		ErrorHandler: *errorhandler,
+		Mencache:     *mencache,
 		Repositories: repositories,
 		Hash:         hash,
 		Token:        tokenManager,
@@ -115,6 +147,7 @@ func NewServer() (*Server, error) {
 	})
 
 	handlers := handler.NewHandler(handler.Deps{
+		Logger:  logger,
 		Service: *services,
 	})
 
@@ -125,7 +158,7 @@ func NewServer() (*Server, error) {
 		Services:     services,
 		Handlers:     handlers,
 		Ctx:          ctx,
-	}, nil
+	}, shutdownTracerProvider, nil
 }
 
 func (s *Server) Run() {

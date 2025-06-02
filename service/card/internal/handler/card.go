@@ -5,11 +5,13 @@ import (
 	"math"
 
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/service"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
 	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -20,12 +22,13 @@ type cardHandleGrpc struct {
 	cardStatistic       service.CardStatisticService
 	cardStatisticByCard service.CardStatisticByNumberService
 	cardCommand         service.CardCommandService
-
-	mapping protomapper.CardProtoMapper
+	logger              logger.LoggerInterface
+	mapping             protomapper.CardProtoMapper
 }
 
 func NewCardHandleGrpc(
 	cardService service.Service,
+	logger logger.LoggerInterface,
 ) *cardHandleGrpc {
 	return &cardHandleGrpc{
 		cardQuery:           cardService.CardQuery,
@@ -33,6 +36,7 @@ func NewCardHandleGrpc(
 		cardStatistic:       cardService.CardStatistic,
 		cardStatisticByCard: cardService.CardStatisticByCard,
 		cardCommand:         cardService.CardCommand,
+		logger:              logger,
 		mapping:             protomapper.NewCardProtoMapper(),
 	}
 }
@@ -55,9 +59,12 @@ func (s *cardHandleGrpc) FindAllCard(ctx context.Context, req *pb.FindAllCardReq
 		Search:   search,
 	}
 
+	s.logger.Debug("Fetching card records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+
 	cards, totalRecords, err := s.cardQuery.FindAll(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindAllCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -78,12 +85,16 @@ func (s *cardHandleGrpc) FindAllCard(ctx context.Context, req *pb.FindAllCardReq
 func (s *cardHandleGrpc) FindByIdCard(ctx context.Context, req *pb.FindByIdCardRequest) (*pb.ApiResponseCard, error) {
 	id := int(req.GetCardId())
 
+	s.logger.Debug("Fetching card record", zap.Int("cardId", id))
+
 	if id == 0 {
+		s.logger.Debug("FindByIdCard failed", zap.Any("error", card_errors.ErrGrpcInvalidCardID))
 		return nil, card_errors.ErrGrpcInvalidCardID
 	}
 
 	card, err := s.cardQuery.FindById(id)
 	if err != nil {
+		s.logger.Debug("FindByIdCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -95,12 +106,16 @@ func (s *cardHandleGrpc) FindByIdCard(ctx context.Context, req *pb.FindByIdCardR
 func (s *cardHandleGrpc) FindByUserIdCard(ctx context.Context, req *pb.FindByUserIdCardRequest) (*pb.ApiResponseCard, error) {
 	id := int(req.GetUserId())
 
+	s.logger.Debug("Fetching card record", zap.Int("userId", id))
+
 	if id == 0 {
+		s.logger.Debug("FindByUserIdCard failed", zap.Any("error", card_errors.ErrGrpcInvalidUserID))
 		return nil, card_errors.ErrGrpcInvalidUserID
 	}
 	res, err := s.cardQuery.FindByUserID(id)
 
 	if err != nil {
+		s.logger.Debug("FindByUserIdCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -110,8 +125,11 @@ func (s *cardHandleGrpc) FindByUserIdCard(ctx context.Context, req *pb.FindByUse
 }
 
 func (s *cardHandleGrpc) DashboardCard(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseDashboardCard, error) {
+	s.logger.Info("Fetching dashboard card")
+
 	dashboardCard, err := s.cardDashboard.DashboardCard()
 	if err != nil {
+		s.logger.Debug("DashboardCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -123,7 +141,10 @@ func (s *cardHandleGrpc) DashboardCard(ctx context.Context, _ *emptypb.Empty) (*
 func (s *cardHandleGrpc) DashboardCardNumber(ctx context.Context, req *pb.FindByCardNumberRequest) (*pb.ApiResponseDashboardCardNumber, error) {
 	card_number := req.GetCardNumber()
 
+	s.logger.Debug("Fetching dashboard card for card number", zap.String("card_number", card_number))
+
 	if card_number == "" {
+		s.logger.Debug("DashboardCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -141,12 +162,16 @@ func (s *cardHandleGrpc) DashboardCardNumber(ctx context.Context, req *pb.FindBy
 func (s *cardHandleGrpc) FindMonthlyBalance(ctx context.Context, req *pb.FindYearBalance) (*pb.ApiResponseMonthlyBalance, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly balance", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyBalance failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 	res, err := s.cardStatistic.FindMonthlyBalance(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyBalance failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -158,12 +183,16 @@ func (s *cardHandleGrpc) FindMonthlyBalance(ctx context.Context, req *pb.FindYea
 func (s *cardHandleGrpc) FindYearlyBalance(ctx context.Context, req *pb.FindYearBalance) (*pb.ApiResponseYearlyBalance, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly balance", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyBalance failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyBalance(year)
 	if err != nil {
+		s.logger.Debug("FindYearlyBalance failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -175,13 +204,17 @@ func (s *cardHandleGrpc) FindYearlyBalance(ctx context.Context, req *pb.FindYear
 func (s *cardHandleGrpc) FindMonthlyTopupAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly topup amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTopupAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindMonthlyTopupAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTopupAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -193,13 +226,17 @@ func (s *cardHandleGrpc) FindMonthlyTopupAmount(ctx context.Context, req *pb.Fin
 func (s *cardHandleGrpc) FindYearlyTopupAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTopupAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyTopupAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyTopupAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -211,13 +248,17 @@ func (s *cardHandleGrpc) FindYearlyTopupAmount(ctx context.Context, req *pb.Find
 func (s *cardHandleGrpc) FindMonthlyWithdrawAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly withdraw amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyWithdrawAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindMonthlyWithdrawAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyWithdrawAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -229,13 +270,17 @@ func (s *cardHandleGrpc) FindMonthlyWithdrawAmount(ctx context.Context, req *pb.
 func (s *cardHandleGrpc) FindYearlyWithdrawAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly withdraw amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyWithdrawAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyWithdrawAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyWithdrawAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -247,13 +292,17 @@ func (s *cardHandleGrpc) FindYearlyWithdrawAmount(ctx context.Context, req *pb.F
 func (s *cardHandleGrpc) FindMonthlyTransactionAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly transaction amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransactionAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindMonthlyTransactionAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransactionAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -265,13 +314,17 @@ func (s *cardHandleGrpc) FindMonthlyTransactionAmount(ctx context.Context, req *
 func (s *cardHandleGrpc) FindYearlyTransactionAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly transaction amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransactionAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyTransactionAmount(year)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyTransactionAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -283,13 +336,17 @@ func (s *cardHandleGrpc) FindYearlyTransactionAmount(ctx context.Context, req *p
 func (s *cardHandleGrpc) FindMonthlyTransferSenderAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly transfer sender amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransferSenderAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindMonthlyTransferAmountSender(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransferSenderAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -301,13 +358,17 @@ func (s *cardHandleGrpc) FindMonthlyTransferSenderAmount(ctx context.Context, re
 func (s *cardHandleGrpc) FindYearlyTransferSenderAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly transfer sender amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransferSenderAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyTransferAmountSender(year)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyTransferSenderAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -319,13 +380,17 @@ func (s *cardHandleGrpc) FindYearlyTransferSenderAmount(ctx context.Context, req
 func (s *cardHandleGrpc) FindMonthlyTransferReceiverAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly transfer receiver amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransferReceiverAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindMonthlyTransferAmountReceiver(year)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransferReceiverAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -337,13 +402,17 @@ func (s *cardHandleGrpc) FindMonthlyTransferReceiverAmount(ctx context.Context, 
 func (s *cardHandleGrpc) FindYearlyTransferReceiverAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly transfer receiver amount", zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransferReceiverAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatistic.FindYearlyTransferAmountReceiver(year)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyTransferReceiverAmount failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -356,11 +425,15 @@ func (s *cardHandleGrpc) FindMonthlyBalanceByCardNumber(ctx context.Context, req
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly balance by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyBalanceByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyBalanceByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -372,6 +445,7 @@ func (s *cardHandleGrpc) FindMonthlyBalanceByCardNumber(ctx context.Context, req
 	res, err := s.cardStatisticByCard.FindMonthlyBalanceByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyBalanceByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -384,11 +458,15 @@ func (s *cardHandleGrpc) FindYearlyBalanceByCardNumber(ctx context.Context, req 
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly balance by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyBalanceByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyBalanceByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -400,6 +478,7 @@ func (s *cardHandleGrpc) FindYearlyBalanceByCardNumber(ctx context.Context, req 
 	res, err := s.cardStatisticByCard.FindYearlyBalanceByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyBalanceByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -412,11 +491,15 @@ func (s *cardHandleGrpc) FindMonthlyTopupAmountByCardNumber(ctx context.Context,
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly topup amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -428,6 +511,7 @@ func (s *cardHandleGrpc) FindMonthlyTopupAmountByCardNumber(ctx context.Context,
 	res, err := s.cardStatisticByCard.FindMonthlyTopupAmountByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -440,11 +524,15 @@ func (s *cardHandleGrpc) FindYearlyTopupAmountByCardNumber(ctx context.Context, 
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly topup amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -456,6 +544,7 @@ func (s *cardHandleGrpc) FindYearlyTopupAmountByCardNumber(ctx context.Context, 
 	res, err := s.cardStatisticByCard.FindYearlyTopupAmountByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -468,11 +557,15 @@ func (s *cardHandleGrpc) FindMonthlyWithdrawAmountByCardNumber(ctx context.Conte
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly withdraw amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyWithdrawAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyWithdrawAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -483,6 +576,7 @@ func (s *cardHandleGrpc) FindMonthlyWithdrawAmountByCardNumber(ctx context.Conte
 
 	res, err := s.cardStatisticByCard.FindMonthlyWithdrawAmountByCardNumber(&reqService)
 	if err != nil {
+		s.logger.Debug("FindMonthlyWithdrawAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -495,11 +589,15 @@ func (s *cardHandleGrpc) FindYearlyWithdrawAmountByCardNumber(ctx context.Contex
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly withdraw amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyWithdrawAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyWithdrawAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -510,6 +608,7 @@ func (s *cardHandleGrpc) FindYearlyWithdrawAmountByCardNumber(ctx context.Contex
 
 	res, err := s.cardStatisticByCard.FindYearlyWithdrawAmountByCardNumber(&reqService)
 	if err != nil {
+		s.logger.Debug("FindYearlyWithdrawAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -522,11 +621,15 @@ func (s *cardHandleGrpc) FindMonthlyTransactionAmountByCardNumber(ctx context.Co
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly transaction amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransactionAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyTransactionAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -538,6 +641,7 @@ func (s *cardHandleGrpc) FindMonthlyTransactionAmountByCardNumber(ctx context.Co
 	res, err := s.cardStatisticByCard.FindMonthlyTransactionAmountByCardNumber(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransactionAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -550,11 +654,15 @@ func (s *cardHandleGrpc) FindYearlyTransactionAmountByCardNumber(ctx context.Con
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly transaction amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransactionAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyTransactionAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -565,6 +673,7 @@ func (s *cardHandleGrpc) FindYearlyTransactionAmountByCardNumber(ctx context.Con
 
 	res, err := s.cardStatisticByCard.FindYearlyTransactionAmountByCardNumber(&reqService)
 	if err != nil {
+		s.logger.Debug("FindYearlyTransactionAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -577,11 +686,15 @@ func (s *cardHandleGrpc) FindMonthlyTransferSenderAmountByCardNumber(ctx context
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching monthly transfer sender amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransferSenderAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyTransferSenderAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -592,6 +705,7 @@ func (s *cardHandleGrpc) FindMonthlyTransferSenderAmountByCardNumber(ctx context
 
 	res, err := s.cardStatisticByCard.FindMonthlyTransferAmountBySender(&reqService)
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransferSenderAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -605,10 +719,12 @@ func (s *cardHandleGrpc) FindYearlyTransferSenderAmountByCardNumber(ctx context.
 	year := int(req.GetYear())
 
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransferSenderAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyTransferSenderAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -619,6 +735,7 @@ func (s *cardHandleGrpc) FindYearlyTransferSenderAmountByCardNumber(ctx context.
 
 	res, err := s.cardStatisticByCard.FindYearlyTransferAmountBySender(&reqService)
 	if err != nil {
+		s.logger.Debug("FindYearlyTransferSenderAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -632,10 +749,12 @@ func (s *cardHandleGrpc) FindMonthlyTransferReceiverAmountByCardNumber(ctx conte
 	year := int(req.GetYear())
 
 	if year <= 0 {
+		s.logger.Debug("FindMonthlyTransferReceiverAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindMonthlyTransferReceiverAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -647,6 +766,7 @@ func (s *cardHandleGrpc) FindMonthlyTransferReceiverAmountByCardNumber(ctx conte
 	res, err := s.cardStatisticByCard.FindMonthlyTransferAmountByReceiver(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindMonthlyTransferReceiverAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -659,11 +779,15 @@ func (s *cardHandleGrpc) FindYearlyTransferReceiverAmountByCardNumber(ctx contex
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
+	s.logger.Debug("Fetching yearly transfer receiver amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
+
 	if year <= 0 {
+		s.logger.Debug("FindYearlyTransferReceiverAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	if card_number == "" {
+		s.logger.Debug("FindYearlyTransferReceiverAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -674,6 +798,7 @@ func (s *cardHandleGrpc) FindYearlyTransferReceiverAmountByCardNumber(ctx contex
 
 	res, err := s.cardStatisticByCard.FindYearlyTransferAmountByReceiver(&reqService)
 	if err != nil {
+		s.logger.Debug("FindYearlyTransferReceiverAmountByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -686,6 +811,8 @@ func (s *cardHandleGrpc) FindByActiveCard(ctx context.Context, req *pb.FindAllCa
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
+
+	s.logger.Debug("Fetching card records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
 
 	if page <= 0 {
 		page = 1
@@ -703,6 +830,7 @@ func (s *cardHandleGrpc) FindByActiveCard(ctx context.Context, req *pb.FindAllCa
 	res, totalRecords, err := s.cardQuery.FindByActive(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindByActiveCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -725,6 +853,8 @@ func (s *cardHandleGrpc) FindByTrashedCard(ctx context.Context, req *pb.FindAllC
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
 
+	s.logger.Debug("Fetching card records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+
 	if page <= 0 {
 		page = 1
 	}
@@ -741,6 +871,8 @@ func (s *cardHandleGrpc) FindByTrashedCard(ctx context.Context, req *pb.FindAllC
 	res, totalRecords, err := s.cardQuery.FindByTrashed(&reqService)
 
 	if err != nil {
+		s.logger.Debug("FindByTrashedCard failed", zap.Any("error", err))
+
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -762,13 +894,17 @@ func (s *cardHandleGrpc) FindByTrashedCard(ctx context.Context, req *pb.FindAllC
 func (s *cardHandleGrpc) FindByCardNumber(ctx context.Context, req *pb.FindByCardNumberRequest) (*pb.ApiResponseCard, error) {
 	card_number := req.GetCardNumber()
 
+	s.logger.Debug("Fetching card records", zap.String("card_number", card_number))
+
 	if card_number == "" {
+		s.logger.Debug("FindByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
 	res, err := s.cardQuery.FindByCardNumber(card_number)
 
 	if err != nil {
+		s.logger.Debug("FindByCardNumber failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -788,12 +924,14 @@ func (s *cardHandleGrpc) CreateCard(ctx context.Context, req *pb.CreateCardReque
 	}
 
 	if err := request.Validate(); err != nil {
+		s.logger.Debug("CreateCard failed", zap.Any("error", err))
 		return nil, card_errors.ErrGrpcValidateCreateCardRequest
 	}
 
 	res, err := s.cardCommand.CreateCard(&request)
 
 	if err != nil {
+		s.logger.Debug("CreateCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -813,12 +951,14 @@ func (s *cardHandleGrpc) UpdateCard(ctx context.Context, req *pb.UpdateCardReque
 	}
 
 	if err := request.Validate(); err != nil {
+		s.logger.Debug("UpdateCard failed", zap.Any("error", err))
 		return nil, card_errors.ErrGrpcValidateUpdateCardRequest
 	}
 
 	res, err := s.cardCommand.UpdateCard(&request)
 
 	if err != nil {
+		s.logger.Debug("UpdateCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -830,13 +970,17 @@ func (s *cardHandleGrpc) UpdateCard(ctx context.Context, req *pb.UpdateCardReque
 func (s *cardHandleGrpc) TrashedCard(ctx context.Context, req *pb.FindByIdCardRequest) (*pb.ApiResponseCard, error) {
 	id := int(req.GetCardId())
 
+	s.logger.Debug("Trashing card", zap.Int("cardId", id))
+
 	if id == 0 {
+		s.logger.Debug("TrashedCard failed", zap.Any("error", card_errors.ErrGrpcInvalidCardID))
 		return nil, card_errors.ErrGrpcInvalidCardID
 	}
 
 	res, err := s.cardCommand.TrashedCard(id)
 
 	if err != nil {
+		s.logger.Debug("TrashedCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -848,13 +992,17 @@ func (s *cardHandleGrpc) TrashedCard(ctx context.Context, req *pb.FindByIdCardRe
 func (s *cardHandleGrpc) RestoreCard(ctx context.Context, req *pb.FindByIdCardRequest) (*pb.ApiResponseCard, error) {
 	id := int(req.GetCardId())
 
+	s.logger.Debug("Restoring card", zap.Int("cardId", id))
+
 	if id == 0 {
+		s.logger.Debug("RestoreCard failed", zap.Any("error", card_errors.ErrGrpcInvalidCardID))
 		return nil, card_errors.ErrGrpcInvalidCardID
 	}
 
 	res, err := s.cardCommand.RestoreCard(id)
 
 	if err != nil {
+		s.logger.Debug("RestoreCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -866,13 +1014,17 @@ func (s *cardHandleGrpc) RestoreCard(ctx context.Context, req *pb.FindByIdCardRe
 func (s *cardHandleGrpc) DeleteCardPermanent(ctx context.Context, req *pb.FindByIdCardRequest) (*pb.ApiResponseCardDelete, error) {
 	id := int(req.GetCardId())
 
+	s.logger.Debug("Deleting card", zap.Int("cardId", id))
+
 	if id == 0 {
+		s.logger.Debug("DeleteCardPermanent failed", zap.Any("error", card_errors.ErrGrpcInvalidCardID))
 		return nil, card_errors.ErrGrpcInvalidCardID
 	}
 
 	_, err := s.cardCommand.DeleteCardPermanent(id)
 
 	if err != nil {
+		s.logger.Debug("DeleteCardPermanent failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -882,9 +1034,12 @@ func (s *cardHandleGrpc) DeleteCardPermanent(ctx context.Context, req *pb.FindBy
 }
 
 func (s *cardHandleGrpc) RestoreAllCard(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCardAll, error) {
+	s.logger.Debug("Restoring all card")
+
 	_, err := s.cardCommand.RestoreAllCard()
 
 	if err != nil {
+		s.logger.Debug("RestoreAllCard failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
@@ -894,9 +1049,12 @@ func (s *cardHandleGrpc) RestoreAllCard(ctx context.Context, _ *emptypb.Empty) (
 }
 
 func (s *cardHandleGrpc) DeleteAllCardPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCardAll, error) {
+	s.logger.Debug("Deleting all card")
+
 	_, err := s.cardCommand.DeleteAllCardPermanent()
 
 	if err != nil {
+		s.logger.Debug("DeleteAllCardPermanent failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 

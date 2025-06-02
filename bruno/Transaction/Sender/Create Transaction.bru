@@ -11,18 +11,18 @@ post {
 }
 
 headers {
-  X-Api-Key: ed0165e90780d797d0a99bdea765e3e5c75925d3322b9a5a623b4e8064d9d074
+  X-Api-Key: be99fa6d536086532fefdecb1d99dae29af8128edfe5c52e96d2342735044d94
   Content-Type: application/json
-  Authorization: Bearer {{secret_key_sender}}
+  Authorization: Bearer {{SENDER}}
 }
 
 body:json {
   {
-      "card_number": "1234567890",
+      "card_number": "4506169645833752",
       "amount": 50000,
-      "payment_method": "credit_card",
-      "merchant_id": 456,
-      "transaction_time": "2025-07-15T14:30:00Z"
+      "payment_method": "indomart",
+      "merchant_id": 1,
+      "transaction_time": "2023-07-15T14:30:00Z"
     }
 }
 

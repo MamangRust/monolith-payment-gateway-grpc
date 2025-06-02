@@ -4,23 +4,24 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type cardQueryService struct {
 	ctx                 context.Context
+	errorhandler        errorhandler.CardQueryErrorHandler
+	mencache            mencache.CardQueryCache
 	trace               trace.Tracer
 	cardQueryRepository repository.CardQueryRepository
 	logger              logger.LoggerInterface
@@ -31,6 +32,8 @@ type cardQueryService struct {
 
 func NewCardQueryService(
 	ctx context.Context,
+	errorhandler errorhandler.CardQueryErrorHandler,
+	mencache mencache.CardQueryCache,
 	cardQueryRepository repository.CardQueryRepository,
 	logger logger.LoggerInterface,
 	mapper responseservice.CardResponseMapper,
@@ -38,18 +41,19 @@ func NewCardQueryService(
 	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "card_query_request_count",
 		Help: "Number of card query requests CardQueryService",
-	}, []string{"status"})
+	}, []string{"method", "status"})
 
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "card_query_request_duration_seconds",
 		Help:    "Duration of card query requests CardQueryService",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"status"})
+	}, []string{"method", "status"})
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cardQueryService{
 		ctx:                 ctx,
+		errorhandler:        errorhandler,
 		trace:               otel.Tracer("card-query-service"),
 		cardQueryRepository: cardQueryRepository,
 		logger:              logger,
@@ -71,50 +75,37 @@ func (s *cardQueryService) FindAll(req *requests.FindAllCards) ([]*response.Card
 	_, span := s.trace.Start(s.ctx, "FindAll")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Int("page", req.Page),
-		attribute.Int("pageSize", req.PageSize),
-		attribute.String("search", req.Search),
-	)
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
+
+	span.SetAttributes(
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search),
+	)
 
 	s.logger.Debug("Fetching card records",
 		zap.Int("page", page),
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetFindAllCache(req); found {
+		s.logger.Debug("Successfully fetched card records from cache",
+			zap.Int("totalRecords", *total),
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize))
+		return data, total, nil
 	}
 
 	cards, totalRecords, err := s.cardQueryRepository.FindAllCards(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_CARDS")
-
-		s.logger.Error("Failed to fetch card records",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch card records")
-		status = "failed_find_all_cards"
-
-		return nil, nil, card_errors.ErrFailedFindAllCards
+		return s.errorhandler.HandleFindAllError(err, "FindAll", "FAILED_FIND_ALL_CARD", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToCardsResponse(cards)
+
+	s.mencache.SetFindAllCache(req, responseData, totalRecords)
 
 	s.logger.Debug("Successfully fetched card records",
 		zap.Int("totalRecords", *totalRecords),
@@ -135,49 +126,37 @@ func (s *cardQueryService) FindByActive(req *requests.FindAllCards) ([]*response
 	_, span := s.trace.Start(s.ctx, "FindByActive")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Int("page", req.Page),
-		attribute.Int("pageSize", req.PageSize),
-		attribute.String("search", req.Search),
-	)
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
+
+	span.SetAttributes(
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search),
+	)
 
 	s.logger.Debug("Fetching active card records",
 		zap.Int("page", page),
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetByActiveCache(req); found {
+		s.logger.Debug("Successfully fetched card records from cache",
+			zap.Int("totalRecords", *total),
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize))
+		return data, total, nil
 	}
 
 	res, totalRecords, err := s.cardQueryRepository.FindByActive(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ACTIVE_CARDS")
-
-		s.logger.Error("Failed to fetch active card records",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch active card records")
-		status = "failed_find_active_cards"
-
-		return nil, nil, card_errors.ErrFailedFindActiveCards
+		return s.errorhandler.HandleFindByActiveError(err, "FindByActive", "FAILED_FIND_ACTIVE_CARD", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToCardsResponseDeleteAt(res)
+
+	s.mencache.SetByActiveCache(req, responseData, totalRecords)
 
 	s.logger.Debug("Successfully fetched active card records",
 		zap.Int("totalRecords", *totalRecords),
@@ -198,48 +177,36 @@ func (s *cardQueryService) FindByTrashed(req *requests.FindAllCards) ([]*respons
 	_, span := s.trace.Start(s.ctx, "FindByTrashed")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Int("page", req.Page),
-		attribute.Int("pageSize", req.PageSize),
-		attribute.String("search", req.Search),
-	)
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
+
+	span.SetAttributes(
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search),
+	)
 
 	s.logger.Debug("Fetching trashed card records",
 		zap.Int("page", page),
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetByTrashedCache(req); found {
+		s.logger.Debug("Successfully fetched card records from cache",
+			zap.Int("totalRecords", *total),
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize))
+		return data, total, nil
 	}
 
 	res, totalRecords, err := s.cardQueryRepository.FindByTrashed(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRASHED_CARDS")
-
-		s.logger.Error("Failed to fetch trashed card records",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch trashed card records")
-		status = "failed_find_trashed_cards"
-
-		return nil, nil, card_errors.ErrFailedFindTrashedCards
+		return s.errorhandler.HandleFindByTrashedError(err, "FindByTrashed", "FAILED_FIND_TRASHED_CARD", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToCardsResponseDeleteAt(res)
+
+	s.mencache.SetByTrashedCache(req, responseData, totalRecords)
 
 	s.logger.Debug("Successfully fetched trashed card records",
 		zap.Int("totalRecords", *totalRecords),
@@ -261,25 +228,20 @@ func (s *cardQueryService) FindById(card_id int) (*response.CardResponse, *respo
 
 	s.logger.Debug("Fetching card by ID", zap.Int("card_id", card_id))
 
+	if data, found := s.mencache.GetByIdCache(card_id); found {
+		s.logger.Debug("Successfully fetched card from cache", zap.Int("card_id", card_id))
+		return data, nil
+	}
+
 	res, err := s.cardQueryRepository.FindById(card_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_BY_ID")
-
-		s.logger.Error("Failed to retrieve Card details by ID",
-			zap.Error(err),
-			zap.Int("card_id", card_id),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve Card details by ID")
-		status = "failed_find_by_id"
-
-		return nil, card_errors.ErrFailedFindById
+		return s.errorhandler.HandleFindByIdError(err, "FindById", "FAILED_TO_FIND_CARD", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
+
+	s.mencache.SetByIdCache(card_id, so)
 
 	s.logger.Debug("Successfully fetched card", zap.Int("card_id", card_id))
 
@@ -298,25 +260,20 @@ func (s *cardQueryService) FindByUserID(user_id int) (*response.CardResponse, *r
 
 	s.logger.Debug("Fetching card by user ID", zap.Int("user_id", user_id))
 
+	if data, found := s.mencache.GetByUserIDCache(user_id); found {
+		s.logger.Debug("Successfully fetched card from cache by user ID", zap.Int("user_id", user_id))
+		return data, nil
+	}
+
 	res, err := s.cardQueryRepository.FindCardByUserId(user_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_BY_USER_ID")
-
-		s.logger.Error("Failed to retrieve Card details by user ID",
-			zap.Error(err),
-			zap.Int("user_id", user_id),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve Card details by user ID")
-		status = "failed_find_by_user_id"
-
-		return nil, card_errors.ErrFailedFindByUserID
+		return s.errorhandler.HandleFindByUserIdError(err, "FindByUserID", "FAILED_FIND_CARD_BY_USER_ID", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
+
+	s.mencache.SetByUserIDCache(user_id, so)
 
 	s.logger.Debug("Successfully fetched card records by user ID", zap.Int("user_id", user_id))
 
@@ -335,32 +292,37 @@ func (s *cardQueryService) FindByCardNumber(card_number string) (*response.CardR
 
 	s.logger.Debug("Fetching card record by card number", zap.String("card_number", card_number))
 
+	if data, found := s.mencache.GetByCardNumberCache(card_number); found {
+		s.logger.Debug("Successfully fetched card record from cache by card number", zap.String("card_number", card_number))
+		return data, nil
+	}
+
 	res, err := s.cardQueryRepository.FindCardByCardNumber(card_number)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("CARD_NOT_FOUND")
-
-		s.logger.Error("Failed to retrieve Card details by card number",
-			zap.Error(err),
-			zap.String("card_number", card_number),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve Card details by card number")
-		status = "card_not_found"
-
-		return nil, card_errors.ErrCardNotFoundRes
+		return s.errorhandler.HandleFindByCardNumberError(err, "FindByCardNumber", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToCardResponse(res)
+
+	s.mencache.SetByCardNumberCache(card_number, so)
 
 	s.logger.Debug("Successfully fetched card record by card number", zap.String("card_number", card_number))
 
 	return so, nil
 }
 
+func (s *cardQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
+}
+
 func (s *cardQueryService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

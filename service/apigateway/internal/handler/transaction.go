@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
-	"github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway/internal/middlewares"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -1000,11 +1000,17 @@ func (h *transactionHandler) FindByTrashedTransaction(c echo.Context) error {
 func (h *transactionHandler) Create(c echo.Context) error {
 	var body requests.CreateTransactionRequest
 
-	apiKey := c.Get("apiKey").(string)
-
-	if apiKey == "" {
+	apiKeyRaw := c.Get("apiKey")
+	if apiKeyRaw == nil {
 		return transaction_errors.ErrApiInvalidTransactionApiKey(c)
 	}
+
+	apiKey, ok := apiKeyRaw.(string)
+	if !ok || apiKey == "" {
+		return transaction_errors.ErrApiInvalidTransactionApiKey(c)
+	}
+
+	h.logger.Debug("Create Transaction Api Key", zap.String("apiKey", apiKey))
 
 	if err := c.Bind(&body); err != nil {
 		h.logger.Debug("Bad Request", zap.Error(err))
@@ -1020,12 +1026,36 @@ func (h *transactionHandler) Create(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
+	merchantIDRaw := c.Get("merchant_id")
+
+	if merchantIDRaw == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "Unauthorized: merchant ID not found")
+	}
+
+	var merchantID int
+	switch v := merchantIDRaw.(type) {
+	case float64:
+		merchantID = int(v)
+	case int:
+		merchantID = v
+	default:
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to convert merchant ID")
+	}
+
+	h.logger.Debug("Merchant ID", zap.Int("merchantID", merchantID))
+
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to convert merchant ID to string")
+	}
+
+	h.logger.Debug("Merchant ID", zap.Int("merchantID", merchantID))
+
 	res, err := h.transaction.CreateTransaction(ctx, &pb.CreateTransactionRequest{
 		ApiKey:          apiKey,
 		CardNumber:      body.CardNumber,
 		Amount:          int32(body.Amount),
 		PaymentMethod:   body.PaymentMethod,
-		MerchantId:      int32(*body.MerchantID),
+		MerchantId:      int32(merchantID),
 		TransactionTime: timestamppb.New(body.TransactionTime),
 	})
 

@@ -1,5 +1,7 @@
 COMPOSE_FILE=deployments/local/docker-compose.yml
 SERVICES := apigateway migrate auth user role card merchant saldo topup transaction transfer withdraw email
+DOCKER_COMPOSE=docker compose
+
 
 migrate:
 	go run service/migrate/main.go up
@@ -65,10 +67,10 @@ build-image:
 	@echo "✅ All services built successfully."
 
 up:
-	docker-compose -f $(COMPOSE_FILE) up -d
+	${DOCKER_COMPOSE} -f $(COMPOSE_FILE) up -d
 
 down:
-	docker-compose -f $(COMPOSE_FILE) down
+	${DOCKER_COMPOSE} -f $(COMPOSE_FILE) down
 
 build-up:
 	make build-image && make up

@@ -5,22 +5,24 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-transfer/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type transferQueryService struct {
 	ctx                     context.Context
+	errorhandler            errorhandler.TransferQueryErrorHandler
+	mencache                mencache.TransferQueryCache
 	trace                   trace.Tracer
 	transferQueryRepository repository.TransferQueryRepository
 	logger                  logger.LoggerInterface
@@ -29,7 +31,8 @@ type transferQueryService struct {
 	requestDuration         *prometheus.HistogramVec
 }
 
-func NewTransferQueryService(ctx context.Context, transferQueryRepository repository.TransferQueryRepository, logger logger.LoggerInterface, mapping responseservice.TransferResponseMapper) *transferQueryService {
+func NewTransferQueryService(ctx context.Context, errorhandler errorhandler.TransferQueryErrorHandler,
+	mencache mencache.TransferQueryCache, transferQueryRepository repository.TransferQueryRepository, logger logger.LoggerInterface, mapping responseservice.TransferResponseMapper) *transferQueryService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "transfer_query_service_request_total",
@@ -44,13 +47,15 @@ func NewTransferQueryService(ctx context.Context, transferQueryRepository reposi
 			Help:    "Histogram of request durations for the TransferQueryService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &transferQueryService{
 		ctx:                     ctx,
+		errorhandler:            errorhandler,
+		mencache:                mencache,
 		trace:                   otel.Tracer("transfer-query-service"),
 		transferQueryRepository: transferQueryRepository,
 		logger:                  logger,
@@ -71,8 +76,7 @@ func (s *transferQueryService) FindAll(req *requests.FindAllTranfers) ([]*respon
 	_, span := s.trace.Start(s.ctx, "FindAll")
 	defer span.End()
 
-	pageSize := req.PageSize
-	page := req.Page
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -86,37 +90,21 @@ func (s *transferQueryService) FindAll(req *requests.FindAllTranfers) ([]*respon
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedTransfersCache(req); found {
+		s.logger.Debug("Successfully fetched transfers from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	transfers, totalRecords, err := s.transferQueryRepository.FindAll(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_TRANSFERS")
-
-		s.logger.Error("failed to find all transfer",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace_id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find all transfer")
-
-		status = "failed_to_find_all_transfer"
-
-		return nil, nil, transfer_errors.ErrFailedFindAllTransfers
+		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_TO_FIND_ALL_TRANSFERS", span, &status)
 	}
 
 	so := s.mapping.ToTransfersResponse(transfers)
+
+	s.mencache.SetCachedTransfersCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched transfer",
 		zap.Int("totalRecords", *totalRecords),
@@ -143,21 +131,21 @@ func (s *transferQueryService) FindById(transferId int) (*response.TransferRespo
 
 	s.logger.Debug("Fetching transfer by ID", zap.Int("transfer_id", transferId))
 
+	if data := s.mencache.GetCachedTransferCache(transferId); data != nil {
+		s.logger.Debug("Successfully fetched transfer from cache",
+			zap.Int("transfer_id", transferId))
+		return data, nil
+	}
+
 	transfer, err := s.transferQueryRepository.FindById(transferId)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRANSFER_BY_ID")
-
-		s.logger.Error("Failed to find transfer by ID", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find transfer by ID")
-		status = "failed_find_transfer_by_id"
-
-		return nil, transfer_errors.ErrTransferNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_TO_FIND_TRANSFER_BY_ID", span, &status, transfer_errors.ErrTransferNotFound, zap.Int("transfer_id", transferId))
 	}
 
 	so := s.mapping.ToTransferResponse(transfer)
+
+	s.mencache.SetCachedTransferCache(so)
 
 	s.logger.Debug("Successfully fetched transfer", zap.Int("transfer_id", transferId))
 
@@ -175,8 +163,7 @@ func (s *transferQueryService) FindByActive(req *requests.FindAllTranfers) ([]*r
 	_, span := s.trace.Start(s.ctx, "FindByActive")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -190,37 +177,21 @@ func (s *transferQueryService) FindByActive(req *requests.FindAllTranfers) ([]*r
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedTransferActiveCache(req); found {
+		s.logger.Debug("Successfully fetched active transfers from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	transfers, totalRecords, err := s.transferQueryRepository.FindByActive(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ACTIVE_TRANSFERS")
-
-		s.logger.Error("Failed to find active transfer",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace_id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find active transfer")
-
-		status = "failed_find_active_transfer"
-
-		return nil, nil, transfer_errors.ErrFailedFindActiveTransfers
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_TO_FIND_BY_ACTIVE_TRANSFERS", span, &status, transfer_errors.ErrFailedFindActiveTransfers, zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
 	}
 
 	so := s.mapping.ToTransfersResponseDeleteAt(transfers)
+
+	s.mencache.SetCachedTransferActiveCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched active transfer",
 		zap.Int("totalRecords", *totalRecords),
@@ -241,8 +212,7 @@ func (s *transferQueryService) FindByTrashed(req *requests.FindAllTranfers) ([]*
 	_, span := s.trace.Start(s.ctx, "FindByTrashed")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -256,37 +226,21 @@ func (s *transferQueryService) FindByTrashed(req *requests.FindAllTranfers) ([]*
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedTransferTrashedCache(req); found {
+		s.logger.Debug("Successfully fetched trashed transfers from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	transfers, totalRecords, err := s.transferQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRASHED_TRANSFERS")
-
-		s.logger.Error("Failed to find trashed transfer",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace_id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find trashed transfer")
-
-		status = "failed_find_trashed_transfer"
-
-		return nil, nil, transfer_errors.ErrFailedFindTrashedTransfers
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_TO_FIND_BY_TRASHED_TRANSFERS", span, &status, transfer_errors.ErrFailedFindTrashedTransfers, zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
 	}
 
 	so := s.mapping.ToTransfersResponseDeleteAt(transfers)
+
+	s.mencache.SetCachedTransferTrashedCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched trashed transfer",
 		zap.Int("totalRecords", *totalRecords),
@@ -315,27 +269,20 @@ func (s *transferQueryService) FindTransferByTransferFrom(transfer_from string) 
 		zap.String("transfer_from", transfer_from),
 	)
 
+	if data := s.mencache.GetCachedTransferByFrom(transfer_from); data != nil {
+		s.logger.Debug("Successfully fetched transfer by transfer_from from cache", zap.String("transfer_from", transfer_from))
+		return data, nil
+	}
+
 	res, err := s.transferQueryRepository.FindTransferByTransferFrom(transfer_from)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRANSFER_BY_TRANSFER_FROM")
-
-		s.logger.Error("Failed to fetch transfers by transfer_from",
-			zap.Error(err),
-			zap.String("transfer_from", transfer_from),
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace_id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch transfers by transfer_from")
-
-		status = "failed_find_transfer_by_transfer_from"
-
-		return nil, transfer_errors.ErrTransferNotFound
+		return s.errorhandler.HanldeRepositoryListError(err, "FindTransferByTransferFrom", "FAILED_TO_FIND_TRANSFER_BY_TRANSFER_FROM", span, &status, transfer_errors.ErrTransferNotFound, zap.String("transfer_from", transfer_from))
 	}
 
 	so := s.mapping.ToTransfersResponse(res)
+
+	s.mencache.SetCachedTransferByFrom(transfer_from, so)
 
 	s.logger.Debug("Successfully fetched transfer record by transfer_from",
 		zap.String("transfer_from", transfer_from),
@@ -363,26 +310,20 @@ func (s *transferQueryService) FindTransferByTransferTo(transfer_to string) ([]*
 		zap.String("transfer_to", transfer_to),
 	)
 
+	if data := s.mencache.GetCachedTransferByTo(transfer_to); data != nil {
+		s.logger.Debug("Successfully fetched transfer by transfer_to from cache", zap.String("transfer_to", transfer_to))
+		return data, nil
+	}
+
 	res, err := s.transferQueryRepository.FindTransferByTransferTo(transfer_to)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRANSFER_BY_TRANSFER_TO")
-
-		s.logger.Error("Failed to fetch transfers by transfer_to",
-			zap.Error(err),
-			zap.String("transfer_to", transfer_to),
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace_id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch transfers by transfer_to")
-
-		status = "failed_find_transfer_by_transfer_to"
-		return nil, transfer_errors.ErrTransferNotFound
+		return s.errorhandler.HanldeRepositoryListError(err, "FindTransferByTransferTo", "FAILED_TO_FIND_TRANSFER_BY_TRANSFER_TO", span, &status, transfer_errors.ErrTransferNotFound, zap.String("transfer_to", transfer_to))
 	}
 
 	so := s.mapping.ToTransfersResponse(res)
+
+	s.mencache.SetCachedTransferByTo(transfer_to, so)
 
 	s.logger.Debug("Successfully fetched transfer record by transfer_to",
 		zap.String("transfer_to", transfer_to),
@@ -391,7 +332,17 @@ func (s *transferQueryService) FindTransferByTransferTo(transfer_to string) ([]*
 	return so, nil
 }
 
+func (s *transferQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
+}
+
 func (s *transferQueryService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

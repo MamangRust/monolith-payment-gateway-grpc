@@ -3,6 +3,7 @@ package middlewares
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
@@ -16,6 +17,7 @@ type ApiKeyValidator struct {
 	responseTopic string
 	timeout       time.Duration
 	responseChans map[string]chan []byte
+	mu            sync.Mutex
 }
 
 func NewApiKeyValidator(k *kafka.Kafka, requestTopic, responseTopic string, timeout time.Duration) *ApiKeyValidator {
@@ -29,11 +31,12 @@ func NewApiKeyValidator(k *kafka.Kafka, requestTopic, responseTopic string, time
 
 	handler := &responseHandler{validator: v}
 	go func() {
-		err := k.StartConsumers([]string{responseTopic}, "merchant-transaction", handler)
+		err := k.StartConsumers([]string{responseTopic}, "api-gateway-group", handler)
 		if err != nil {
 			panic("failed to start kafka consumer: " + err.Error())
 		}
 	}()
+
 	return v
 }
 
@@ -52,27 +55,51 @@ func (v *ApiKeyValidator) Middleware() echo.MiddlewareFunc {
 				"reply_topic":    v.responseTopic,
 			}
 
-			data, _ := json.Marshal(payload)
-			err := v.kafka.SendMessage(v.requestTopic, correlationID, data)
+			data, err := json.Marshal(payload)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Kafka send error")
+				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to encode payload")
+			}
+
+			err = v.kafka.SendMessage(v.requestTopic, correlationID, data)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to send Kafka message")
 			}
 
 			respChan := make(chan []byte, 1)
+
+			v.mu.Lock()
 			v.responseChans[correlationID] = respChan
-			defer delete(v.responseChans, correlationID)
+			v.mu.Unlock()
+
+			defer func() {
+				v.mu.Lock()
+				delete(v.responseChans, correlationID)
+				v.mu.Unlock()
+			}()
 
 			select {
 			case msg := <-respChan:
 				var response map[string]interface{}
-				_ = json.Unmarshal(msg, &response)
-				if response["valid"].(bool) {
-					c.Set("merchant_id", response["merchant_id"])
-					return next(c)
+				if err := json.Unmarshal(msg, &response); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "Invalid response format")
 				}
-				return echo.NewHTTPError(http.StatusUnauthorized, "Invalid API Key")
+
+				valid, ok := response["valid"].(bool)
+				if !ok || !valid {
+					return echo.NewHTTPError(http.StatusUnauthorized, "Invalid API Key")
+				}
+
+				merchantID, ok := response["merchant_id"]
+				if !ok {
+					return echo.NewHTTPError(http.StatusUnauthorized, "Merchant ID not found in response")
+				}
+
+				c.Set("merchant_id", merchantID)
+				c.Set("apiKey", apiKey)
+				return next(c)
+
 			case <-time.After(v.timeout):
-				return echo.NewHTTPError(http.StatusRequestTimeout, "Timeout waiting for Kafka response")
+				return echo.NewHTTPError(http.StatusRequestTimeout, "Timeout waiting for API key validation")
 			}
 		}
 	}

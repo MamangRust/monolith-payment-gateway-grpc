@@ -10,9 +10,9 @@ type responseHandler struct {
 	validator *ApiKeyValidator
 }
 
-func NewResponseHandler() *responseHandler {
+func NewResponseHandler(validator *ApiKeyValidator) *responseHandler {
 	return &responseHandler{
-		validator: &ApiKeyValidator{},
+		validator: validator,
 	}
 }
 
@@ -22,12 +22,23 @@ func (h *responseHandler) Cleanup(sarama.ConsumerGroupSession) error { return ni
 func (h *responseHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		var payload map[string]interface{}
-		_ = json.Unmarshal(msg.Value, &payload)
+		if err := json.Unmarshal(msg.Value, &payload); err != nil {
+			continue
+		}
 
-		correlationID, _ := payload["correlation_id"].(string)
-		if ch, ok := h.validator.responseChans[correlationID]; ok {
+		correlationID, ok := payload["correlation_id"].(string)
+		if !ok {
+			continue
+		}
+
+		h.validator.mu.Lock()
+		ch, ok := h.validator.responseChans[correlationID]
+		h.validator.mu.Unlock()
+
+		if ok {
 			ch <- msg.Value
 		}
+
 		session.MarkMessage(msg, "")
 	}
 	return nil

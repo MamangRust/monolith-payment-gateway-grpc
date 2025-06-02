@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/email"
@@ -13,12 +15,8 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	randomstring "github.com/MamangRust/monolith-payment-gateway-pkg/random_string"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
-	userrole_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_role_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -29,20 +27,33 @@ import (
 )
 
 type registerService struct {
-	ctx             context.Context
-	trace           trace.Tracer
-	user            repository.UserRepository
-	role            repository.RoleRepository
-	userRole        repository.UserRoleRepository
-	hash            hash.HashPassword
-	kafka           kafka.Kafka
-	logger          logger.LoggerInterface
-	mapping         responseservice.UserResponseMapper
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+	ctx               context.Context
+	trace             trace.Tracer
+	errohandler       errorhandler.RegisterErrorHandler
+	errorPassword     errorhandler.PasswordErrorHandler
+	errorRandomString errorhandler.RandomStringErrorHandler
+	errorMarshal      errorhandler.MarshalErrorHandler
+	errorKafka        errorhandler.KafkaErrorHandler
+	mencache          mencache.RegisterCache
+	user              repository.UserRepository
+	role              repository.RoleRepository
+	userRole          repository.UserRoleRepository
+	hash              hash.HashPassword
+	kafka             kafka.Kafka
+	logger            logger.LoggerInterface
+	mapping           responseservice.UserResponseMapper
+	requestCounter    *prometheus.CounterVec
+	requestDuration   *prometheus.HistogramVec
 }
 
-func NewRegisterService(ctx context.Context, user repository.UserRepository, role repository.RoleRepository, userRole repository.UserRoleRepository, hash hash.HashPassword, kafka kafka.Kafka, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *registerService {
+func NewRegisterService(ctx context.Context,
+	errorhandler errorhandler.RegisterErrorHandler,
+	errorPassword errorhandler.PasswordErrorHandler,
+	errorRandomString errorhandler.RandomStringErrorHandler,
+	errorMarshal errorhandler.MarshalErrorHandler,
+	errorKafka errorhandler.KafkaErrorHandler,
+	mencache mencache.RegisterCache,
+	user repository.UserRepository, role repository.RoleRepository, userRole repository.UserRoleRepository, hash hash.HashPassword, kafka kafka.Kafka, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *registerService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "register_service_requests_total",
@@ -57,23 +68,29 @@ func NewRegisterService(ctx context.Context, user repository.UserRepository, rol
 			Help:    "Histogram of request durations for the RegisterService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &registerService{
-		ctx:             ctx,
-		trace:           otel.Tracer("register-service"),
-		user:            user,
-		role:            role,
-		userRole:        userRole,
-		hash:            hash,
-		kafka:           kafka,
-		logger:          logger,
-		mapping:         mapping,
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		ctx:               ctx,
+		errorPassword:     errorPassword,
+		errohandler:       errorhandler,
+		errorRandomString: errorRandomString,
+		errorMarshal:      errorMarshal,
+		errorKafka:        errorKafka,
+		mencache:          mencache,
+		trace:             otel.Tracer("register-service"),
+		user:              user,
+		role:              role,
+		userRole:          userRole,
+		hash:              hash,
+		kafka:             kafka,
+		logger:            logger,
+		mapping:           mapping,
+		requestCounter:    requestCounter,
+		requestDuration:   requestDuration,
 	}
 }
 
@@ -101,28 +118,13 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	existingUser, err := s.user.FindByEmail(request.Email)
 	if err == nil && existingUser != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Email already exists", zap.String("trace_id", traceID))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Email already exists")
-
-		status = "email_already_exists"
-		return nil, user_errors.ErrUserEmailAlready
+		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
+			zap.String("email", request.Email), zap.Error(err))
 	}
 
 	passwordHash, err := s.hash.HashPassword(request.Password)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to hash password", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to hash password")
-
-		status = "hash_password_failed"
-		return nil, user_errors.ErrUserPassword
+		return s.errorPassword.HandleHashPasswordError(err, "Register", "REGISTER_ERR", span, &status)
 	}
 	request.Password = passwordHash
 
@@ -131,27 +133,13 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	role, err := s.role.FindByName(defaultRoleName)
 
 	if err != nil || role == nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to find default role", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find default role")
-
-		status = "role_not_found"
-		return nil, role_errors.ErrRoleNotFoundRes
+		return s.errohandler.HandleFindRoleError(err, "Register", "REGISTER_ERR", span, &status,
+			zap.String("role_name", defaultRoleName), zap.Error(err))
 	}
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to generate verification code", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to generate verification code")
-		status = "verification_code_failed"
-		return nil, user_errors.ErrFailedCreateUser
+		return s.errorRandomString.HandleRandomStringErrorRegister(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
 	request.VerifiedCode = random
@@ -159,15 +147,7 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	newUser, err := s.user.CreateUser(request)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to create user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create user")
-
-		status = "create_user_failed"
-		return nil, user_errors.ErrFailedCreateUser
+		return s.errohandler.HandleCreateUserError(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -185,28 +165,12 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to marshal email payload", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to marshal email payload")
-
-		status = "marshal_email_failed"
-		return nil, user_errors.ErrFailedSendEmail
+		return s.errorMarshal.HandleMarshalRegisterError(err, "Register", "MARSHAL_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-register", strconv.Itoa(newUser.ID), payloadBytes)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to send email", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send email")
-
-		status = "kafka_send_failed"
-		return nil, user_errors.ErrFailedSendEmail
+		return s.errorKafka.HandleSendEmailRegister(err, "Register", "SEND_EMAIL_ERR", span, &status, zap.Error(err))
 	}
 
 	_, err = s.userRole.AssignRoleToUser(&requests.CreateUserRoleRequest{
@@ -214,16 +178,10 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 		RoleId: role.ID,
 	})
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REGISTER_ERR")
-
-		s.logger.Error("Failed to assign role to user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to assign role to user")
-
-		status = "assign_role_failed"
-		return nil, userrole_errors.ErrFailedAssignRoleToUser
+		return s.errohandler.HandleAssignRoleError(err, "Register", "ASSIGN_ROLE_ERR", span, &status, zap.Error(err))
 	}
+
+	s.mencache.SetVerificationCodeCache(request.Email, random, 15*time.Minute)
 
 	userResponse := s.mapping.ToUserResponse(newUser)
 
@@ -235,5 +193,5 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 func (s *registerService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

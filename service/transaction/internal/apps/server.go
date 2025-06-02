@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -17,10 +18,13 @@ import (
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
 	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
+	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/handler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/service"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -49,20 +53,23 @@ type Server struct {
 	Ctx      context.Context
 }
 
-func NewServer() (*Server, error) {
+func NewServer() (*Server, func(context.Context) error, error) {
+	flag.Parse()
+
 	logger, err := logger.NewLogger()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
 	if err := dotenv.Viper(); err != nil {
 		logger.Fatal("Failed to load .env file", zap.Error(err))
+		return nil, nil, err
 	}
-	flag.Parse()
 
 	conn, err := database.NewClient(logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
+		return nil, nil, err
 	}
 	DB := db.New(conn)
 
@@ -79,17 +86,39 @@ func NewServer() (*Server, error) {
 	repositories := repository.NewRepositories(depsRepo)
 	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
-	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Transaction-service", ctx)
+	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("transaction-service", ctx)
 	if err != nil {
 		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
+		return nil, nil, err
 	}
-	defer func() {
-		if err := shutdownTracerProvider(ctx); err != nil {
-			logger.Fatal("Failed to shutdown tracer provider", zap.Error(err))
-		}
-	}()
+
+	myredis := redis.NewClient(&redis.Options{
+		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
+		Password:     viper.GetString("REDIS_PASSWORD"),
+		DB:           viper.GetInt("REDIS_DB_TRANSACTION"),
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 3,
+	})
+
+	if err := myredis.Ping(ctx).Err(); err != nil {
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
+		return nil, nil, err
+	}
+
+	mencache := mencache.NewMencache(&mencache.Deps{
+		Ctx:    ctx,
+		Redis:  myredis,
+		Logger: logger,
+	})
+
+	errorhandler := errorhandler.NewErrorHandler(logger)
 
 	services := service.NewService(service.Deps{
+		Mencache:     *mencache,
+		ErrorHander:  *errorhandler,
 		Kafka:        *myKafka,
 		Ctx:          ctx,
 		Repositories: repositories,
@@ -97,6 +126,7 @@ func NewServer() (*Server, error) {
 	})
 
 	handlers := handler.NewHandler(handler.Deps{
+		Logger:  logger,
 		Service: *services,
 	})
 
@@ -106,7 +136,7 @@ func NewServer() (*Server, error) {
 		Services: services,
 		Handlers: handlers,
 		Ctx:      ctx,
-	}, nil
+	}, shutdownTracerProvider, nil
 }
 
 func (s *Server) Run() {

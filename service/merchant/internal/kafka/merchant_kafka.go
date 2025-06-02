@@ -5,6 +5,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/service"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"go.uber.org/zap"
 )
@@ -12,11 +13,13 @@ import (
 type merchantKafkaHandler struct {
 	logger          logger.LoggerInterface
 	merchantService service.MerchantQueryService
+	kafka           *kafka.Kafka
 }
 
-func NewMerchantKafkaHandler(merchantService service.MerchantQueryService, logger logger.LoggerInterface) sarama.ConsumerGroupHandler {
+func NewMerchantKafkaHandler(merchantService service.MerchantQueryService, kafka *kafka.Kafka, logger logger.LoggerInterface) sarama.ConsumerGroupHandler {
 	return &merchantKafkaHandler{
 		merchantService: merchantService,
+		kafka:           kafka,
 		logger:          logger,
 	}
 }
@@ -32,34 +35,32 @@ func (m *merchantKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) erro
 func (m *merchantKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		var payload map[string]interface{}
-
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {
-			m.logger.Debug("Failed to unmarshal message: %v", zap.Error(err))
+			m.logger.Error("Failed to unmarshal message", zap.Error(err))
 			continue
 		}
 
-		apiKeyRaw, ok := payload["api_key"]
-		if !ok {
-			m.logger.Debug("invalid api_key format")
-			continue
+		apiKey, _ := payload["api_key"].(string)
+		correlationID, _ := payload["correlation_id"].(string)
+		replyTopic, _ := payload["reply_topic"].(string)
+
+		resp := map[string]interface{}{
+			"correlation_id": correlationID,
+			"valid":          false,
 		}
 
-		apiKey, ok := apiKeyRaw.(string)
-		if !ok {
-			m.logger.Debug("invalid api_key format")
-			continue
+		merchant, err := m.merchantService.FindByApiKey(apiKey)
+		if err == nil {
+			resp["valid"] = true
+			resp["merchant_id"] = merchant.ID
 		}
 
-		_, err := m.merchantService.FindByApiKey(apiKey)
-		if err != nil {
-			m.logger.Debug("invalid api_key")
-			continue
+		respBytes, _ := json.Marshal(resp)
+
+		sendErr := m.kafka.SendMessage(replyTopic, correlationID, respBytes)
+		if sendErr != nil {
+			m.logger.Error("Failed to send Kafka response", zap.Error(sendErr))
 		}
-
-		m.logger.Debug("valid api_key, processing merchant payload...")
-
-		m.logger.Debug("Received Merchant Data: %v", zap.Any("payload", payload))
-
 		session.MarkMessage(msg, "")
 	}
 	return nil

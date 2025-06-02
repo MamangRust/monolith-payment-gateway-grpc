@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-transfer/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -20,6 +20,8 @@ import (
 
 type transferStatisticService struct {
 	ctx                         context.Context
+	errorhandler                errorhandler.TransferStatisticErrorHandler
+	mencache                    mencache.TransferStatisticCache
 	trace                       trace.Tracer
 	transferStatisticRepository repository.TransferStatisticRepository
 	logger                      logger.LoggerInterface
@@ -28,7 +30,8 @@ type transferStatisticService struct {
 	requestDuration             *prometheus.HistogramVec
 }
 
-func NewTransferStatisticService(ctx context.Context, transferStatisticRepository repository.TransferStatisticRepository, logger logger.LoggerInterface, mapping responseservice.TransferResponseMapper) *transferStatisticService {
+func NewTransferStatisticService(ctx context.Context, errorhandler errorhandler.TransferStatisticErrorHandler,
+	mencache mencache.TransferStatisticCache, transferStatisticRepository repository.TransferStatisticRepository, logger logger.LoggerInterface, mapping responseservice.TransferResponseMapper) *transferStatisticService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "transfer_statistic_service_request_total",
@@ -43,13 +46,15 @@ func NewTransferStatisticService(ctx context.Context, transferStatisticRepositor
 			Help:    "Histogram of request durations for the TransferStatisticService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &transferStatisticService{
 		ctx:                         ctx,
+		errorhandler:                errorhandler,
+		mencache:                    mencache,
 		trace:                       otel.Tracer("transfer-statistic-service"),
 		transferStatisticRepository: transferStatisticRepository,
 		logger:                      logger,
@@ -80,23 +85,22 @@ func (s *transferStatisticService) FindMonthTransferStatusSuccess(req *requests.
 
 	s.logger.Debug("Fetching monthly Transfer status success", zap.Int("year", year), zap.Int("month", month))
 
+	if data := s.mencache.GetCachedMonthTransferStatusSuccess(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly Transfer status success from cache", zap.Int("year", year), zap.Int("month", month))
+		return data, nil
+	}
+
 	records, err := s.transferStatisticRepository.GetMonthTransferStatusSuccess(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TRANSFER_SUCCESS")
-
-		s.logger.Error("Failed to fetch monthly Transfer status success", zap.Error(err), zap.Int("year", year), zap.Int("month", month))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_month_transfer_status_success"
-
-		return nil, transfer_errors.ErrFailedFindMonthTransferStatusSuccess
+		return s.errorhandler.HandleMonthTransferStatusSuccessError(err, "FindMonthTransferStatusSuccess", "FAILED_FIND_MONTH_TRANSFER_STATUS_SUCCESS", span, &status, zap.Int("year", year), zap.Int("month", month))
 	}
 
-	s.logger.Debug("Successfully fetched monthly Transfer status success", zap.Int("year", year), zap.Int("month", month))
-
 	so := s.mapping.ToTransferResponsesMonthStatusSuccess(records)
+
+	s.mencache.SetCachedMonthTransferStatusSuccess(req, so)
+
+	s.logger.Debug("Successfully fetched monthly Transfer status success", zap.Int("year", year), zap.Int("month", month))
 
 	return so, nil
 }
@@ -118,24 +122,25 @@ func (s *transferStatisticService) FindYearlyTransferStatusSuccess(year int) ([]
 
 	s.logger.Debug("Fetching yearly Transfer status success", zap.Int("year", year))
 
-	records, err := s.transferStatisticRepository.GetYearlyTransferStatusSuccess(year)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEAR_TRANSFER_SUCCESS")
-
-		s.logger.Error("Failed to fetch yearly Transfer status success", zap.Error(err), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_year_transfer_status_success"
-
-		return nil, transfer_errors.ErrFailedFindYearTransferStatusSuccess
+	if data := s.mencache.GetCachedYearlyTransferStatusSuccess(year); data != nil {
+		s.logger.Debug("Successfully fetched yearly Transfer status success from cache", zap.Int("year", year))
+		return data, nil
 	}
 
-	s.logger.Debug("Successfully fetched yearly Transfer status success", zap.Int("year", year))
+	records, err := s.transferStatisticRepository.GetYearlyTransferStatusSuccess(year)
+
+	if err != nil {
+		return s.errorhandler.HandleYearTransferStatusSuccessError(err, "FindYearlyTransferStatusSuccess", "FAILED_YEARLY_TRANSFER_STATUS_SUCCESS", span, &status, zap.Int("year", year))
+	}
 
 	so := s.mapping.ToTransferResponsesYearStatusSuccess(records)
 
+	s.mencache.SetCachedYearlyTransferStatusSuccess(year, so)
+
+	s.logger.Debug("Successfully fetched yearly Transfer status success", zap.Int("year", year))
+
 	return so, nil
+
 }
 
 func (s *transferStatisticService) FindMonthTransferStatusFailed(req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusFailed, *response.ErrorResponse) {
@@ -159,23 +164,21 @@ func (s *transferStatisticService) FindMonthTransferStatusFailed(req *requests.M
 
 	s.logger.Debug("Fetching monthly Transfer status Failed", zap.Int("year", year), zap.Int("month", month))
 
+	if data := s.mencache.GetCachedMonthTransferStatusFailed(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly Transfer status Failed from cache", zap.Int("year", year), zap.Int("month", month))
+		return data, nil
+	}
+
 	records, err := s.transferStatisticRepository.GetMonthTransferStatusFailed(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TRANSFER_STATUS_FAILED")
-
-		s.logger.Error("Failed to fetch monthly Transfer status Failed", zap.Error(err), zap.Int("year", year), zap.Int("month", month))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_month_transfer_status_failed"
-
-		return nil, transfer_errors.ErrFailedFindMonthTransferStatusFailed
+		return s.errorhandler.HandleMonthTransferStatusFailedError(err, "FindMonthTransferStatusFailed", "FAILED_MONTHLY_TRANSFER_STATUS_FAILED", span, &status, zap.Int("year", year), zap.Int("month", month))
 	}
+	so := s.mapping.ToTransferResponsesMonthStatusFailed(records)
+
+	s.mencache.SetCachedMonthTransferStatusFailed(req, so)
 
 	s.logger.Debug("Failedfully fetched monthly Transfer status Failed", zap.Int("year", year), zap.Int("month", month))
-
-	so := s.mapping.ToTransferResponsesMonthStatusFailed(records)
 
 	return so, nil
 }
@@ -197,22 +200,20 @@ func (s *transferStatisticService) FindYearlyTransferStatusFailed(year int) ([]*
 
 	s.logger.Debug("Fetching yearly Transfer status Failed", zap.Int("year", year))
 
-	records, err := s.transferStatisticRepository.GetYearlyTransferStatusFailed(year)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEAR_TRANSFER_STATUS_FAILED")
-
-		s.logger.Error("Failed to fetch yearly Transfer status Failed", zap.Error(err), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_year_transfer_status_failed"
-
-		return nil, transfer_errors.ErrFailedFindYearTransferStatusFailed
+	if data := s.mencache.GetCachedYearlyTransferStatusFailed(year); data != nil {
+		s.logger.Debug("Successfully fetched yearly Transfer status Failed from cache", zap.Int("year", year))
+		return data, nil
 	}
 
-	s.logger.Debug("Failedfully fetched yearly Transfer status Failed", zap.Int("year", year))
-
+	records, err := s.transferStatisticRepository.GetYearlyTransferStatusFailed(year)
+	if err != nil {
+		return s.errorhandler.HandleYearTransferStatusFailedError(err, "FindYearlyTransferStatusFailed", "FAILED_FIND_YEARLY_TRANSFER_STATUS_FAILED", span, &status, zap.Int("year", year))
+	}
 	so := s.mapping.ToTransferResponsesYearStatusFailed(records)
+
+	s.mencache.SetCachedYearlyTransferStatusFailed(year, so)
+
+	s.logger.Debug("Failedfully fetched yearly Transfer status Failed", zap.Int("year", year))
 
 	return so, nil
 }
@@ -234,20 +235,19 @@ func (s *transferStatisticService) FindMonthlyTransferAmounts(year int) ([]*resp
 
 	s.logger.Debug("Fetching monthly transfer amounts", zap.Int("year", year))
 
+	if data := s.mencache.GetCachedMonthTransferAmounts(year); data != nil {
+		s.logger.Debug("Successfully fetched monthly transfer amounts from cache", zap.Int("year", year))
+		return data, nil
+	}
+
 	amounts, err := s.transferStatisticRepository.GetMonthlyTransferAmounts(year)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_TRANSFER_AMOUNTS")
-
-		s.logger.Error("failed to find monthly transfer amounts", zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_monthly_transfer_amounts"
-
-		return nil, transfer_errors.ErrFailedFindMonthlyTransferAmounts
+		return s.errorhandler.HandleMonthlyTransferAmountsError(err, "FindMonthlyTransferAmounts", "FAILED_FIND_MONTHLY_TRANSFER_AMOUNTS", span, &status, zap.Int("year", year))
 	}
 
 	responseAmounts := s.mapping.ToTransferResponsesMonthAmount(amounts)
+
+	s.mencache.SetCachedMonthTransferAmounts(year, responseAmounts)
 
 	s.logger.Debug("Successfully fetched monthly transfer amounts", zap.Int("year", year))
 
@@ -271,20 +271,19 @@ func (s *transferStatisticService) FindYearlyTransferAmounts(year int) ([]*respo
 
 	s.logger.Debug("Fetching yearly transfer amounts", zap.Int("year", year))
 
+	if data := s.mencache.GetCachedYearlyTransferAmounts(year); data != nil {
+		s.logger.Debug("Successfully fetched yearly transfer amounts from cache", zap.Int("year", year))
+		return data, nil
+	}
+
 	amounts, err := s.transferStatisticRepository.GetYearlyTransferAmounts(year)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TRANSFER_AMOUNTS")
-
-		s.logger.Error("failed to find yearly transfer amounts", zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-
-		status = "failed_find_yearly_transfer_amounts"
-
-		return nil, transfer_errors.ErrFailedFindYearlyTransferAmounts
+		return s.errorhandler.HandleYearlyTransferAmountsError(err, "FindYearlyTransferAmounts", "FAILED_FIND_YEARLY_TRANSFER_AMOUNTS", span, &status, zap.Int("year", year))
 	}
 
 	responseAmounts := s.mapping.ToTransferResponsesYearAmount(amounts)
+
+	s.mencache.SetCachedYearlyTransferAmounts(year, responseAmounts)
 
 	s.logger.Debug("Successfully fetched yearly transfer amounts", zap.Int("year", year))
 
@@ -293,5 +292,5 @@ func (s *transferStatisticService) FindYearlyTransferAmounts(year int) ([]*respo
 
 func (s *transferStatisticService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

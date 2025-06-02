@@ -4,16 +4,15 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	refreshtoken_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/refresh_token_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,6 +23,10 @@ import (
 
 type loginService struct {
 	ctx             context.Context
+	errorPassword   errorhandler.PasswordErrorHandler
+	errorToken      errorhandler.TokenErrorHandler
+	errorHandler    errorhandler.LoginErrorHandler
+	mencache        mencache.LoginCache
 	logger          logger.LoggerInterface
 	hash            hash.HashPassword
 	user            repository.UserRepository
@@ -37,6 +40,10 @@ type loginService struct {
 
 func NewLoginService(
 	ctx context.Context,
+	errorPassword errorhandler.PasswordErrorHandler,
+	errorToken errorhandler.TokenErrorHandler,
+	errorHandler errorhandler.LoginErrorHandler,
+	mencache mencache.LoginCache,
 	logger logger.LoggerInterface,
 	hash hash.HashPassword,
 	userRepository repository.UserRepository,
@@ -57,13 +64,17 @@ func NewLoginService(
 			Help:    "Duration of auth requests",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &loginService{
 		ctx:             ctx,
+		errorPassword:   errorPassword,
+		errorToken:      errorToken,
+		errorHandler:    errorHandler,
+		mencache:        mencache,
 		logger:          logger,
 		hash:            hash,
 		user:            userRepository,
@@ -83,7 +94,7 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 		s.recordMetrics("Login", status, startTime)
 	}()
 
-	ctx, span := s.trace.Start(s.ctx, "LoginService.Login")
+	_, span := s.trace.Start(s.ctx, "LoginService.Login")
 	defer span.End()
 
 	span.SetAttributes(
@@ -94,16 +105,16 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 		zap.String("email", request.Email),
 	)
 
+	cachedToken := s.mencache.GetCachedLogin(request.Email)
+	if cachedToken != nil {
+		s.logger.Debug("Returning cached login token", zap.String("email", request.Email))
+		span.SetStatus(codes.Ok, "Login from cache")
+		return cachedToken, nil
+	}
+
 	res, err := s.user.FindByEmail(request.Email)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("EMAIL_NOT_FOUND")
-
-		s.logger.Error("Failed to get user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-		return nil, user_errors.ErrUserNotFoundRes
+		return s.errorHandler.HandleFindEmailError(err, "Login", "LOGIN_ERR", span, &status, zap.Error(err))
 	}
 
 	span.SetAttributes(
@@ -112,37 +123,25 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 
 	err = s.hash.ComparePassword(res.Password, request.Password)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("PASSWORD_MISMATCH")
-		s.logger.Error("Failed to compare password", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Password mismatch")
-		status = "password_mismatch"
-		return nil, user_errors.ErrUserPassword
+		return s.errorPassword.HandleComparePasswordError(err, "Login", "COMPARE_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
-	token, err := s.tokenService.createAccessToken(ctx, res.ID)
+	token, err := s.tokenService.createAccessToken(s.ctx, res.ID)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("ACCESS_TOKEN_FAILED")
-
-		s.logger.Error("Failed to generate JWT token", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create access token")
-		status = "access_token_failed"
-		return nil, refreshtoken_errors.ErrFailedCreateAccess
+		return s.errorToken.HandleCreateAccessTokenError(err, "Login", "CREATE_ACCESS_TOKEN_ERR", span, &status, zap.Error(err))
 	}
 
-	refreshToken, err := s.tokenService.createRefreshToken(ctx, res.ID)
+	refreshToken, err := s.tokenService.createRefreshToken(s.ctx, res.ID)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("REFRESH_TOKEN_FAILED")
-		s.logger.Error("Failed to generate refresh token", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create refresh token")
-		status = "refresh_token_failed"
-		return nil, refreshtoken_errors.ErrFailedCreateRefresh
+		return s.errorToken.HandleCreateRefreshTokenError(err, "Login", "CREATE_REFRESH_TOKEN_ERR", span, &status, zap.Error(err))
 	}
+
+	tokenResp := &response.TokenResponse{
+		AccessToken:  token,
+		RefreshToken: refreshToken,
+	}
+
+	s.mencache.SetCachedLogin(request.Email, tokenResp, time.Minute)
 
 	s.logger.Debug("User logged in successfully",
 		zap.String("email", request.Email),
@@ -150,13 +149,10 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 	)
 	span.SetStatus(codes.Ok, "Login successful")
 
-	return &response.TokenResponse{
-		AccessToken:  token,
-		RefreshToken: refreshToken,
-	}, nil
+	return tokenResp, nil
 }
 
 func (s *loginService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

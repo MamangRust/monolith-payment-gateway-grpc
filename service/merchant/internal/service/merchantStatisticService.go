@@ -4,22 +4,23 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type merchantStatisService struct {
 	ctx                      context.Context
+	mencache                 mencache.MerchantStatisticCache
+	errorHandler             errorhandler.MerchantStatisticErrorHandler
 	trace                    trace.Tracer
 	merchantStatisRepository repository.MerchantStatisticRepository
 	logger                   logger.LoggerInterface
@@ -30,23 +31,27 @@ type merchantStatisService struct {
 
 func NewMerchantStatisService(
 	ctx context.Context,
+	mencache mencache.MerchantStatisticCache,
+	errorHandler errorhandler.MerchantStatisticErrorHandler,
 	merchantStatisRepository repository.MerchantStatisticRepository, logger logger.LoggerInterface, mapping responseservice.MerchantResponseMapper) *merchantStatisService {
 
 	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "merchant_statistic_service_request_total",
 		Help: "The total number of requests MerchantStatisticService",
-	}, []string{"method", "path"})
+	}, []string{"method", "status"})
 
 	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "merchant_statistic_service_request_duration_seconds",
 		Help:    "The duration of requests MerchantStatisticService",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "path"})
+	}, []string{"method", "status"})
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &merchantStatisService{
 		ctx:                      ctx,
+		mencache:                 mencache,
+		errorHandler:             errorHandler,
 		trace:                    otel.Tracer("merchant-statistic-service"),
 		merchantStatisRepository: merchantStatisRepository,
 		logger:                   logger,
@@ -74,22 +79,24 @@ func (s *merchantStatisService) FindMonthlyPaymentMethodsMerchant(year int) ([]*
 
 	s.logger.Debug("Finding monthly payment methods for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetMonthlyPaymentMethodsMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetMonthlyPaymentMethodsMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_PAYMENT_METHODS_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find monthly payment methods for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find monthly payment methods for merchant")
-		status = "failed_find_monthly_payment_methods_merchant"
-
-		return nil, merchant_errors.ErrFailedFindMonthlyPaymentMethodsMerchant
+		return s.errorHandler.HandleMonthlyPaymentMethodsMerchantError(
+			err, "FindMonthlyPaymentMethodsMerchant", "FAILED_FIND_MONTHLY_PAYMENT_METHODS_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantMonthlyPaymentMethods(res)
+
+	s.mencache.SetMonthlyPaymentMethodsMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found monthly payment methods for merchant", zap.Int("year", year))
 
@@ -114,21 +121,24 @@ func (s *merchantStatisService) FindYearlyPaymentMethodMerchant(year int) ([]*re
 
 	s.logger.Debug("Finding yearly payment methods for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetYearlyPaymentMethodMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetYearlyPaymentMethodMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_PAYMENT_METHOD_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find yearly payment methods for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find yearly payment methods for merchant")
-		status = "failed_find_yearly_payment_method_merchant"
-		return nil, merchant_errors.ErrFailedFindYearlyPaymentMethodMerchant
+		return s.errorHandler.HandleYearlyPaymentMethodMerchantError(
+			err, "FindYearlyPaymentMethodMerchant", "FAILED_FIND_YEARLY_PAYMENT_METHOD_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantYearlyPaymentMethods(res)
+
+	s.mencache.SetYearlyPaymentMethodMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found yearly payment methods for merchant", zap.Int("year", year))
 
@@ -153,21 +163,24 @@ func (s *merchantStatisService) FindMonthlyAmountMerchant(year int) ([]*response
 
 	s.logger.Debug("Finding monthly amount for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetMonthlyAmountMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetMonthlyAmountMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_AMOUNT_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find monthly amount for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find monthly amount for merchant")
-		status = "failed_find_monthly_amount_merchant"
-		return nil, merchant_errors.ErrFailedFindMonthlyAmountMerchant
+		return s.errorHandler.HandleMonthlyAmountMerchantError(
+			err, "FindMonthlyAmountMerchant", "FAILED_FIND_MONTHLY_AMOUNT_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantMonthlyAmounts(res)
+
+	s.mencache.SetMonthlyAmountMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found monthly amount for merchant", zap.Int("year", year))
 
@@ -192,21 +205,24 @@ func (s *merchantStatisService) FindYearlyAmountMerchant(year int) ([]*response.
 
 	s.logger.Debug("Finding yearly amount for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetYearlyAmountMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetYearlyAmountMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_AMOUNT_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find yearly amount for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find yearly amount for merchant")
-		status = "failed_find_yearly_amount_merchant"
-		return nil, merchant_errors.ErrFailedFindYearlyAmountMerchant
+		return s.errorHandler.HandleYearlyAmountMerchantError(
+			err, "FindYearlyAmountMerchant", "FAILED_FIND_YEARLY_AMOUNT_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantYearlyAmounts(res)
+
+	s.mencache.SetYearlyAmountMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found yearly amount for merchant", zap.Int("year", year))
 
@@ -230,21 +246,24 @@ func (s *merchantStatisService) FindMonthlyTotalAmountMerchant(year int) ([]*res
 
 	s.logger.Debug("Finding monthly amount for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetMonthlyTotalAmountMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetMonthlyTotalAmountMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_TOTAL_AMOUNT_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find monthly amount for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find monthly amount for merchant")
-		status = "failed_find_monthly_total_amount_merchant"
-		return nil, merchant_errors.ErrFailedFindMonthlyTotalAmountMerchant
+		return s.errorHandler.HandleMonthlyTotalAmountMerchantError(
+			err, "FindMonthlyTotalAmountMerchant", "FAILED_FIND_MONTHLY_TOTAL_AMOUNT_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantMonthlyTotalAmounts(res)
+
+	s.mencache.SetMonthlyTotalAmountMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found monthly amount for merchant", zap.Int("year", year))
 
@@ -268,21 +287,24 @@ func (s *merchantStatisService) FindYearlyTotalAmountMerchant(year int) ([]*resp
 
 	s.logger.Debug("Finding yearly amount for merchant", zap.Int("year", year))
 
+	if cachedMerchant := s.mencache.GetYearlyTotalAmountMerchantCache(year); cachedMerchant != nil {
+		s.logger.Debug("Successfully fetched merchant from cache",
+			zap.Int("year", year))
+		return cachedMerchant, nil
+	}
+
 	res, err := s.merchantStatisRepository.GetYearlyTotalAmountMerchant(year)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_TOTAL_AMOUNT_MERCHANT")
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-
-		s.logger.Error("Failed to find yearly amount for merchant", zap.Error(err), zap.Int("year", year))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find yearly amount for merchant")
-		status = "failed_find_yearly_total_amount_merchant"
-		return nil, merchant_errors.ErrFailedFindYearlyTotalAmountMerchant
+		return s.errorHandler.HandleYearlyTotalAmountMerchantError(
+			err, "FindYearlyTotalAmountMerchant", "FAILED_FIND_YEARLY_TOTAL_AMOUNT_MERCHANT", span, &status,
+			zap.Error(err),
+		)
 	}
 
 	so := s.mapping.ToMerchantYearlyTotalAmounts(res)
+
+	s.mencache.SetYearlyTotalAmountMerchantCache(year, so)
 
 	s.logger.Debug("Successfully found yearly amount for merchant", zap.Int("year", year))
 
@@ -291,5 +313,5 @@ func (s *merchantStatisService) FindYearlyTotalAmountMerchant(year int) ([]*resp
 
 func (s *merchantStatisService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

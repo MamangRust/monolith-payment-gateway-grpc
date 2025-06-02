@@ -6,23 +6,25 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-user/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-user/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type userCommandService struct {
 	ctx                   context.Context
+	errorhandler          errorhandler.UserCommandError
+	mencache              mencache.UserCommandCache
 	trace                 trace.Tracer
 	userQueryRepository   repository.UserQueryRepository
 	userCommandRepository repository.UserCommandRepository
@@ -36,6 +38,8 @@ type userCommandService struct {
 
 func NewUserCommandService(
 	ctx context.Context,
+	errorhandler errorhandler.UserCommandError,
+	mencache mencache.UserCommandCache,
 	userQueryRepository repository.UserQueryRepository,
 	userCommandRepository repository.UserCommandRepository,
 	roleRepository repository.RoleRepository,
@@ -57,13 +61,15 @@ func NewUserCommandService(
 			Help:    "Histogram of request durations for the UserCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &userCommandService{
 		ctx:                   ctx,
+		mencache:              mencache,
+		errorhandler:          errorhandler,
 		trace:                 otel.Tracer("user-command-service"),
 		userQueryRepository:   userQueryRepository,
 		userCommandRepository: userCommandRepository,
@@ -95,68 +101,31 @@ func (s *userCommandService) CreateUser(request *requests.CreateUserRequest) (*r
 
 	existingUser, err := s.userQueryRepository.FindByEmail(request.Email)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("EMAIL_NOT_FOUND")
-
-		s.logger.Error("Failed to find user by email", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-
-		return nil, user_errors.ErrUserEmailAlready
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateUser", "FAILED_FIND_USER_BY_EMAIL", span, &status, user_errors.ErrUserEmailAlready)
 
 	} else if existingUser != nil {
-		traceID := traceunic.GenerateTraceID("EMAIL_ALREADY_EXISTS")
-
-		s.logger.Error("Email already exists", zap.String("trace_id", traceID))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Email already exists")
-		status = "email_already_exists"
-
-		return nil, user_errors.ErrUserEmailAlready
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateUser", "FAILED_FIND_USER_BY_EMAIL", span, &status, user_errors.ErrUserEmailAlready)
 	}
 
 	hash, err := s.hashing.HashPassword(request.Password)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("PASSWORD_HASH_ERR")
-
-		s.logger.Error("Failed to hash password", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to hash password")
-		status = "password_hash_err"
-
-		return nil, user_errors.ErrUserPassword
+		return errorhandler.HandleErrorPasswordOperation[*response.UserResponse](s.logger, err, "CreateUser", "FAILED_HASH_PASSWORD", "hash", span, &status, user_errors.ErrUserPassword, zap.String("email", request.Email))
 	}
 
 	request.Password = hash
 
 	const defaultRoleName = "Admin Access 1"
+
 	role, err := s.roleRepository.FindByName(defaultRoleName)
+
 	if err != nil || role == nil {
-		traceID := traceunic.GenerateTraceID("ROLE_NOT_FOUND")
-
-		s.logger.Error("Failed to find role by name", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Role not found")
-		status = "role_not_found"
-
-		return nil, role_errors.ErrRoleNotFoundRes
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateUser", "FAILED_FIND_ROLE", span, &status, role_errors.ErrRoleNotFoundRes)
 	}
 
 	res, err := s.userCommandRepository.CreateUser(request)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_CREATE_USER")
-
-		s.logger.Error("Failed to create user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create user")
-		status = "failed_create_user"
-
-		return nil, user_errors.ErrFailedCreateUser
+		return s.errorhandler.HandleCreateUserError(err, "CreateUser", "FAILED_CREATE_USER", span, &status, zap.String("email", request.Email))
 	}
 
 	so := s.mapping.ToUserResponse(res)
@@ -186,30 +155,14 @@ func (s *userCommandService) UpdateUser(request *requests.UpdateUserRequest) (*r
 	existingUser, err := s.userQueryRepository.FindById(*request.UserID)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("USER_NOT_FOUND")
-
-		s.logger.Error("Failed to find user by id", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-
-		return nil, user_errors.ErrUserNotFoundRes
+		return s.errorhandler.HandleRepositorySingleError(err, "UpdateUser", "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes)
 	}
 
 	if request.Email != "" && request.Email != existingUser.Email {
 		duplicateUser, _ := s.userQueryRepository.FindByEmail(request.Email)
 
 		if duplicateUser != nil {
-			traceID := traceunic.GenerateTraceID("EMAIL_ALREADY_EXISTS")
-
-			s.logger.Error("Email already exists", zap.String("trace_id", traceID))
-			span.SetAttributes(attribute.String("trace.id", traceID))
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Email already exists")
-			status = "email_already_exists"
-
-			return nil, user_errors.ErrUserEmailAlready
+			return s.errorhandler.HandleRepositorySingleError(err, "UpdateUser", "FAILED_EMAIL_ALREADY", span, &status, user_errors.ErrUserEmailAlready)
 		}
 
 		existingUser.Email = request.Email
@@ -218,47 +171,28 @@ func (s *userCommandService) UpdateUser(request *requests.UpdateUserRequest) (*r
 	if request.Password != "" {
 		hash, err := s.hashing.HashPassword(request.Password)
 		if err != nil {
-			traceID := traceunic.GenerateTraceID("PASSWORD_HASH_ERR")
-
-			s.logger.Error("Failed to hash password", zap.String("trace_id", traceID), zap.Error(err))
-			span.SetAttributes(attribute.String("trace.id", traceID))
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Failed to hash password")
-			status = "password_hash_err"
-
-			return nil, user_errors.ErrUserPassword
+			return errorhandler.HandleErrorPasswordOperation[*response.UserResponse](s.logger, err, "UpdateUser", "FAILED_HASH_PASSWORD", "hash", span, &status, user_errors.ErrUserPassword, zap.Int("user_id", *request.UserID))
 		}
 		existingUser.Password = hash
 	}
 
 	const defaultRoleName = "Admin Access 1"
+
 	role, err := s.roleRepository.FindByName(defaultRoleName)
+
 	if err != nil || role == nil {
-		traceID := traceunic.GenerateTraceID("ROLE_NOT_FOUND")
-
-		s.logger.Error("Failed to find role by name", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Role not found")
-		status = "role_not_found"
-
-		return nil, role_errors.ErrRoleNotFoundRes
+		return s.errorhandler.HandleRepositorySingleError(err, "UpdateUser", "FAILED_FIND_ROLE", span, &status, role_errors.ErrRoleNotFoundRes)
 	}
 
 	res, err := s.userCommandRepository.UpdateUser(request)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_USER")
-
-		s.logger.Error("Failed to update user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update user")
-		status = "failed_update_user"
-
-		return nil, user_errors.ErrFailedUpdateUser
+		return s.errorhandler.HandleUpdateUserError(err, "UpdateUser", "FAILED_UPDATE_USER", span, &status, zap.Int("user_id", *request.UserID))
 	}
 
 	so := s.mapping.ToUserResponse(res)
+
+	s.mencache.DeleteUserCache(so.ID)
 
 	s.logger.Debug("Successfully updated user", zap.Int("user_id", so.ID))
 
@@ -285,18 +219,12 @@ func (s *userCommandService) TrashedUser(user_id int) (*response.UserResponseDel
 	res, err := s.userCommandRepository.TrashedUser(user_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASHED_USER")
-
-		s.logger.Error("Failed to trashed user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trashed user")
-		status = "failed_trashed_user"
-
-		return nil, user_errors.ErrFailedTrashedUser
+		return s.errorhandler.HandleTrashedUserError(err, "TrashedUser", "FAILED_TO_TRASH_USER", span, &status, zap.Int("user_id", user_id))
 	}
 
 	so := s.mapping.ToUserResponseDeleteAt(res)
+
+	s.mencache.DeleteUserCache(so.ID)
 
 	s.logger.Debug("Successfully trashed user", zap.Int("user_id", user_id))
 
@@ -323,15 +251,7 @@ func (s *userCommandService) RestoreUser(user_id int) (*response.UserResponseDel
 	res, err := s.userCommandRepository.RestoreUser(user_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_USER")
-
-		s.logger.Error("Failed to restore user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore user")
-		status = "failed_restore_user"
-
-		return nil, user_errors.ErrFailedRestoreUser
+		return s.errorhandler.HandleRestoreUserError(err, "RestoreUser", "FAILED_TO_RESTORE_USER", span, &status, zap.Int("user_id", user_id))
 	}
 
 	so := s.mapping.ToUserResponseDeleteAt(res)
@@ -362,15 +282,7 @@ func (s *userCommandService) DeleteUserPermanent(user_id int) (bool, *response.E
 	_, err := s.userCommandRepository.DeleteUserPermanent(user_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_USER_PERMANENT")
-
-		s.logger.Error("Failed to permanently delete user", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete user")
-		status = "failed_delete_user_permanent"
-
-		return false, user_errors.ErrFailedDeletePermanent
+		return s.errorhandler.HandleDeleteUserError(err, "DeleteUserPermanent", "FAILED_TO_DELETE_USER", span, &status, zap.Int("user_id", user_id))
 	}
 
 	s.logger.Debug("Successfully deleted user permanently", zap.Int("user_id", user_id))
@@ -394,15 +306,7 @@ func (s *userCommandService) RestoreAllUser() (bool, *response.ErrorResponse) {
 	_, err := s.userCommandRepository.RestoreAllUser()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_USER")
-
-		s.logger.Error("Failed to restore all users", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all users")
-		status = "failed_restore_all_user"
-
-		return false, user_errors.ErrFailedRestoreAll
+		return s.errorhandler.HandleRestoreAllUserError(err, "RestoreAllUser", "FAILED_RESTORE_ALL_USER", span, &status)
 	}
 
 	s.logger.Debug("Successfully restored all users")
@@ -426,15 +330,7 @@ func (s *userCommandService) DeleteAllUserPermanent() (bool, *response.ErrorResp
 	_, err := s.userCommandRepository.DeleteAllUserPermanent()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_USER_PERMANENT")
-
-		s.logger.Error("Failed to permanently delete all users", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to permanently delete all users")
-		status = "failed_delete_all_user_permanent"
-
-		return false, user_errors.ErrFailedDeleteAll
+		return s.errorhandler.HandleDeleteAllUserError(err, "DeleteAllUserPermanent", "FAILED_DELETE_ALL_USER", span, &status)
 	}
 
 	s.logger.Debug("Successfully deleted all users permanently")
@@ -444,5 +340,5 @@ func (s *userCommandService) DeleteAllUserPermanent() (bool, *response.ErrorResp
 
 func (s *userCommandService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

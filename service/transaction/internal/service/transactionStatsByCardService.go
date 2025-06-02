@@ -5,22 +5,23 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type transactionStatisticByCardService struct {
 	ctx                                  context.Context
+	errorhandler                         errorhandler.TransactionStatisticByCardErrorHandler
+	mencache                             mencache.TransactionStatisticByCardCache
 	trace                                trace.Tracer
 	transactionStatisticByCardRepository repository.TransactionStatisticByCardRepository
 	logger                               logger.LoggerInterface
@@ -31,6 +32,8 @@ type transactionStatisticByCardService struct {
 
 func NewTransactionStatisticByCardService(
 	ctx context.Context,
+	errorhandler errorhandler.TransactionStatisticByCardErrorHandler,
+	mencache mencache.TransactionStatisticByCardCache,
 	transactionStatisticByCardRepository repository.TransactionStatisticByCardRepository,
 	logger logger.LoggerInterface,
 	mapping responseservice.TransactionResponseMapper,
@@ -49,13 +52,15 @@ func NewTransactionStatisticByCardService(
 			Help:    "Histogram of request durations for the TransactionStatisticByCardService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &transactionStatisticByCardService{
 		ctx:                                  ctx,
+		errorhandler:                         errorhandler,
+		mencache:                             mencache,
 		trace:                                otel.Tracer("transaction-statistic-by-card-service"),
 		transactionStatisticByCardRepository: transactionStatisticByCardRepository,
 		logger:                               logger,
@@ -88,25 +93,21 @@ func (s *transactionStatisticByCardService) FindMonthTransactionStatusSuccessByC
 
 	s.logger.Debug("Fetching monthly Transaction status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 
+	if data := s.mencache.GetMonthTransactionStatusSuccessByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly Transaction status success from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetMonthTransactionStatusSuccessByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TRANSACTION_SUCCESS_BY_CARD")
-
-		s.logger.Error("failed to fetch monthly Transaction status success", zap.Error(err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly Transaction status success")
-
-		status = "failed_find_month_transaction_success_by_card"
-
-		return nil, transaction_errors.ErrFailedFindMonthTransactionSuccessByCard
+		return s.errorhandler.HandleMonthTransactionStatusSuccessByCardNumberError(err, "FindMonthTransactionStatusSuccessByCardNumber", "FAILED_FIND_MONTHLY_TRANSACTION_STATUS_SUCCESS_BY_CARD", span, &status, zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 	}
+	so := s.mapping.ToTransactionResponsesMonthStatusSuccess(records)
+
+	s.mencache.SetMonthTransactionStatusSuccessByCardCache(req, so)
 
 	s.logger.Debug("Successfully fetched monthly Transaction status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-
-	so := s.mapping.ToTransactionResponsesMonthStatusSuccess(records)
 
 	return so, nil
 }
@@ -132,24 +133,21 @@ func (s *transactionStatisticByCardService) FindYearlyTransactionStatusSuccessBy
 
 	s.logger.Debug("Fetching yearly Transaction status success", zap.Int("year", year), zap.String("card_number", card_number))
 
+	if data := s.mencache.GetYearTransactionStatusSuccessByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly Transaction status success from cache", zap.Int("year", year), zap.String("card_number", card_number))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetYearlyTransactionStatusSuccessByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEAR_TRANSACTION_SUCCESS_BY_CARD")
-
-		s.logger.Error("failed to fetch yearly Transaction status success", zap.Error(err), zap.Int("year", year), zap.String("card_number", card_number), zap.String("trace_id", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly Transaction status success")
-		status = "failed_find_year_transaction_success_by_card"
-
-		return nil, transaction_errors.ErrFailedFindYearTransactionSuccessByCard
+		return s.errorhandler.HandleYearlyTransactionStatusSuccessByCardNumberError(err, "FindYearlyTransactionStatusSuccessByCardNumber", "FAILED_FIND_YEARLY_TRANSACTION_STATUS_SUCCESS_BY_CARD", span, &status, zap.Int("year", year), zap.String("card_number", card_number))
 	}
+	so := s.mapping.ToTransactionResponsesYearStatusSuccess(records)
+
+	s.mencache.SetYearTransactionStatusSuccessByCardCache(req, so)
 
 	s.logger.Debug("Successfully fetched yearly Transaction status success", zap.Int("year", year), zap.String("card_number", card_number))
-
-	so := s.mapping.ToTransactionResponsesYearStatusSuccess(records)
 
 	return so, nil
 }
@@ -177,22 +175,20 @@ func (s *transactionStatisticByCardService) FindMonthTransactionStatusFailedByCa
 
 	s.logger.Debug("Fetching monthly Transaction status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 
-	records, err := s.transactionStatisticByCardRepository.GetMonthTransactionStatusFailedByCardNumber(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTH_TRANSACTION_FAILED_BY_CARD")
-
-		s.logger.Error("failed to fetch monthly Transaction status Failed", zap.Error(err), zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly Transaction status Failed")
-		status = "failed_find_month_transaction_failed_by_card"
-
-		return nil, transaction_errors.ErrFailedFindMonthTransactionFailedByCard
+	if data := s.mencache.GetMonthTransactionStatusFailedByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly Transaction status Failed from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+		return data, nil
 	}
 
-	s.logger.Debug("Failedfully fetched monthly Transaction status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
-
+	records, err := s.transactionStatisticByCardRepository.GetMonthTransactionStatusFailedByCardNumber(req)
+	if err != nil {
+		return s.errorhandler.HandleMonthTransactionStatusFailedByCardNumberError(err, "FindMonthTransactionStatusFailedByCardNumber", "FAILED_MONTHLY_TRANSACTION_STATUS_FAILED_BY_CARD", span, &status, zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
+	}
 	so := s.mapping.ToTransactionResponsesMonthStatusFailed(records)
+
+	s.mencache.SetMonthTransactionStatusFailedByCardCache(req, so)
+
+	s.logger.Debug("Failedfully fetched monthly Transaction status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 
 	return so, nil
 }
@@ -218,23 +214,20 @@ func (s *transactionStatisticByCardService) FindYearlyTransactionStatusFailedByC
 
 	s.logger.Debug("Fetching yearly Transaction status Failed", zap.Int("year", year), zap.String("card_number", card_number))
 
+	if data := s.mencache.GetYearTransactionStatusFailedByCardCache(req); data != nil {
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetYearlyTransactionStatusFailedByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEAR_TRANSACTION_FAILED_BY_CARD")
-
-		s.logger.Error("failed to fetch yearly Transaction status Failed", zap.Error(err), zap.Int("year", year), zap.String("card_number", card_number))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly Transaction status Failed")
-		status = "failed_find_year_transaction_failed_by_card"
-
-		return nil, transaction_errors.ErrFailedFindYearTransactionFailedByCard
+		return s.errorhandler.HandleYearlyTransactionStatusFailedByCardNumberError(err, "FindYearlyTransactionStatusFailedByCardNumber", "FAILED_FIND_YEARLY_TRANSACTION_STATUS_FAILED_BY_CARD", span, &status, zap.Int("year", year), zap.String("card_number", card_number))
 	}
+	so := s.mapping.ToTransactionResponsesYearStatusFailed(records)
+
+	s.mencache.SetYearTransactionStatusFailedByCardCache(req, so)
 
 	s.logger.Debug("Failedfully fetched yearly Transaction status Failed", zap.Int("year", year))
-
-	so := s.mapping.ToTransactionResponsesYearStatusFailed(records)
 
 	return so, nil
 }
@@ -260,20 +253,19 @@ func (s *transactionStatisticByCardService) FindMonthlyPaymentMethodsByCardNumbe
 
 	s.logger.Debug("Fetching monthly payment methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetMonthlyPaymentMethodsByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly payment methods by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetMonthlyPaymentMethodsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_PAYMENT_METHODS_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly payment methods by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly payment methods by card number")
-		status = "failed_to_fetch_monthly_payment_methods_by_card"
-
-		return nil, transaction_errors.ErrFailedFindMonthlyPaymentMethodsByCard
+		return s.errorhandler.HandleMonthlyPaymentMethodsByCardNumberError(err, "FindMonthlyPaymentMethodsByCardNumber", "FAILED_FIND_MONTHLY_PAYMENT_METHODS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTransactionMonthlyMethodResponses(records)
+
+	s.mencache.SetMonthlyPaymentMethodsByCardCache(req, responses)
 
 	s.logger.Debug("Successfully fetched monthly payment methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -301,21 +293,20 @@ func (s *transactionStatisticByCardService) FindYearlyPaymentMethodsByCardNumber
 
 	s.logger.Debug("Fetching yearly payment methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetYearlyPaymentMethodsByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly payment methods by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetYearlyPaymentMethodsByCardNumber(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_PAYMENT_METHODS_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly payment methods by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly payment methods by card number")
-		status = "failed_to_fetch_yearly_payment_methods_by_card"
-
-		return nil, transaction_errors.ErrFailedFindYearlyPaymentMethodsByCard
+		return s.errorhandler.HandleYearlyPaymentMethodsByCardNumberError(err, "FindYearlyPaymentMethodsByCardNumber", "FAILED_FIND_YEARLY_PAYMENT_METHODS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTransactionYearlyMethodResponses(records)
+
+	s.mencache.SetYearlyPaymentMethodsByCardCache(req, responses)
 
 	s.logger.Debug("Successfully fetched yearly payment methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -343,20 +334,19 @@ func (s *transactionStatisticByCardService) FindMonthlyAmountsByCardNumber(req *
 
 	s.logger.Debug("Fetching monthly amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetMonthlyAmountsByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched monthly amounts by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetMonthlyAmountsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MONTHLY_AMOUNTS_BY_CARD")
-
-		s.logger.Error("Failed to fetch monthly amounts by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch monthly amounts by card number")
-		status = "failed_to_fetch_monthly_amounts_by_card"
-
-		return nil, transaction_errors.ErrFailedFindMonthlyAmountsByCard
+		return s.errorhandler.HandleMonthlyAmountsByCardNumberError(err, "FindMonthlyAmountsByCardNumber", "FAILED_FIND_MONTHLY_AMOUNTS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTransactionMonthlyAmountResponses(records)
+
+	s.mencache.SetMonthlyAmountsByCardCache(req, responses)
 
 	s.logger.Debug("Successfully fetched monthly amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -384,20 +374,19 @@ func (s *transactionStatisticByCardService) FindYearlyAmountsByCardNumber(req *r
 
 	s.logger.Debug("Fetching yearly amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
+	if data := s.mencache.GetYearlyAmountsByCardCache(req); data != nil {
+		s.logger.Debug("Successfully fetched yearly amounts by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		return data, nil
+	}
+
 	records, err := s.transactionStatisticByCardRepository.GetYearlyAmountsByCardNumber(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_YEARLY_AMOUNTS_BY_CARD")
-
-		s.logger.Error("Failed to fetch yearly amounts by card number", zap.Error(err), zap.String("card_number", cardNumber), zap.Int("year", year))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch yearly amounts by card number")
-		status = "failed_to_fetch_yearly_amounts_by_card"
-
-		return nil, transaction_errors.ErrFailedFindYearlyAmountsByCard
+		return s.errorhandler.HandleYearlyAmountsByCardNumberError(err, "FindYearlyAmountsByCardNumber", "FAILED_FIND_YEARLY_AMOUNTS_BY_CARD", span, &status, zap.String("card_number", cardNumber), zap.Int("year", year))
 	}
 
 	responses := s.mapping.ToTransactionYearlyAmountResponses(records)
+
+	s.mencache.SetYearlyAmountsByCardCache(req, responses)
 
 	s.logger.Debug("Successfully fetched yearly amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
@@ -406,5 +395,5 @@ func (s *transactionStatisticByCardService) FindYearlyAmountsByCardNumber(req *r
 
 func (s *transactionStatisticByCardService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

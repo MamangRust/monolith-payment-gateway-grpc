@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-saldo/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
@@ -14,13 +15,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type saldoQueryService struct {
 	ctx                  context.Context
+	errorhandler         errorhandler.SaldoQueryErrorHandler
+	mencache             mencache.SaldoQueryCache
 	trace                trace.Tracer
 	saldoQueryRepository repository.SaldoQueryRepository
 	logger               logger.LoggerInterface
@@ -29,7 +31,8 @@ type saldoQueryService struct {
 	requestDuration      *prometheus.HistogramVec
 }
 
-func NewSaldoQueryService(ctx context.Context, saldo repository.SaldoQueryRepository, logger logger.LoggerInterface, mapping responseservice.SaldoResponseMapper) *saldoQueryService {
+func NewSaldoQueryService(ctx context.Context, errorhandler errorhandler.SaldoQueryErrorHandler,
+	mencache mencache.SaldoQueryCache, saldo repository.SaldoQueryRepository, logger logger.LoggerInterface, mapping responseservice.SaldoResponseMapper) *saldoQueryService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "saldo_query_service_request_total",
@@ -44,13 +47,15 @@ func NewSaldoQueryService(ctx context.Context, saldo repository.SaldoQueryReposi
 			Help:    "Histogram of request durations for the SaldoQueryService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &saldoQueryService{
 		ctx:                  ctx,
+		errorhandler:         errorhandler,
+		mencache:             mencache,
 		trace:                otel.Tracer("saldo-query-service"),
 		saldoQueryRepository: saldo,
 		logger:               logger,
@@ -71,8 +76,7 @@ func (s *saldoQueryService) FindAll(req *requests.FindAllSaldos) ([]*response.Sa
 	_, span := s.trace.Start(s.ctx, "FindAll")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -86,33 +90,18 @@ func (s *saldoQueryService) FindAll(req *requests.FindAllSaldos) ([]*response.Sa
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-
 	s.logger.Debug("Fetching all saldo records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+
+	if data, total, found := s.mencache.GetCachedSaldos(req); found {
+		s.logger.Debug("Successfully fetched saldo from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
+	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindAllSaldos(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_SALDOS")
-
-		s.logger.Error("Failed to retrieve saldo",
-			zap.Error(err),
-			zap.String("traceID", traceID),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search))
-
-		span.SetAttributes(attribute.String("traceID", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve saldo")
-		status = "failed_to_retrieve_saldo"
-
-		return nil, nil, saldo_errors.ErrFailedFindAllSaldos
+		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_SALDOS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponses(res)
@@ -136,8 +125,7 @@ func (s *saldoQueryService) FindByActive(req *requests.FindAllSaldos) ([]*respon
 	_, span := s.trace.Start(s.ctx, "FindByActive")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -151,34 +139,21 @@ func (s *saldoQueryService) FindByActive(req *requests.FindAllSaldos) ([]*respon
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedSaldoByActive(req); found {
+		s.logger.Debug("Successfully fetched active saldo from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindByActive(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ACTIVE_SALDOS")
-
-		s.logger.Error("Failed to retrieve active saldo",
-			zap.Error(err),
-			zap.String("traceID", traceID),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search))
-
-		span.SetAttributes(attribute.String("traceID", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve active saldo")
-		status = "failed_to_retrieve_active_saldo"
-
-		return nil, nil, saldo_errors.ErrFailedFindActiveSaldos
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_SALDOS", span, &status, saldo_errors.ErrFailedFindActiveSaldos, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponsesDeleteAt(res)
+
+	s.mencache.SetCachedSaldoByActive(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched active saldo",
 		zap.Int("totalRecords", *totalRecords),
@@ -199,8 +174,7 @@ func (s *saldoQueryService) FindByTrashed(req *requests.FindAllSaldos) ([]*respo
 	_, span := s.trace.Start(s.ctx, "FindByTrashed")
 	defer span.End()
 
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
 	span.SetAttributes(
@@ -214,39 +188,25 @@ func (s *saldoQueryService) FindByTrashed(req *requests.FindAllSaldos) ([]*respo
 		zap.Int("pageSize", pageSize),
 		zap.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedSaldoByTrashed(req); found {
+		s.logger.Debug("Successfully fetched trashed saldo from cache",
+			zap.Int("totalRecords", *total))
+		return data, total, nil
 	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRASHED_SALDOS")
-
-		s.logger.Error("Failed to retrieve trashed saldo",
-			zap.Error(err),
-			zap.String("traceID", traceID),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search))
-
-		span.SetAttributes(attribute.String("traceID", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve trashed saldo")
-		status = "failed_to_retrieve_trashed_saldo"
-
-		return nil, nil, saldo_errors.ErrFailedFindTrashedSaldos
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_SALDOS", span, &status, saldo_errors.ErrFailedFindTrashedSaldos, zap.Error(err))
 	}
+	so := s.mapping.ToSaldoResponsesDeleteAt(res)
+
+	s.mencache.SetCachedSaldoByTrashed(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched trashed saldo",
 		zap.Int("totalRecords", *totalRecords),
 		zap.Int("page", req.Page),
 		zap.Int("pageSize", req.PageSize))
-
-	so := s.mapping.ToSaldoResponsesDeleteAt(res)
 
 	return so, totalRecords, nil
 }
@@ -268,23 +228,20 @@ func (s *saldoQueryService) FindById(saldo_id int) (*response.SaldoResponse, *re
 
 	s.logger.Debug("Fetching saldo record by ID", zap.Int("saldo_id", saldo_id))
 
+	if data, found := s.mencache.GetCachedSaldoById(saldo_id); found {
+		s.logger.Debug("Successfully fetched saldo from cache", zap.Int("saldo_id", saldo_id))
+		return data, nil
+	}
+
 	res, err := s.saldoQueryRepository.FindById(saldo_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_SALDO_BY_ID")
-
-		s.logger.Error("Failed to retrieve saldo details",
-			zap.Int("saldo_id", saldo_id),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve saldo details")
-		status = "failed_to_retrieve_saldo_details"
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
+
+	s.mencache.SetCachedSaldoById(saldo_id, so)
 
 	s.logger.Debug("Successfully fetched saldo", zap.Int("saldo_id", saldo_id))
 
@@ -308,30 +265,37 @@ func (s *saldoQueryService) FindByCardNumber(card_number string) (*response.Sald
 
 	s.logger.Debug("Fetching saldo record by card number", zap.String("card_number", card_number))
 
+	if data, found := s.mencache.GetCachedSaldoByCardNumber(card_number); found {
+		s.logger.Debug("Successfully fetched saldo from cache by card number", zap.String("card_number", card_number))
+		return data, nil
+	}
+
 	res, err := s.saldoQueryRepository.FindByCardNumber(card_number)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_SALDO_BY_CARD_NUMBER")
-
-		s.logger.Error("Failed to retrieve saldo details",
-			zap.String("card_number", card_number),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to retrieve saldo details")
-		status = "failed_to_retrieve_saldo_details"
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "FindByCardNumber", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
+
+	s.mencache.SetCachedSaldoByCardNumber(card_number, so)
 
 	s.logger.Debug("Successfully fetched saldo by card number", zap.String("card_number", card_number))
 
 	return so, nil
 }
 
+func (s *saldoQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
+}
+
 func (s *saldoQueryService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

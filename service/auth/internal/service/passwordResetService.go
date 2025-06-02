@@ -6,16 +6,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
 	emails "github.com/MamangRust/monolith-payment-gateway-pkg/email"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	randomstring "github.com/MamangRust/monolith-payment-gateway-pkg/random_string"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,18 +24,31 @@ import (
 	"go.uber.org/zap"
 )
 
-type passwordRegisterService struct {
-	ctx             context.Context
-	trace           trace.Tracer
-	kafka           kafka.Kafka
-	logger          logger.LoggerInterface
-	user            repository.UserRepository
-	resetToken      repository.ResetTokenRepository
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+type passwordResetService struct {
+	ctx               context.Context
+	errorhandler      errorhandler.PasswordResetErrorHandler
+	errorRandomString errorhandler.RandomStringErrorHandler
+	errorMarshal      errorhandler.MarshalErrorHandler
+	errorPassword     errorhandler.PasswordErrorHandler
+	errorKafka        errorhandler.KafkaErrorHandler
+	mencache          mencache.PasswordResetCache
+	trace             trace.Tracer
+	kafka             kafka.Kafka
+	logger            logger.LoggerInterface
+	user              repository.UserRepository
+	resetToken        repository.ResetTokenRepository
+	requestCounter    *prometheus.CounterVec
+	requestDuration   *prometheus.HistogramVec
 }
 
-func NewPasswordResetService(ctx context.Context, kafka kafka.Kafka, logger logger.LoggerInterface, user repository.UserRepository, resetToken repository.ResetTokenRepository) *passwordRegisterService {
+func NewPasswordResetService(ctx context.Context,
+	errorhandler errorhandler.PasswordResetErrorHandler,
+	errorRandomString errorhandler.RandomStringErrorHandler,
+	errorMarshal errorhandler.MarshalErrorHandler,
+	errorPassword errorhandler.PasswordErrorHandler,
+	errorKafka errorhandler.KafkaErrorHandler,
+	mencache mencache.PasswordResetCache,
+	kafka kafka.Kafka, logger logger.LoggerInterface, user repository.UserRepository, resetToken repository.ResetTokenRepository) *passwordResetService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "password_reset_service_requests_total",
@@ -50,24 +63,30 @@ func NewPasswordResetService(ctx context.Context, kafka kafka.Kafka, logger logg
 			Help:    "Histogram of request durations for the PasswordResetService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
-	return &passwordRegisterService{
-		ctx:             ctx,
-		kafka:           kafka,
-		trace:           otel.Tracer("password-reset-service"),
-		user:            user,
-		logger:          logger,
-		resetToken:      resetToken,
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+	return &passwordResetService{
+		ctx:               ctx,
+		errorhandler:      errorhandler,
+		errorRandomString: errorRandomString,
+		errorPassword:     errorPassword,
+		errorMarshal:      errorMarshal,
+		errorKafka:        errorKafka,
+		mencache:          mencache,
+		kafka:             kafka,
+		trace:             otel.Tracer("password-reset-service"),
+		user:              user,
+		logger:            logger,
+		resetToken:        resetToken,
+		requestCounter:    requestCounter,
+		requestDuration:   requestDuration,
 	}
 }
 
-func (s *passwordRegisterService) ForgotPassword(email string) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) ForgotPassword(email string) (bool, *response.ErrorResponse) {
 	startTime := time.Now()
 	status := "success"
 	defer func() {
@@ -77,46 +96,19 @@ func (s *passwordRegisterService) ForgotPassword(email string) (bool, *response.
 	_, span := s.trace.Start(s.ctx, "PasswordService.ForgotPassword")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("user.email", email),
-	)
-
-	s.logger.Debug("Starting forgot password process",
-		zap.String("email", email),
-	)
+	span.SetAttributes(attribute.String("user.email", email))
+	s.logger.Debug("Starting forgot password process", zap.String("email", email))
 
 	res, err := s.user.FindByEmail(email)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("USER_NOT_FOUND")
-		s.logger.Error("Failed to find user by email",
-			zap.String("trace_id", traceID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-		return false, user_errors.ErrUserNotFoundRes
+		return s.errorhandler.HandleFindEmailError(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
 	}
 
-	span.SetAttributes(
-		attribute.Int("user.id", res.ID),
-	)
+	span.SetAttributes(attribute.Int("user.id", res.ID))
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("RANDOM_STR_FAILED")
-		s.logger.Error("Failed to generate random string",
-			zap.String("trace_id", traceID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to generate reset token")
-		status = "token_generation_failed"
-		return false, user_errors.ErrInternalServerError
+		return s.errorRandomString.HandleRandomStringErrorForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
 	}
 
 	_, err = s.resetToken.CreateResetToken(&requests.CreateResetTokenRequest{
@@ -125,18 +117,10 @@ func (s *passwordRegisterService) ForgotPassword(email string) (bool, *response.
 		ExpiredAt:  time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05"),
 	})
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("CREATE_TOKEN_FAILED")
-		s.logger.Error("Failed to create reset token",
-			zap.String("trace_id", traceID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to store reset token")
-		status = "token_storage_failed"
-		return false, user_errors.ErrInternalServerError
+		return s.errorhandler.HandleCreateResetTokenError(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
 	}
+
+	s.mencache.SetResetTokenCache(random, res.ID, 5*time.Minute)
 
 	htmlBody := emails.GenerateEmailHTML(map[string]string{
 		"Title":   "Reset Your Password",
@@ -153,35 +137,12 @@ func (s *passwordRegisterService) ForgotPassword(email string) (bool, *response.
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("MARSHAL_EMAIL_FAILED")
-		s.logger.Error("Failed to marshal email payload",
-			zap.String("trace_id", traceID),
-			zap.Int("user_id", res.ID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to prepare email")
-		status = "email_preparation_failed"
-		return false, user_errors.ErrFailedSendEmail
+		return s.errorMarshal.HandleMarsalForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status)
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-forgot-password", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("KAFKA_SEND_FAILED")
-		s.logger.Error("Failed to send email via Kafka",
-			zap.String("trace_id", traceID),
-			zap.Int("user_id", res.ID),
-			zap.String("email", res.Email),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send email")
-		status = "email_send_failed"
-		return false, user_errors.ErrFailedSendEmail
+		return s.errorKafka.HandleSendEmailForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status)
 	}
 
 	s.logger.Debug("Password reset email sent successfully",
@@ -192,7 +153,7 @@ func (s *passwordRegisterService) ForgotPassword(email string) (bool, *response.
 	return true, nil
 }
 
-func (s *passwordRegisterService) ResetPassword(req *requests.CreateResetPasswordRequest) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRequest) (bool, *response.ErrorResponse) {
 	startTime := time.Now()
 	status := "success"
 	defer func() {
@@ -202,82 +163,41 @@ func (s *passwordRegisterService) ResetPassword(req *requests.CreateResetPasswor
 	_, span := s.trace.Start(s.ctx, "PasswordService.ResetPassword")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("reset_token", req.ResetToken),
-	)
+	span.SetAttributes(attribute.String("reset_token", req.ResetToken))
+	s.logger.Debug("Starting password reset process", zap.String("reset_token", req.ResetToken))
 
-	s.logger.Debug("Starting password reset process",
-		zap.String("reset_token", req.ResetToken),
-	)
+	var userID int
+	var found bool
 
-	res, err := s.resetToken.FindByToken(req.ResetToken)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("INVALID_RESET_TOKEN")
-		s.logger.Error("Failed to find user by reset token",
-			zap.String("trace_id", traceID),
-			zap.Error(err),
-		)
+	userID, found = s.mencache.GetResetTokenCache(req.ResetToken)
+	if !found {
+		res, err := s.resetToken.FindByToken(req.ResetToken)
+		if err != nil {
+			return s.errorhandler.HandleFindTokenError(err, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+		}
+		userID = int(res.UserID)
 
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Invalid reset token")
-		status = "invalid_token"
-		return false, user_errors.ErrUserNotFoundRes
+		s.mencache.SetResetTokenCache(req.ResetToken, userID, 5*time.Minute)
 	}
 
 	if req.Password != req.ConfirmPassword {
-		traceID := traceunic.GenerateTraceID("PASSWORD_MISMATCH")
-		s.logger.Error("Password and confirmation do not match",
-			zap.String("trace_id", traceID),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Password mismatch")
-		status = "password_mismatch"
-		return false, user_errors.ErrFailedPasswordNoMatch
+		return s.errorPassword.HandlePasswordNotMatchError(nil, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
-	_, err = s.user.UpdateUserPassword(int(res.UserID), req.Password)
+	_, err := s.user.UpdateUserPassword(userID, req.Password)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("PASSWORD_UPDATE_FAILED")
-		s.logger.Error("Failed to update user password",
-			zap.String("trace_id", traceID),
-			zap.Int("user_id", int(res.UserID)),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update password")
-		status = "password_update_failed"
-		return false, user_errors.ErrInternalServerError
+		return s.errorhandler.HandleUpdatePasswordError(err, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
-	if err := s.resetToken.DeleteResetToken(int(res.UserID)); err != nil {
-		traceID := traceunic.GenerateTraceID("DELETE_RESET_TOKEN_FAILED")
-		s.logger.Error("Failed to delete reset token",
-			zap.String("trace_id", traceID),
-			zap.Int("user_id", int(res.UserID)),
-			zap.Error(err),
-		)
+	_ = s.resetToken.DeleteResetToken(userID)
+	s.mencache.DeleteResetTokenCache(req.ResetToken)
 
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete reset token")
-		status = "delete_reset_token_failed"
-		return false, user_errors.ErrInternalServerError
-
-	}
-
-	s.logger.Debug("Password reset successfully",
-		zap.Int("user_id", int(res.UserID)),
-	)
+	s.logger.Debug("Password reset successfully", zap.Int("user_id", userID))
 	span.SetStatus(codes.Ok, "Password reset successful")
 	return true, nil
 }
 
-func (s *passwordRegisterService) VerifyCode(code string) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) VerifyCode(code string) (bool, *response.ErrorResponse) {
 	startTime := time.Now()
 	status := "success"
 	defer func() {
@@ -297,43 +217,23 @@ func (s *passwordRegisterService) VerifyCode(code string) (bool, *response.Error
 
 	res, err := s.user.FindByVerificationCode(code)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("INVALID_VERIFICATION_CODE")
-		s.logger.Error("Failed to find user by verification code",
-			zap.String("trace_id", traceID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Invalid verification code")
-		status = "invalid_code"
-		return false, user_errors.ErrUserNotFoundRes
+		return s.errorhandler.HandleVerifyCodeError(err, "VerifyCode", "VERIFY_CODE_ERR", span, &status, zap.String("code", code))
 	}
 
 	_, err = s.user.UpdateUserIsVerified(res.ID, true)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("VERIFICATION_UPDATE_FAILED")
-		s.logger.Error("Failed to update user verification status",
-			zap.String("trace_id", traceID),
-			zap.Int("user_id", res.ID),
-			zap.Error(err),
-		)
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to verify user")
-		status = "verification_failed"
-		return false, user_errors.ErrInternalServerError
+		return s.errorhandler.HandleUpdateVerifiedError(err, "VerifyCode", "VERIFY_CODE_ERR", span, &status, zap.Int("user_id", res.ID))
 	}
+
+	s.mencache.DeleteVerificationCodeCache("register:verify:" + res.Email)
 
 	s.logger.Debug("User verified successfully",
 		zap.Int("user_id", res.ID),
 	)
-	span.SetStatus(codes.Ok, "User verified successfully")
 	return true, nil
 }
 
-func (s *passwordRegisterService) recordMetrics(method string, status string, start time.Time) {
+func (s *passwordResetService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

@@ -4,31 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/email"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type withdrawCommandService struct {
 	ctx                       context.Context
+	errorhandler              errorhandler.WithdrawCommandErrorHandler
+	mencache                  mencache.WithdrawCommandCache
 	kafka                     kafka.Kafka
 	trace                     trace.Tracer
 	cardRepository            repository.CardRepository
@@ -41,7 +42,8 @@ type withdrawCommandService struct {
 	requestDuration           *prometheus.HistogramVec
 }
 
-func NewWithdrawCommandService(ctx context.Context, kafka kafka.Kafka,
+func NewWithdrawCommandService(ctx context.Context, errorhandler errorhandler.WithdrawCommandErrorHandler,
+	mencache mencache.WithdrawCommandCache, kafka kafka.Kafka,
 	cardRepository repository.CardRepository,
 	saldoRepository repository.SaldoRepository,
 	withdrawCommandRepository repository.WithdrawCommandRepository,
@@ -60,7 +62,7 @@ func NewWithdrawCommandService(ctx context.Context, kafka kafka.Kafka,
 			Help:    "Histogram of request durations for the WithdrawCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
@@ -68,6 +70,8 @@ func NewWithdrawCommandService(ctx context.Context, kafka kafka.Kafka,
 	return &withdrawCommandService{
 		kafka:                     kafka,
 		ctx:                       ctx,
+		errorhandler:              errorhandler,
+		mencache:                  mencache,
 		trace:                     otel.Tracer("withdraw-command-service"),
 		cardRepository:            cardRepository,
 		saldoRepository:           saldoRepository,
@@ -101,66 +105,17 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 	card, err := s.cardRepository.FindUserCardByCardNumber(request.CardNumber)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_CARD_BY_CARD_NUMBER")
-
-		s.logger.Error("Card not found for card number",
-			zap.String("card_number", request.CardNumber),
-			zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Card not found for card number")
-		status = "failed_find_card_by_card_number"
-
-		return nil, card_errors.ErrFailedFindByCardNumber
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.String("card_number", request.CardNumber))
 	}
 
 	saldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_SALDO_BY_CARD_NUMBER")
-
-		s.logger.Error("Failed to find saldo by card number", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find saldo by card number")
-		status = "failed_find_saldo_by_card_number"
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedFindSaldoByCardNumber, zap.String("card_number", request.CardNumber))
 	}
 
-	if saldo == nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_SALDO_BY_CARD_NUMBER")
-
-		s.logger.Error("Saldo not found for the specified user ID", zap.String("cardNumber", request.CardNumber), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Saldo not found for the specified user ID")
-		status = "failed_find_saldo_by_card_number"
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
-	}
 	if saldo.TotalBalance < request.WithdrawAmount {
-		traceID := traceunic.GenerateTraceID("INSUFFICIENT_BALANCE_FOR_WITHDRAWAL")
-
-		s.logger.Error("Insufficient balance for withdrawal", zap.String("cardNumber", request.CardNumber), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Insufficient balance for withdrawal")
-		status = "insufficient_balance_for_withdrawal"
-
-		return nil, saldo_errors.ErrFailedInsuffientBalance
+		return s.errorhandler.HandleInsufficientBalanceError(err, "CreateWithdraw", "INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.String("card_number", request.CardNumber))
 	}
 	newTotalBalance := saldo.TotalBalance - request.WithdrawAmount
 	updateData := &requests.UpdateSaldoWithdraw{
@@ -171,34 +126,10 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 	}
 	_, err = s.saldoRepository.UpdateSaldoWithdraw(updateData)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_SALDO")
-
-		s.logger.Error("Failed to update saldo", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update saldo")
-		status = "failed_update_saldo"
-
-		return nil, saldo_errors.ErrFailedUpdateSaldo
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.CardNumber))
 	}
 	withdrawRecord, err := s.withdrawCommandRepository.CreateWithdraw(request)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_CREATE_WITHDRAW")
-
-		s.logger.Error("Failed to create withdraw", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create withdraw")
-		status = "failed_create_withdraw"
-
 		rollbackData := &requests.UpdateSaldoWithdraw{
 			CardNumber:     request.CardNumber,
 			TotalBalance:   saldo.TotalBalance,
@@ -206,57 +137,22 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 			WithdrawTime:   &request.WithdrawTime,
 		}
 		if _, rollbackErr := s.saldoRepository.UpdateSaldoWithdraw(rollbackData); rollbackErr != nil {
-			traceID := traceunic.GenerateTraceID("FAILED_ROLLBACK_SALDO")
-
-			s.logger.Error("Failed to rollback saldo", zap.Error(rollbackErr), zap.String("traceID", traceID))
-
-			span.SetAttributes(
-				attribute.String("traceID", traceID),
-			)
-
-			span.RecordError(rollbackErr)
-			span.SetStatus(codes.Error, "Failed to rollback saldo")
-			status = "failed_rollback_saldo"
-
-			return nil, saldo_errors.ErrFailedUpdateSaldo
+			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "CreateWithdraw", "FAILED_ROLLBACK_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.CardNumber))
 		}
 		if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 			WithdrawID: withdrawRecord.ID,
 			Status:     "failed",
 		}); err != nil {
-			traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW_STATUS")
-
-			s.logger.Error("Failed to update withdraw status", zap.Error(err), zap.String("traceID", traceID))
-
-			span.SetAttributes(
-				attribute.String("traceID", traceID),
-			)
-
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Failed to update withdraw status")
-			status = "failed_update_withdraw_status"
-
-			return nil, withdraw_errors.ErrFailedUpdateWithdraw
+			return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw)
 		}
-		return nil, withdraw_errors.ErrFailedCreateWithdraw
+
+		return s.errorhandler.HandleCreateWithdrawError(err, "CreateWithdraw", "FAILED_CREATE_WITHDRAW", span, &status, zap.String("card_number", request.CardNumber))
 	}
 	if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 		WithdrawID: withdrawRecord.ID,
 		Status:     "success",
 	}); err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW_STATUS")
-
-		s.logger.Error("Failed to update withdraw status", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update withdraw status")
-		status = "failed_update_withdraw_status"
-
-		return nil, withdraw_errors.ErrFailedUpdateWithdraw
+		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw)
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -274,22 +170,12 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("WITHDRAW_ERR")
-		s.logger.Error("Failed to marshal withdraw email payload", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to marshal withdraw email payload")
-		return nil, withdraw_errors.ErrFailedSendEmail
+		return errorhandler.HandleErrorMarshal[*response.WithdrawResponse](s.logger, err, "CreateWithdraw", "FAILED_MARSHAL_EMAIL_PAYLOAD", span, &status, withdraw_errors.ErrFailedSendEmail)
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-withdraw-create", strconv.Itoa(withdrawRecord.ID), payloadBytes)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("WITHDRAW_ERR")
-		s.logger.Error("Failed to send withdraw email message", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to send withdraw email")
-		return nil, withdraw_errors.ErrFailedSendEmail
+		return errorhandler.HandleErrorKafkaSend[*response.WithdrawResponse](s.logger, err, "CreateWithdraw", "FAILED_SEND_EMAIL", span, &status, withdraw_errors.ErrFailedSendEmail)
 	}
 
 	so := s.mapping.ToWithdrawResponse(withdrawRecord)
@@ -312,55 +198,18 @@ func (s *withdrawCommandService) Update(request *requests.UpdateWithdrawRequest)
 
 	_, err := s.withdrawQueryRepository.FindById(*request.WithdrawID)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("WITHDRAW_NOT_FOUND")
-
-		s.logger.Error("Withdraw not found", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Withdraw not found")
-		status = "withdraw_not_found"
-
-		return nil, withdraw_errors.ErrWithdrawNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_FIND_WITHDRAW", span, &status, withdraw_errors.ErrWithdrawNotFound)
 	}
+
 	saldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("SALDO_NOT_FOUND")
-
-		s.logger.Error("Saldo not found", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Saldo not found")
-		status = "saldo_not_found"
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
+		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound)
 	}
+
 	if saldo.TotalBalance < request.WithdrawAmount {
-		traceID := traceunic.GenerateTraceID("INSUFFICIENT_BALANCE")
-
-		s.logger.Error("Insufficient balance for withdrawal update", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Insufficient balance for withdrawal update")
-		status = "insufficient_balance"
-
-		return nil, &response.ErrorResponse{
-			Status:  "error",
-			Message: "Insufficient balance for withdrawal update.",
-			Code:    http.StatusBadRequest,
-		}
+		return s.errorhandler.HandleInsufficientBalanceError(err, "Update", "FAILED_INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.Int("withdraw_amount", request.WithdrawAmount))
 	}
+
 	newTotalBalance := saldo.TotalBalance - request.WithdrawAmount
 	updateSaldoData := &requests.UpdateSaldoWithdraw{
 		CardNumber:     saldo.CardNumber,
@@ -368,114 +217,52 @@ func (s *withdrawCommandService) Update(request *requests.UpdateWithdrawRequest)
 		WithdrawAmount: &request.WithdrawAmount,
 		WithdrawTime:   &request.WithdrawTime,
 	}
+
 	_, err = s.saldoRepository.UpdateSaldoWithdraw(updateSaldoData)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_SALDO")
-
-		s.logger.Error("Failed to update saldo", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update saldo")
-		status = "failed_update_saldo"
-
 		if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 			WithdrawID: *request.WithdrawID,
 			Status:     "failed",
 		}); err != nil {
-			traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW_STATUS")
-
-			s.logger.Error("Failed to update withdraw status", zap.Error(err), zap.String("traceID", traceID))
-
-			span.SetAttributes(
-				attribute.String("traceID", traceID),
-			)
-
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Failed to update withdraw status")
-			status = "failed_update_withdraw_status"
-
-			return nil, withdraw_errors.ErrFailedUpdateWithdraw
+			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
 		}
-		return nil, withdraw_errors.ErrFailedUpdateWithdraw
+
+		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo)
 	}
+
 	updatedWithdraw, err := s.withdrawCommandRepository.UpdateWithdraw(request)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW")
-
-		s.logger.Error("Failed to update withdraw", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update withdraw")
-		status = "failed_update_withdraw"
-
 		rollbackData := &requests.UpdateSaldoBalance{
 			CardNumber:   saldo.CardNumber,
 			TotalBalance: saldo.TotalBalance,
 		}
 		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(rollbackData)
 		if rollbackErr != nil {
-			traceID := traceunic.GenerateTraceID("FAILED_ROLLBACK_SALDO")
-
-			s.logger.Error("Failed to rollback saldo", zap.Error(err), zap.String("traceID", traceID))
-
-			span.SetAttributes(
-				attribute.String("traceID", traceID),
-			)
-
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Failed to rollback saldo")
-			status = "failed_rollback_saldo"
-
-			return nil, saldo_errors.ErrFailedUpdateSaldo
+			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_ROLLBACK_SALDO", span, &status, zap.String("card_number", request.CardNumber))
 		}
 		if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 			WithdrawID: *request.WithdrawID,
 			Status:     "failed",
 		}); err != nil {
-			traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW_STATUS")
-
-			s.logger.Error("Failed to update withdraw status", zap.Error(err), zap.String("traceID", traceID))
-
-			span.SetAttributes(
-				attribute.String("traceID", traceID),
-			)
-
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "Failed to update withdraw status")
-			status = "failed_update_withdraw_status"
-
-			return nil, withdraw_errors.ErrFailedUpdateWithdraw
+			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
 		}
-		return nil, withdraw_errors.ErrFailedUpdateWithdraw
+
+		return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW", span, &status, zap.String("card_number", request.CardNumber))
 	}
+
 	if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 		WithdrawID: updatedWithdraw.ID,
 		Status:     "success",
 	}); err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_WITHDRAW_STATUS")
-
-		s.logger.Error("Failed to update withdraw status", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update withdraw status")
-		status = "failed_update_withdraw_status"
-
-		return nil, withdraw_errors.ErrFailedUpdateWithdraw
+		return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
 	}
+
 	so := s.mapping.ToWithdrawResponse(updatedWithdraw)
+
+	s.mencache.DeleteCachedWithdrawCache(*request.WithdrawID)
+
 	s.logger.Debug("Successfully updated withdraw", zap.Int("withdraw_id", so.ID))
+
 	return so, nil
 }
 
@@ -499,22 +286,12 @@ func (s *withdrawCommandService) TrashedWithdraw(withdraw_id int) (*response.Wit
 	res, err := s.withdrawCommandRepository.TrashedWithdraw(withdraw_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASHED_WITHDRAW")
-
-		s.logger.Error("Failed to trashed withdraw", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trashed withdraw")
-		status = "failed_trashed_withdraw"
-
-		return nil, withdraw_errors.ErrFailedTrashedWithdraw
+		return s.errorhandler.HandleTrashedWithdrawError(err, "TrashedWithdraw", "FAILED_TRASHED_WITHDRAW", span, &status, zap.Int("withdraw_id", withdraw_id))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawResponse(res)
+
+	s.mencache.DeleteCachedWithdrawCache(withdraw_id)
 
 	s.logger.Debug("Successfully trashed withdraw", zap.Int("withdraw_id", withdraw_id))
 
@@ -541,19 +318,7 @@ func (s *withdrawCommandService) RestoreWithdraw(withdraw_id int) (*response.Wit
 	res, err := s.withdrawCommandRepository.RestoreWithdraw(withdraw_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_WITHDRAW")
-
-		s.logger.Error("Failed to restore withdraw", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore withdraw")
-		status = "failed_restore_withdraw"
-
-		return nil, withdraw_errors.ErrFailedRestoreWithdraw
+		return s.errorhandler.HandleRestoreWithdrawError(err, "RestoreWithdraw", "FAILED_RESTORE_WITHDRAW", span, &status, zap.Int("withdraw_id", withdraw_id))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawResponse(res)
@@ -583,19 +348,7 @@ func (s *withdrawCommandService) DeleteWithdrawPermanent(withdraw_id int) (bool,
 	_, err := s.withdrawCommandRepository.DeleteWithdrawPermanent(withdraw_id)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_WITHDRAW_PERMANENT")
-
-		s.logger.Error("Failed to delete withdraw permanently", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete withdraw permanently")
-		status = "failed_delete_withdraw_permanent"
-
-		return false, withdraw_errors.ErrFailedDeleteWithdrawPermanent
+		return s.errorhandler.HandleDeleteWithdrawPermanentError(err, "DeleteWithdrawPermanent", "FAILED_DELETE_WITHDRAW_PERMANENT", span, &status, zap.Int("withdraw_id", withdraw_id))
 	}
 
 	s.logger.Debug("Successfully deleted withdraw permanently", zap.Int("withdraw_id", withdraw_id))
@@ -619,18 +372,7 @@ func (s *withdrawCommandService) RestoreAllWithdraw() (bool, *response.ErrorResp
 	_, err := s.withdrawCommandRepository.RestoreAllWithdraw()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_WITHDRAW")
-
-		s.logger.Error("Failed to restore all withdraws", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all withdraws")
-		status = "failed_restore_all_withdraw"
-
-		return false, withdraw_errors.ErrFailedRestoreAllWithdraw
+		return s.errorhandler.HandleRestoreAllWithdrawError(err, "RestoreAllWithdraw", "FAILED_RESTORE_ALL_WITHDRAW", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully restored all withdraws")
@@ -653,18 +395,7 @@ func (s *withdrawCommandService) DeleteAllWithdrawPermanent() (bool, *response.E
 	_, err := s.withdrawCommandRepository.DeleteAllWithdrawPermanent()
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_WITHDRAW_PERMANENT")
-
-		s.logger.Error("Failed to delete all withdraws permanently", zap.Error(err), zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("traceID", traceID),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete all withdraws permanently")
-		status = "failed_delete_all_withdraw_permanent"
-
-		return false, withdraw_errors.ErrFailedDeleteAllWithdrawPermanent
+		return s.errorhandler.HandleDeleteAllWithdrawPermanentError(err, "DeleteAllWithdrawPermanent", "FAILED_DELETE_ALL_WITHDRAW_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted all withdraws permanently")
@@ -673,5 +404,5 @@ func (s *withdrawCommandService) DeleteAllWithdrawPermanent() (bool, *response.E
 
 func (s *withdrawCommandService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

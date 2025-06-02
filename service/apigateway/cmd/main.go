@@ -1,6 +1,6 @@
 package main
 
-import "github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway/internal/app"
+import "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/app"
 
 func main() {
 	app.RunClient()

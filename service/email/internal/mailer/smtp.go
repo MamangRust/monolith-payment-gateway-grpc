@@ -14,6 +14,7 @@ import (
 
 type Mailer struct {
 	ctx      context.Context
+	trace    trace.Tracer
 	server   string
 	port     int
 	user     string
@@ -28,7 +29,7 @@ func NewMailer(ctx context.Context, server string, port int, user string, passwo
 		port:     port,
 		user:     user,
 		password: password,
-		tracer:   otel.Tracer("email-service"),
+		tracer:   otel.Tracer("mailer"),
 	}
 }
 

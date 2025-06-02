@@ -1,4 +1,4 @@
-module github.com/MamangRust/payment-gateway-monolith-grpc/service/apigateway
+module github.com/MamangRust/monolith-payment-gateway-apigateway
 
 go 1.23.4
 

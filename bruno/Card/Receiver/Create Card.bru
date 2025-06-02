@@ -11,17 +11,17 @@ post {
 }
 
 headers {
-  Authorization: Bearer {{secret_key_receiver}}
+  Authorization: Bearer {{RECEIVER}}
   Content-Type: application/json
 }
 
 body:json {
   {
-    "user_id": 1,
-    "card_type": "Credit",
+    "user_id": 42,
+    "card_type": "credit",
     "expire_date": "2025-12-31T00:00:00Z",
     "cvv": "123",
-    "card_provider": "Visa"
+    "card_provider": "alfamart"
   }
 }
 

@@ -48,15 +48,7 @@ func main() {
 		log.Fatal(http.ListenAndServe(metricsAddr, nil))
 	}()
 
-	m := mailer.NewMailer(
-		ctx,
-		cfg.SMTPServer,
-		cfg.SMTPPort,
-		cfg.SMTPUser,
-		cfg.SMTPPass,
-	)
-
-	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Email-service", ctx)
+	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("email-service", ctx)
 
 	if err != nil {
 		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
@@ -68,6 +60,14 @@ func main() {
 		}
 	}()
 
+	m := mailer.NewMailer(
+		ctx,
+		cfg.SMTPServer,
+		cfg.SMTPPort,
+		cfg.SMTPUser,
+		cfg.SMTPPass,
+	)
+
 	h := handler.NewEmailHandler(ctx, logger, m)
 
 	myKafka := kafka.NewKafka(logger, cfg.KafkaBrokers)
@@ -77,6 +77,7 @@ func main() {
 		"email-service-topic-auth-forgot-password",
 		"email-service-topic-saldo-create",
 		"email-service-topic-topup-create",
+		"email-service-topic-transaction-create",
 		"email-service-topic-transfer-create",
 		"email-service-topic-merchant-create",
 		"email-service-topic-merchant-update-status",

@@ -5,22 +5,24 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-payment-gateway-user/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-payment-gateway-user/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type userQueryService struct {
 	ctx                 context.Context
+	errorhandler        errorhandler.UserQueryError
+	mencache            mencache.UserQueryCache
 	trace               trace.Tracer
 	userQueryRepository repository.UserQueryRepository
 	logger              logger.LoggerInterface
@@ -29,7 +31,8 @@ type userQueryService struct {
 	requestDuration     *prometheus.HistogramVec
 }
 
-func NewUserQueryService(ctx context.Context, userQueryRepository repository.UserQueryRepository, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *userQueryService {
+func NewUserQueryService(ctx context.Context, errorhandler errorhandler.UserQueryError,
+	mencache mencache.UserQueryCache, userQueryRepository repository.UserQueryRepository, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *userQueryService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "user_query_service_request_total",
@@ -44,13 +47,15 @@ func NewUserQueryService(ctx context.Context, userQueryRepository repository.Use
 			Help:    "Histogram of request durations for the UserQueryService",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method"},
+		[]string{"method", "status"},
 	)
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &userQueryService{
 		ctx:                 ctx,
+		errorhandler:        errorhandler,
+		mencache:            mencache,
 		trace:               otel.Tracer("user-query-service"),
 		userQueryRepository: userQueryRepository,
 		logger:              logger,
@@ -75,52 +80,33 @@ func (s *userQueryService) FindAll(req *requests.FindAllUsers) ([]*response.User
 	pageSize := req.PageSize
 	search := req.Search
 
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
 	span.SetAttributes(
 		attribute.Int("page", page),
 		attribute.Int("pageSize", pageSize),
 		attribute.String("search", search),
 	)
 
-	s.logger.Debug("Fetching users",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
-
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
+	if data, total, found := s.mencache.GetCachedUsersCache(req); found {
+		return data, total, nil
 	}
 
 	users, totalRecords, err := s.userQueryRepository.FindAllUsers(req)
-
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL")
-
-		s.logger.Error("Failed to fetch users",
-			zap.Error(err),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-			zap.String("search", search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to fetch users")
-		status = "failed_find_all"
-
-		return nil, nil, user_errors.ErrFailedFindAll
+		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_ALL_USERS", span, &status, zap.Error(err))
 	}
 
 	userResponses := s.mapping.ToUsersResponse(users)
 
-	s.logger.Debug("Successfully fetched user",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	s.mencache.SetCachedUsersCache(req, userResponses, totalRecords)
 
+	s.logger.Debug("Successfully fetched users", zap.Int("total_records", *totalRecords))
 	return userResponses, totalRecords, nil
 }
 
@@ -134,32 +120,23 @@ func (s *userQueryService) FindByID(id int) (*response.UserResponse, *response.E
 
 	_, span := s.trace.Start(s.ctx, "FindByID")
 	defer span.End()
+	span.SetAttributes(attribute.Int("user_id", id))
 
-	span.SetAttributes(
-		attribute.Int("user_id", id),
-	)
-
-	s.logger.Debug("Fetching user by id", zap.Int("user_id", id))
-
-	user, err := s.userQueryRepository.FindById(id)
-
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("USER_NOT_FOUND")
-
-		s.logger.Error("Failed to find user by id", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-		status = "user_not_found"
-
-		return nil, user_errors.ErrUserNotFoundRes
+	if data := s.mencache.GetCachedUserCache(id); data != nil {
+		return data, nil
 	}
 
-	so := s.mapping.ToUserResponse(user)
+	user, err := s.userQueryRepository.FindById(id)
+	if err != nil {
+		return s.errorhandler.HandleRepositorySingleError(err, "FindByID", "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Int("user_id", id))
+	}
+
+	userRes := s.mapping.ToUserResponse(user)
+
+	s.mencache.SetCachedUserCache(userRes)
 
 	s.logger.Debug("Successfully fetched user", zap.Int("user_id", id))
-
-	return so, nil
+	return userRes, nil
 }
 
 func (s *userQueryService) FindByActive(req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
@@ -196,21 +173,19 @@ func (s *userQueryService) FindByActive(req *requests.FindAllUsers) ([]*response
 		pageSize = 10
 	}
 
+	if data, total, found := s.mencache.GetCachedUserActiveCache(req); found {
+		return data, total, nil
+	}
+
 	users, totalRecords, err := s.userQueryRepository.FindByActive(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ACTIVE")
-
-		s.logger.Error("Failed to find active users", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find active users")
-		status = "failed_find_active"
-
-		return nil, nil, user_errors.ErrFailedFindActive
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_USERS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToUsersResponseDeleteAt(users)
+
+	s.mencache.SetCachedUserActiveCache(req, so, totalRecords)
 
 	s.logger.Debug("Successfully fetched active user",
 		zap.Int("totalRecords", *totalRecords),
@@ -254,18 +229,14 @@ func (s *userQueryService) FindByTrashed(req *requests.FindAllUsers) ([]*respons
 		pageSize = 10
 	}
 
+	if data, total, found := s.mencache.GetCachedUserTrashedCache(req); found {
+		return data, total, nil
+	}
+
 	users, totalRecords, err := s.userQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRASHED")
-
-		s.logger.Error("Failed to find trashed users", zap.String("trace_id", traceID), zap.Error(err))
-		span.SetAttributes(attribute.String("trace.id", traceID))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find trashed users")
-		status = "failed_find_trashed"
-
-		return nil, nil, user_errors.ErrFailedFindTrashed
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_USERS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToUsersResponseDeleteAt(users)
@@ -280,5 +251,5 @@ func (s *userQueryService) FindByTrashed(req *requests.FindAllUsers) ([]*respons
 
 func (s *userQueryService) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }
