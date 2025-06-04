@@ -7,6 +7,10 @@ spec:
   selector:
     app: topup
   ports:
-  - port: 8080
-    targetPort: 8080
+    - name: http-metrics
+      port: 8087
+      targetPort: 8087
+    - name: grpc
+      port: 50057
+      targetPort: 50057
   type: ClusterIP

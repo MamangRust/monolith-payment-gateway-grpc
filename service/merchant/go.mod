@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	github.com/IBM/sarama v1.45.1
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.4
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.9.0

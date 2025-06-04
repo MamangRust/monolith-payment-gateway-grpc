@@ -13,6 +13,25 @@ spec:
       labels:
         app: user
     spec:
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.35
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for Kafka to be ready (TCP)..."
+              until nc -z kafka.payment-gateway.svc.cluster.local 9092; do
+                echo "Kafka is not ready yet. Waiting 5 seconds..."
+                sleep 5
+              done
+              echo "Kafka is ready!"
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
       containers:
       - name: user
         image: user-service:1.0
@@ -27,5 +46,21 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: REDIS_PASSWORD
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8085
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 5
+        imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8080
+          - containerPort: 8085
+          - containerPort: 50055

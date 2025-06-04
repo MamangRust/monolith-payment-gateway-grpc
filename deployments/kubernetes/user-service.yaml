@@ -7,6 +7,10 @@ spec:
   selector:
     app: user
   ports:
-  - port: 8080
-    targetPort: 8080
+    - name: http-metrics
+      port: 8085
+      targetPort: 8085
+    - name: grpc
+      port: 50055
+      targetPort: 50055
   type: ClusterIP

@@ -7,6 +7,10 @@ spec:
   selector:
     app: saldo
   ports:
-  - port: 8080
-    targetPort: 8080
+    - name: http-metrics
+      port: 8086
+      targetPort: 8086
+    - name: grpc
+      port: 50056
+      targetPort: 50056
   type: ClusterIP

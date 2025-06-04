@@ -66,6 +66,25 @@ build-image:
 	done
 	@echo "✅ All services built successfully."
 
+image-load:
+	@for service in $(SERVICES); do \
+		echo "🚚 Loading $$service-service..."; \
+		minikube image load $$service-service:1.0 || exit 1; \
+	done
+	@echo "✅ All services loaded successfully."
+
+
+go-mod-tidy:
+	@for service in $(SERVICES); do \
+		echo "🔧 Running go mod tidy for $$service..."; \
+		cd service/$$service && go mod tidy || exit 1; \
+	done
+	@echo "✅ All go.mod tidy completed."
+
+
+ps:
+	${DOCKER_COMPOSE} -f $(COMPOSE_FILE) ps
+
 up:
 	${DOCKER_COMPOSE} -f $(COMPOSE_FILE) up -d
 

@@ -7,6 +7,10 @@ spec:
   selector:
     app: transaction
   ports:
-  - port: 8080
-    targetPort: 8080
+    - name: http-metrics
+      port: 8088
+      targetPort: 8088
+    - name: grpc
+      port: 50058
+      targetPort: 50058
   type: ClusterIP

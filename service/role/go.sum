@@ -1,5 +1,5 @@
-github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2 h1:qcw2kpGTRrNcpDv2Nt2+4DKwrgmolvymMM09W43Os4w=
-github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2/go.mod h1:w5JoFvujGyjK8NTx5c39mSLr2aXdtg291aAPRTtaFkk=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.4 h1:wTbBeKnnmjX2WiQouliFYPMua+cmV89oueCU/gmkazw=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.4/go.mod h1:w5JoFvujGyjK8NTx5c39mSLr2aXdtg291aAPRTtaFkk=
 github.com/MamangRust/monolith-payment-gateway-shared v1.0.2 h1:043DfQnY27X9eQozlcwxor2hGifsxNqO6YTSuHgL+bY=
 github.com/MamangRust/monolith-payment-gateway-shared v1.0.2/go.mod h1:S9+5zxodhnsPDeSejLq+1WoVda/+LHcGRrCvPOZHUk4=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

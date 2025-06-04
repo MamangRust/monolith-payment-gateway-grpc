@@ -112,7 +112,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}
 
 	myredis := redis.NewClient(&redis.Options{
-		Addr:         viper.GetString("REDIS_URL"),
+		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
 		Password:     viper.GetString("REDIS_PASSWORD"),
 		DB:           viper.GetInt("REDIS_DB_AUTH"),
 		DialTimeout:  5 * time.Second,

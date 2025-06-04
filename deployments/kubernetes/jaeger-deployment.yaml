@@ -19,6 +19,13 @@ spec:
         env:
         - name: COLLECTOR_OTLP_ENABLED
           value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         ports:
         - containerPort: 16686
         - containerPort: 14250

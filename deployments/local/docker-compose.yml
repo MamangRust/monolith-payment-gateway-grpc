@@ -43,7 +43,7 @@ services:
       - '--path.rootfs=/host'
 
   migrate:
-    image: migrate:1.0
+    image: migrate-service:1.0
     container_name: migrate
     volumes:
       - ./docker.env:/app/docker.env
@@ -342,7 +342,7 @@ services:
       - KAFKA_BROKERS=kafka:9092
 
   apigateway:
-    image: apigateway:1.0
+    image: apigateway-service:1.0
     container_name: apigateway
     env_file: ./docker.env 
     volumes:

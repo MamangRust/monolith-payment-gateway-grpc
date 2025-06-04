@@ -1,9 +1,9 @@
-module github.com/MamangRust/payment-gateway-monolith-grpc/service/migrate
+module github.com/MamangRust/payment-gateway-monolith-grpc-migrate
 
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.2
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.4
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/spf13/viper v1.20.1

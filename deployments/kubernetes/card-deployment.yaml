@@ -13,6 +13,25 @@ spec:
       labels:
         app: card
     spec:
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.35
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for Kafka to be ready (TCP)..."
+              until nc -z kafka.payment-gateway.svc.cluster.local 9092; do
+                echo "Kafka is not ready yet. Waiting 5 seconds..."
+                sleep 5
+              done
+              echo "Kafka is ready!"
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
       containers:
       - name: card
         image: card-service:1.0
@@ -22,4 +41,20 @@ spec:
         - secretRef:
             name: app-secrets
         ports:
-        - containerPort: 8080
+          - containerPort: 8083 
+          - containerPort: 50053 
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8083
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 5
+        imagePullPolicy: IfNotPresent

@@ -7,6 +7,10 @@ spec:
   selector:
     app: role
   ports:
-  - port: 8080
-    targetPort: 8080
+    - name: http-metrics
+      port: 8082
+      targetPort: 8082
+    - name: grpc
+      port: 50052
+      targetPort: 50052
   type: ClusterIP
