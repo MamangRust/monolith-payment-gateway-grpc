@@ -24,7 +24,7 @@ type saldoHandleGrpc struct {
 	logger                logger.LoggerInterface
 }
 
-func NewSaldoHandleGrpc(service service.Service, logger logger.LoggerInterface) *saldoHandleGrpc {
+func NewSaldoHandleGrpc(service *service.Service, logger logger.LoggerInterface) *saldoHandleGrpc {
 	return &saldoHandleGrpc{
 		saldoQueryService:     service.SaldoQuery,
 		saldoStatisticService: service.SaldoStats,

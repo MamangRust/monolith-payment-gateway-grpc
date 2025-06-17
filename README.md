@@ -21,9 +21,13 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 - 🔀 **Nginx** — Reverse proxy for HTTP traffic.
 - 🔍 **Jaeger** — Distributed tracing for observability.
 - 📊 **Grafana** — Monitoring and visualization tool.
-- 🧪 **Bruno** — Lightweight, Git-friendly API client (Postman alternative).
+- 🧪 **Postman** — API client for testing and debugging endpoints.
 - ☸️ **Kubernetes** — Container orchestration platform for deployment, scaling, and management.
 - 🧰 **Redis** — In-memory key-value store used for caching and fast data access.
+- 📥 **Loki** — Log aggregation system for collecting and querying logs.
+- 📤 **Promtail** — Log shipping agent that sends logs to Loki.
+- 🔧 **OTel Collector** — Vendor-agnostic collector for receiving, processing, and exporting telemetry data (metrics, traces, logs).
+
 
 ----
 

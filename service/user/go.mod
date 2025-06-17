@@ -3,7 +3,7 @@ module github.com/MamangRust/monolith-payment-gateway-user
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.4
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.6
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.2
 	github.com/prometheus/client_golang v1.22.0
 	github.com/spf13/viper v1.20.1

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
@@ -10,22 +12,51 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcode "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type userHandleApi struct {
-	client  pb.UserServiceClient
-	logger  logger.LoggerInterface
-	mapping apimapper.UserResponseMapper
+	client          pb.UserServiceClient
+	logger          logger.LoggerInterface
+	mapping         apimapper.UserResponseMapper
+	trace           trace.Tracer
+	requestCounter  *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
 }
 
 func NewHandlerUser(client pb.UserServiceClient, router *echo.Echo, logger logger.LoggerInterface, mapping apimapper.UserResponseMapper) *userHandleApi {
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "user_handler_requests_total",
+			Help: "Total number of user requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "user_handler_request_duration_seconds",
+			Help:    "Duration of user requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
 	userHandler := &userHandleApi{
-		client:  client,
-		logger:  logger,
-		mapping: mapping,
+		client:          client,
+		logger:          logger,
+		mapping:         mapping,
+		trace:           otel.Tracer("user-handler"),
+		requestCounter:  requestCounter,
+		requestDuration: requestDuration,
 	}
+
 	routerUser := router.Group("/api/user")
 
 	routerUser.GET("", userHandler.FindAllUser)
@@ -59,6 +90,17 @@ func NewHandlerUser(client pb.UserServiceClient, router *echo.Echo, logger logge
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user [get]
 func (h *userHandleApi) FindAllUser(c echo.Context) error {
+	const method = "FindAllUser"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -71,8 +113,6 @@ func (h *userHandleApi) FindAllUser(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -82,11 +122,16 @@ func (h *userHandleApi) FindAllUser(c echo.Context) error {
 	res, err := h.client.FindAll(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve user data", zap.Error(err))
+		status = "error"
+
+		logError("Failed to retrieve user data", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedFindAll(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationUser(res)
+
+	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -103,14 +148,26 @@ func (h *userHandleApi) FindAllUser(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user/{id} [get]
 func (h *userHandleApi) FindById(c echo.Context) error {
+	const method = "FindById"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid user ID", zap.Error(err))
+		status = "error"
+
+		logError("Invalid user ID", err, zap.Error(err))
+
 		return user_errors.ErrApiUserInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdUserRequest{
 		Id: int32(id),
@@ -119,11 +176,16 @@ func (h *userHandleApi) FindById(c echo.Context) error {
 	user, err := h.client.FindById(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve user data", zap.Error(err))
+		status = "error"
+
+		logError("Failed to retrieve user data", err, zap.Error(err))
+
 		return user_errors.ErrApiUserNotFound(c)
 	}
 
 	so := h.mapping.ToApiResponseUser(user)
+
+	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -141,6 +203,17 @@ func (h *userHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user/active [get]
 func (h *userHandleApi) FindByActive(c echo.Context) error {
+	const method = "FindAll"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -153,8 +226,6 @@ func (h *userHandleApi) FindByActive(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -164,11 +235,16 @@ func (h *userHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve user data", zap.Error(err))
+		status = "error"
+
+		logError("Failed to retrieve user data", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedFindActive(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationUserDeleteAt(res)
+
+	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -187,6 +263,17 @@ func (h *userHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user/trashed [get]
 func (h *userHandleApi) FindByTrashed(c echo.Context) error {
+	const method = "FindByTrashed"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -199,8 +286,6 @@ func (h *userHandleApi) FindByTrashed(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -210,11 +295,16 @@ func (h *userHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve user data", zap.Error(err))
+		status = "error"
+
+		logError("Failed to retrieve user data", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedFindTrashed(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationUserDeleteAt(res)
+
+	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -232,19 +322,34 @@ func (h *userHandleApi) FindByTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to create user"
 // @Router /api/user/create [post]
 func (h *userHandleApi) Create(c echo.Context) error {
+	const method = "Create"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	var body requests.CreateUserRequest
 
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Invalid request body", zap.Error(err))
+		status = "error"
+
+		logError("Failed to bind CreateUser request", err, zap.Error(err))
+
 		return user_errors.ErrApiBindCreateUser(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation Error", zap.Error(err))
+		status = "error"
+
+		logError("Failed to validate CreateUser request", err, zap.Error(err))
+
 		return user_errors.ErrApiValidateCreateUser(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.CreateUserRequest{
 		Firstname:       body.FirstName,
@@ -257,11 +362,16 @@ func (h *userHandleApi) Create(c echo.Context) error {
 	res, err := h.client.Create(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to create user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to create user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedCreateUser(c)
 	}
 
 	so := h.mapping.ToApiResponseUser(res)
+
+	logSuccess("Successfully create user", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -280,28 +390,46 @@ func (h *userHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update user"
 // @Router /api/user/update/{id} [post]
 func (h *userHandleApi) Update(c echo.Context) error {
+	const method = "Update"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		h.logger.Debug("Invalid request body", zap.Error(err))
+		status = "error"
+
+		logError("Invalid user id", err, zap.Error(err))
+
 		return user_errors.ErrApiUserInvalidId(c)
 	}
 
 	var body requests.UpdateUserRequest
 
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Invalid request body", zap.Error(err))
+		status = "error"
+
+		logError("Failed to bind UpdateUser request", err, zap.Error(err))
+
 		return user_errors.ErrApiBindUpdateUser(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation Error", zap.Error(err))
+		status = "error"
+
+		logError("Failed to validate UpdateUser request", err, zap.Error(err))
+
 		return user_errors.ErrApiValidateUpdateUser(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.UpdateUserRequest{
 		Id:              int32(idInt),
@@ -315,11 +443,16 @@ func (h *userHandleApi) Update(c echo.Context) error {
 	res, err := h.client.Update(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to update user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to update user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedUpdateUser(c)
 	}
 
 	so := h.mapping.ToApiResponseUser(res)
+
+	logSuccess("Successfully update user", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -337,14 +470,23 @@ func (h *userHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed user"
 // @Router /api/user/trashed/{id} [post]
 func (h *userHandleApi) TrashedUser(c echo.Context) error {
+	const method = "TrashedUser"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
 		h.logger.Debug("Invalid user ID", zap.Error(err))
 		return user_errors.ErrApiUserInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdUserRequest{
 		Id: int32(id),
@@ -353,11 +495,16 @@ func (h *userHandleApi) TrashedUser(c echo.Context) error {
 	user, err := h.client.TrashedUser(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to trashed user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to trashed user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedTrashedUser(c)
 	}
 
 	so := h.mapping.ToApiResponseUserDeleteAt(user)
+
+	logSuccess("Successfully trashed user", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -375,14 +522,26 @@ func (h *userHandleApi) TrashedUser(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore user"
 // @Router /api/user/restore/{id} [post]
 func (h *userHandleApi) RestoreUser(c echo.Context) error {
+	const method = "RestoreUser"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid user ID", zap.Error(err))
+		status = "error"
+
+		logError("Invalid user ID", err, zap.Error(err))
+
 		return user_errors.ErrApiUserInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdUserRequest{
 		Id: int32(id),
@@ -391,11 +550,16 @@ func (h *userHandleApi) RestoreUser(c echo.Context) error {
 	user, err := h.client.RestoreUser(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to restore user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to restore user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedRestoreUser(c)
 	}
 
 	so := h.mapping.ToApiResponseUserDeleteAt(user)
+
+	logSuccess("Successfully restore user", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -413,14 +577,26 @@ func (h *userHandleApi) RestoreUser(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete user:"
 // @Router /api/user/delete/{id} [delete]
 func (h *userHandleApi) DeleteUserPermanent(c echo.Context) error {
+	const method = "DeletUserPermanent"
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid user ID", zap.Error(err))
+		status = "error"
+
+		logError("Invalid user ID", err, zap.Error(err))
+
 		return user_errors.ErrApiUserInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdUserRequest{
 		Id: int32(id),
@@ -429,11 +605,16 @@ func (h *userHandleApi) DeleteUserPermanent(c echo.Context) error {
 	user, err := h.client.DeleteUserPermanent(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to delete user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to delete user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedDeletePermanent(c)
 	}
 
 	so := h.mapping.ToApiResponseUserDelete(user)
+
+	logSuccess("Successfully deleted user record permanently", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -451,18 +632,30 @@ func (h *userHandleApi) DeleteUserPermanent(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore user"
 // @Router /api/user/restore/all [post]
 func (h *userHandleApi) RestoreAllUser(c echo.Context) error {
+	const method = "RestoreAllUser"
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
 
 	res, err := h.client.RestoreAllUser(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		h.logger.Error("Failed to restore all user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to restore all user", err, zap.Error(err))
+
 		return user_errors.ErrApiFailedRestoreAll(c)
 	}
 
-	h.logger.Debug("Successfully restored all user")
-
 	so := h.mapping.ToApiResponseUserAll(res)
+
+	logSuccess("Successfully restore all user", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -480,19 +673,76 @@ func (h *userHandleApi) RestoreAllUser(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete user:"
 // @Router /api/user/delete/all [post]
 func (h *userHandleApi) DeleteAllUserPermanent(c echo.Context) error {
+	const method = "FindAll"
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
 
 	res, err := h.client.DeleteAllUserPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		h.logger.Error("Failed to permanently delete all user", zap.Error(err))
+		status = "error"
+
+		logError("Failed to delete all user permanently", err, zap.Error(err))
 
 		return user_errors.ErrApiFailedDeleteAll(c)
 	}
 
-	h.logger.Debug("Successfully deleted all user permanently")
-
 	so := h.mapping.ToApiResponseUserAll(res)
 
+	logSuccess("Successfully deleted all user permanently", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
+}
+
+func (s *userHandleApi) startTracingAndLogging(
+	ctx context.Context,
+	method string,
+	attrs ...attribute.KeyValue,
+) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+	start := time.Now()
+	_, span := s.trace.Start(ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := otelcode.Ok
+		if status != "success" {
+			code = otelcode.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	logError := func(msg string, err error, fields ...zap.Field) {
+		span.RecordError(err)
+		span.SetStatus(otelcode.Error, msg)
+		span.AddEvent(msg)
+		allFields := append([]zap.Field{zap.Error(err)}, fields...)
+		s.logger.Error(msg, allFields...)
+	}
+
+	return end, logSuccess, logError
+}
+
+func (s *userHandleApi) recordMetrics(method string, status string, start time.Time) {
+	s.requestCounter.WithLabelValues(method, status).Inc()
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

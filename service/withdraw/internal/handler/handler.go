@@ -6,7 +6,7 @@ import (
 )
 
 type Deps struct {
-	Service service.Service
+	Service *service.Service
 	Logger  logger.LoggerInterface
 }
 
@@ -14,7 +14,7 @@ type Handler struct {
 	Withdraw WithdrawHandleGrpc
 }
 
-func NewHandler(deps Deps) *Handler {
+func NewHandler(deps *Deps) *Handler {
 	return &Handler{
 		Withdraw: NewWithdrawHandleGrpc(deps.Service, deps.Logger),
 	}

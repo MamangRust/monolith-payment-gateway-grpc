@@ -38,12 +38,12 @@ func (e *merchantDocumentQueryError) HandleRepositoryPaginationDeleteAtError(
 	return handleErrorPaginationTemplate[[]*response.MerchantDocumentResponseDeleteAt](e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindAllMerchants, fields...)
 }
 
-func (e *merchantDocumentQueryError) HandleRepositoryListError(
+func (e *merchantDocumentQueryError) HandleRepositorySingleError(
 	err error,
 	method, tracePrefix string,
 	span trace.Span,
 	status *string,
 	fields ...zap.Field,
-) ([]*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantDocumentResponse](e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindAllMerchants, fields...)
+) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+	return handleErrorTemplate[*response.MerchantDocumentResponse](e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrMerchantNotFoundRes, fields...)
 }

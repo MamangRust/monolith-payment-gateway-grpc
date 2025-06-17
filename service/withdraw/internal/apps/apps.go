@@ -53,7 +53,7 @@ type Server struct {
 }
 
 func NewServer() (*Server, func(context.Context) error, error) {
-	logger, err := logger.NewLogger()
+	logger, err := logger.NewLogger("withdraw-service")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -75,7 +75,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	mapperRecord := recordmapper.NewRecordMapper()
 
-	depsRepo := repository.Deps{
+	depsRepo := &repository.Deps{
 		DB:           DB,
 		Ctx:          ctx,
 		MapperRecord: mapperRecord,
@@ -115,17 +115,17 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	errorhandler := errorhandler.NewErrorHandler(logger)
 
-	services := service.NewService(service.Deps{
-		Mencache:     *mencache,
-		ErrorHander:  *errorhandler,
-		Kafka:        *kafka,
+	services := service.NewService(&service.Deps{
+		Mencache:     mencache,
+		ErrorHander:  errorhandler,
+		Kafka:        kafka,
 		Ctx:          ctx,
 		Repositories: repositories,
 		Logger:       logger,
 	})
 
-	handlers := handler.NewHandler(handler.Deps{
-		Service: *services,
+	handlers := handler.NewHandler(&handler.Deps{
+		Service: services,
 		Logger:  logger,
 	})
 

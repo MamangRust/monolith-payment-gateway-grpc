@@ -19,7 +19,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -28,21 +27,20 @@ import (
 
 type merchantCommandService struct {
 	ctx                       context.Context
-	redis                     *redis.Client
-	kafka                     kafka.Kafka
+	kafka                     *kafka.Kafka
 	trace                     trace.Tracer
 	errorHandler              errorhandler.MerchantCommandErrorHandler
+	mencache                  mencache.MerchantCommandCache
 	userRepository            repository.UserRepository
 	merchantQueryRepository   repository.MerchantQueryRepository
 	merchantCommandRepository repository.MerchantCommandRepository
 	logger                    logger.LoggerInterface
 	mapping                   responseservice.MerchantResponseMapper
-	mencache                  mencache.MerchantCommandCache
 	requestCounter            *prometheus.CounterVec
 	requestDuration           *prometheus.HistogramVec
 }
 
-func NewMerchantCommandService(kafka kafka.Kafka, ctx context.Context,
+func NewMerchantCommandService(kafka *kafka.Kafka, ctx context.Context,
 	errorHandler errorhandler.MerchantCommandErrorHandler,
 	mencache mencache.MerchantCommandCache,
 	userRepository repository.UserRepository,
@@ -132,7 +130,7 @@ func (s *merchantCommandService) CreateMerchant(request *requests.CreateMerchant
 
 	err = s.kafka.SendMessage("email-service-topic-merchant-created", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "CreateMerchant", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("user_id", user.ID))
+		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "CreateMerchant", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
@@ -162,15 +160,12 @@ func (s *merchantCommandService) UpdateMerchant(request *requests.UpdateMerchant
 	res, err := s.merchantCommandRepository.UpdateMerchant(request)
 
 	if err != nil {
-		return s.errorHandler.HandleUpdateMerchantError(err, "UpdateMerchant", "FAILED_UPDATE_MERCHANT", span, &status, zap.Int("merchant_id", *request.MerchantID))
+		return s.errorHandler.HandleUpdateMerchantError(err, "UpdateMerchant", "FAILED_UPDATE_MERCHANT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
 
-	cacheKey := fmt.Sprintf("merchant:id:%d", *request.MerchantID)
-	if err := s.redis.Del(s.ctx, cacheKey).Err(); err != nil {
-		s.logger.Error("Failed to delete merchant from cache", zap.Error(err))
-	}
+	s.mencache.DeleteCachedMerchant(res.ID)
 
 	s.logger.Debug("Successfully updated merchant", zap.Int("merchant_id", res.ID))
 
@@ -252,7 +247,7 @@ func (s *merchantCommandService) UpdateMerchantStatus(request *requests.UpdateMe
 
 	err = s.kafka.SendMessage("email-service-topic-merchant-update-status", strconv.Itoa(*request.MerchantID), payloadBytes)
 	if err != nil {
-		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Int("merchant_id", *request.MerchantID))
+		return errorhandler.HandleSendEmailError[*response.MerchantResponse](s.logger, err, "UpdateMerchantStatus", "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
 	so := s.mapping.ToMerchantResponse(res)
@@ -283,7 +278,7 @@ func (s *merchantCommandService) TrashedMerchant(merchant_id int) (*response.Mer
 	res, err := s.merchantCommandRepository.TrashedMerchant(merchant_id)
 
 	if err != nil {
-		return s.errorHandler.HandleTrashedMerchantError(err, "TrashedMerchant", "FAILED_TRASHED_MERCHANT", span, &status, zap.Int("merchant_id", merchant_id))
+		return s.errorHandler.HandleTrashedMerchantError(err, "TrashedMerchant", "FAILED_TRASHED_MERCHANT", span, &status, zap.Error(err))
 	}
 	so := s.mapping.ToMerchantResponse(res)
 
@@ -314,11 +309,13 @@ func (s *merchantCommandService) RestoreMerchant(merchant_id int) (*response.Mer
 	res, err := s.merchantCommandRepository.RestoreMerchant(merchant_id)
 
 	if err != nil {
-		return s.errorHandler.HandleRestoreMerchantError(err, "RestoreMerchant", "FAILED_RESTORE_MERCHANT", span, &status, zap.Int("merchant_id", merchant_id))
+		return s.errorHandler.HandleRestoreMerchantError(err, "RestoreMerchant", "FAILED_RESTORE_MERCHANT", span, &status, zap.Error(err))
 	}
 	s.logger.Debug("Successfully restored merchant", zap.Int("merchant_id", merchant_id))
 
 	so := s.mapping.ToMerchantResponse(res)
+
+	s.mencache.DeleteCachedMerchant(res.ID)
 
 	return so, nil
 }
@@ -339,7 +336,7 @@ func (s *merchantCommandService) DeleteMerchantPermanent(merchant_id int) (bool,
 	_, err := s.merchantCommandRepository.DeleteMerchantPermanent(merchant_id)
 
 	if err != nil {
-		return s.errorHandler.HandleDeleteMerchantPermanentError(err, "DeleteMerchantPermanent", "FAILED_DELETE_MERCHANT_PERMANENT", span, &status, zap.Int("merchant_id", merchant_id))
+		return s.errorHandler.HandleDeleteMerchantPermanentError(err, "DeleteMerchantPermanent", "FAILED_DELETE_MERCHANT_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted merchant permanently", zap.Int("merchant_id", merchant_id))
@@ -363,7 +360,7 @@ func (s *merchantCommandService) RestoreAllMerchant() (bool, *response.ErrorResp
 	_, err := s.merchantCommandRepository.RestoreAllMerchant()
 
 	if err != nil {
-		return s.errorHandler.HandleRestoreAllMerchantError(err, "RestoreAllMerchant", "FAILED_RESTORE_ALL_MERCHANT", span, &status)
+		return s.errorHandler.HandleRestoreAllMerchantError(err, "RestoreAllMerchant", "FAILED_RESTORE_ALL_MERCHANT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully restored all merchants")
@@ -386,7 +383,7 @@ func (s *merchantCommandService) DeleteAllMerchantPermanent() (bool, *response.E
 	_, err := s.merchantCommandRepository.DeleteAllMerchantPermanent()
 
 	if err != nil {
-		return s.errorHandler.HandleDeleteAllMerchantPermanentError(err, "DeleteAllMerchantPermanent", "FAILED_DELETE_ALL_MERCHANT_PERMANENT", span, &status)
+		return s.errorHandler.HandleDeleteAllMerchantPermanentError(err, "DeleteAllMerchantPermanent", "FAILED_DELETE_ALL_MERCHANT_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted all merchants permanently")

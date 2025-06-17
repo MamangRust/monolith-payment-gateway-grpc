@@ -30,7 +30,7 @@ type withdrawCommandService struct {
 	ctx                       context.Context
 	errorhandler              errorhandler.WithdrawCommandErrorHandler
 	mencache                  mencache.WithdrawCommandCache
-	kafka                     kafka.Kafka
+	kafka                     *kafka.Kafka
 	trace                     trace.Tracer
 	cardRepository            repository.CardRepository
 	saldoRepository           repository.SaldoRepository
@@ -43,7 +43,7 @@ type withdrawCommandService struct {
 }
 
 func NewWithdrawCommandService(ctx context.Context, errorhandler errorhandler.WithdrawCommandErrorHandler,
-	mencache mencache.WithdrawCommandCache, kafka kafka.Kafka,
+	mencache mencache.WithdrawCommandCache, kafka *kafka.Kafka,
 	cardRepository repository.CardRepository,
 	saldoRepository repository.SaldoRepository,
 	withdrawCommandRepository repository.WithdrawCommandRepository,

@@ -14,6 +14,8 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
+RUN mkdir -p /var/log/app
+
 COPY --from=builder /app/topup .
 
 EXPOSE 50057 8087

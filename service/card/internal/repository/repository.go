@@ -23,7 +23,7 @@ type Deps struct {
 	MapperRecord *recordmapper.RecordMapper
 }
 
-func NewRepositories(deps Deps) *Repositories {
+func NewRepositories(deps *Deps) *Repositories {
 	return &Repositories{
 		CardCommand:         NewCardCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.CardRecordMapper),
 		CardQuery:           NewCardQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.CardRecordMapper),

@@ -23,17 +23,17 @@ type Service struct {
 
 type Deps struct {
 	Context      context.Context
-	ErrorHandler errorhandler.ErrorHandler
-	Mencache     mencache.Mencache
+	ErrorHandler *errorhandler.ErrorHandler
+	Mencache     *mencache.Mencache
 	Repositories *repository.Repositories
 	Token        auth.TokenManager
 	Hash         hash.HashPassword
 	Logger       logger.LoggerInterface
-	Kafka        kafka.Kafka
+	Kafka        *kafka.Kafka
 	Mapper       responseservice.UserResponseMapper
 }
 
-func NewService(deps Deps) *Service {
+func NewService(deps *Deps) *Service {
 	tokenService := NewTokenService(deps.Repositories.RefreshToken, deps.Token, deps.Logger)
 
 	return &Service{

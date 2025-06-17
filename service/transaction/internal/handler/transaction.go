@@ -25,7 +25,7 @@ type transactionHandleGrpc struct {
 	mapping                           protomapper.TransactionProtoMapper
 }
 
-func NewTransactionHandleGrpc(service service.Service, logger logger.LoggerInterface) *transactionHandleGrpc {
+func NewTransactionHandleGrpc(service *service.Service, logger logger.LoggerInterface) *transactionHandleGrpc {
 	return &transactionHandleGrpc{
 		transactionQueryService:           service.TransactionQuery,
 		transactionCommandService:         service.TransactionCommand,

@@ -50,6 +50,19 @@ func (e *merchantQueryError) HandleRepositoryListError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponse, *response.ErrorResponse) {
+	return handleErrorTemplate[[]*response.MerchantResponse](
+		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindAllMerchants, fields...,
+	)
+}
 
-	return nil, merchant_errors.ErrMerchantNotFoundRes
+func (e *merchantQueryError) HandleRepositorySingleError(
+	err error,
+	method, tracePrefix string,
+	span trace.Span,
+	status *string,
+	fields ...zap.Field,
+) (*response.MerchantResponse, *response.ErrorResponse) {
+	return handleErrorTemplate[*response.MerchantResponse](
+		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrMerchantNotFoundRes, fields...,
+	)
 }

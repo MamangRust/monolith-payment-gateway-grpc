@@ -21,7 +21,7 @@ type Deps struct {
 	MapperRecord *recordmapper.RecordMapper
 }
 
-func NewRepositories(deps Deps) *Repositories {
+func NewRepositories(deps *Deps) *Repositories {
 	cardRecordMapper := recordmapper.NewCardRecordMapper()
 	saldoRecordMapper := recordmapper.NewSaldoRecordMapper()
 

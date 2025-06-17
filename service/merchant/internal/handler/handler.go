@@ -8,7 +8,7 @@ import (
 
 type Deps struct {
 	Logger  logger.LoggerInterface
-	Service service.Service
+	Service *service.Service
 }
 
 type Handler struct {
@@ -16,7 +16,7 @@ type Handler struct {
 	MerchantDocument MerchantDocumentHandleGrpc
 }
 
-func NewHandler(deps Deps) *Handler {
+func NewHandler(deps *Deps) *Handler {
 	merchantProto := protomapper.NewMerchantProtoMapper()
 	merchantDocumentProto := protomapper.NewMerchantDocumentProtoMapper()
 

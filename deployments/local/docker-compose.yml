@@ -108,6 +108,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -130,6 +131,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -152,6 +154,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -174,6 +177,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -196,6 +200,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -218,6 +223,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -240,6 +246,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -262,6 +269,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -284,6 +292,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -307,6 +316,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -325,6 +335,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     networks:
       - app_network
     depends_on:
@@ -347,6 +358,7 @@ services:
     env_file: ./docker.env 
     volumes:
       - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
     ports:
       - "5000:5000"
     networks:
@@ -380,6 +392,19 @@ services:
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    volumes:
+      - ../../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    ports:
+      - "9093:9093"
+    networks:
+      - app_network
+
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -387,6 +412,7 @@ services:
       - "9090:9090"
     volumes:
       - ../../observability/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ../../observability/rules:/etc/prometheus/rules
     networks:
       - app_network
     depends_on:
@@ -401,6 +427,8 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana  
     networks:
       - app_network
     depends_on:
@@ -469,7 +497,31 @@ services:
       timeout: 10s
       retries: 3
 
+  loki:
+    container_name: loki
+    image: grafana/loki:2.9.0
+    user: "10001:10001"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../../observability/loki-config.yaml:/etc/loki/local-config.yaml
+      - ../../observability/loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app_network
+
+  promtail:
+    container_name: promtail
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ../../observability/promtail-config.yaml:/etc/promtail/config.yaml
+      - ./logs:/var/log/app
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - app_network
+
 volumes:
+  grafana-storage:
   postgres_data:
   kafka_data:
   redis_data:

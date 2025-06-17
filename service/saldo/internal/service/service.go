@@ -19,14 +19,14 @@ type Service struct {
 
 type Deps struct {
 	Ctx          context.Context
-	ErrorHandler errorhandler.ErrorHandler
-	Mencache     mencache.Mencache
+	ErrorHandler *errorhandler.ErrorHandler
+	Mencache     *mencache.Mencache
 	Redis        *redis.Client
 	Repositories *repository.Repositories
 	Logger       logger.LoggerInterface
 }
 
-func NewService(deps Deps) *Service {
+func NewService(deps *Deps) *Service {
 	saldoMapper := responseservice.NewSaldoResponseMapper()
 
 	return &Service{

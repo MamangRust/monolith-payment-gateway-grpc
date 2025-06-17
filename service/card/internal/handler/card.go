@@ -27,7 +27,7 @@ type cardHandleGrpc struct {
 }
 
 func NewCardHandleGrpc(
-	cardService service.Service,
+	cardService *service.Service,
 	logger logger.LoggerInterface,
 ) *cardHandleGrpc {
 	return &cardHandleGrpc{

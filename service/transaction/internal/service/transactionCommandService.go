@@ -28,7 +28,7 @@ import (
 )
 
 type transactionCommandService struct {
-	kafka                        kafka.Kafka
+	kafka                        *kafka.Kafka
 	ctx                          context.Context
 	errorhandler                 errorhandler.TransactionCommandErrorHandler
 	mencache                     mencache.TransactionCommandCache
@@ -45,7 +45,7 @@ type transactionCommandService struct {
 }
 
 func NewTransactionCommandService(
-	kafka kafka.Kafka,
+	kafka *kafka.Kafka,
 	ctx context.Context,
 	errorhandler errorhandler.TransactionCommandErrorHandler,
 	mencache mencache.TransactionCommandCache,

@@ -13,10 +13,20 @@ receivers:
           scrape_interval: 5s
           static_configs:
             - targets: ["localhost:8888"]
+
         - job_name: "kafka-exporter"
           scrape_interval: 5s
           static_configs:
             - targets: ["kafka-exporter:9308"]
+
+        - job_name: "apigateway"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["apigateway:8091"]
+              labels:
+                application: "API Gateway"
+                environment: "production"
+
         - job_name: "auth-service"
           metrics_path: "/metrics"
           static_configs:
@@ -24,55 +34,7 @@ receivers:
               labels:
                 application: "Auth Service"
                 environment: "production"
-        - job_name: "merchant-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["merchant:8084"]
-              labels:
-                application: "Merchant Service"
-                environment: "production"
-        - job_name: "card-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["card:8083"]
-              labels:
-                application: "Card Service"
-                environment: "production"
-        - job_name: "saldo-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["saldo:8086"]
-              labels:
-                application: "Saldo Service"
-                environment: "production"
-        - job_name: "role-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["role:8082"]
-              labels:
-                application: "Role Service"
-                environment: "production"
-        - job_name: "topup-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["topup:8087"]
-              labels:
-                application: "Topup Service"
-                environment: "production"
-        - job_name: "transaction-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["transaction:8088"]
-              labels:
-                application: "Transaction Service"
-                environment: "production"
-        - job_name: "transfer-service"
-          metrics_path: "/metrics"
-          static_configs:
-            - targets: ["transfer:8089"]
-              labels:
-                application: "Transfer Service"
-                environment: "production"
+
         - job_name: "user-service"
           metrics_path: "/metrics"
           static_configs:
@@ -80,13 +42,63 @@ receivers:
               labels:
                 application: "User Service"
                 environment: "production"
-        - job_name: "email-service"
+
+        - job_name: "role-service"
           metrics_path: "/metrics"
           static_configs:
-            - targets: ["email:8080"]
+            - targets: ["role:8082"]
               labels:
-                application: "Email Service"
+                application: "Role Service"
                 environment: "production"
+
+        - job_name: "card-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["card:8083"]
+              labels:
+                application: "Card Service"
+                environment: "production"
+
+        - job_name: "merchant-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["merchant:8084"]
+              labels:
+                application: "Merchant Service"
+                environment: "production"
+
+        - job_name: "saldo-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["saldo:8086"]
+              labels:
+                application: "Saldo Service"
+                environment: "production"
+
+        - job_name: "topup-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["topup:8087"]
+              labels:
+                application: "Topup Service"
+                environment: "production"
+
+        - job_name: "transaction-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["transaction:8088"]
+              labels:
+                application: "Transaction Service"
+                environment: "production"
+
+        - job_name: "transfer-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["transfer:8089"]
+              labels:
+                application: "Transfer Service"
+                environment: "production"
+
         - job_name: "withdraw-service"
           metrics_path: "/metrics"
           static_configs:
@@ -94,19 +106,47 @@ receivers:
               labels:
                 application: "Withdraw Service"
                 environment: "production"
-        
-              
+
+        - job_name: "email-service"
+          metrics_path: "/metrics"
+          static_configs:
+            - targets: ["email:8080"]
+              labels:
+                application: "Email Service"
+                environment: "production"
 
 processors:
   batch:
+
+  resource:
+    attributes:
+      - key: service.name
+        from_attribute: service_name
+        action: insert
+      - key: environment
+        value: production
+        action: insert
 
 exporters:
   otlp:
     endpoint: "jaeger:4317"
     tls:
       insecure: true
+
   prometheus:
-    endpoint: "0.0.0.0:8889"          
+    endpoint: "0.0.0.0:8889"
+
+  # Replace the deprecated loki exporter with otlphttp exporter
+  otlphttp/loki:
+    endpoint: "http://loki:3100/otlp"
+    tls:
+      insecure: true
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
 
 extensions:
   health_check:
@@ -124,9 +164,9 @@ service:
     metrics:
       receivers: [otlp, prometheus]
       processors: [batch]
-      exporters: [prometheus]   
+      exporters: [prometheus]
 
     logs:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp]
+      processors: [batch, resource]
+      exporters: [otlphttp/loki]

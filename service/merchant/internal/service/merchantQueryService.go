@@ -138,7 +138,7 @@ func (s *merchantQueryService) FindById(merchantID int) (*response.MerchantRespo
 
 	merchant, err := s.merchantQueryRepository.FindById(merchantID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.MerchantResponse](s.logger, err, "FindById", "FAILED_FIND_MERCHANT_BY_ID", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Int("merchant_id", merchantID))
+		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_MERCHANT_BY_ID", span, &status, zap.Error(err))
 	}
 
 	merchantResponse := s.mapping.ToMerchantResponse(merchant)
@@ -275,7 +275,7 @@ func (s *merchantQueryService) FindByApiKey(apiKey string) (*response.MerchantRe
 
 	merchant, err := s.merchantQueryRepository.FindByApiKey(apiKey)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.MerchantResponse](s.logger, err, "FindByApiKey", "FAILED_FIND_MERCHANT_BY_API_KEY", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.String("api_key", apiKey))
+		return s.errorhandler.HandleRepositorySingleError(err, "FindByApiKey", "FAILED_FIND_MERCHANT_BY_API_KEY", span, &status, zap.Error(err))
 	}
 
 	merchantResponse := s.mapping.ToMerchantResponse(merchant)

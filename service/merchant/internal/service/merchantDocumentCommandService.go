@@ -26,7 +26,7 @@ import (
 )
 
 type merchantDocumentCommandService struct {
-	kafka                             kafka.Kafka
+	kafka                             *kafka.Kafka
 	ctx                               context.Context
 	mencache                          mencache.MerchantDocumentCommandCache
 	errorMerchantDocumentCommand      errorhandler.MerchantDocumentCommandErrorHandler
@@ -41,7 +41,7 @@ type merchantDocumentCommandService struct {
 }
 
 func NewMerchantDocumentCommandService(
-	kafka kafka.Kafka,
+	kafka *kafka.Kafka,
 	ctx context.Context,
 	mencache mencache.MerchantDocumentCommandCache,
 	errorMerchantDocumentCommand errorhandler.MerchantDocumentCommandErrorHandler,
@@ -361,7 +361,7 @@ func (s *merchantDocumentCommandService) RestoreAllMerchantDocument() (bool, *re
 
 	_, err := s.merchantDocumentCommandRepository.RestoreAllMerchantDocument()
 	if err != nil {
-		return s.errorMerchantDocumentCommand.HandleRestoreAllMerchantDocumentError(err, "RestoreAllDocuments", "FAILED_RESTORE_ALL_DOCUMENTS", span, &status)
+		return s.errorMerchantDocumentCommand.HandleRestoreAllMerchantDocumentError(err, "RestoreAllDocuments", "FAILED_RESTORE_ALL_DOCUMENTS", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully restored all merchant documents")
@@ -384,7 +384,7 @@ func (s *merchantDocumentCommandService) DeleteAllMerchantDocumentPermanent() (b
 
 	_, err := s.merchantDocumentCommandRepository.DeleteAllMerchantDocumentPermanent()
 	if err != nil {
-		return s.errorMerchantDocumentCommand.HandleDeleteAllMerchantDocumentPermanentError(err, "DeleteAllDocumentsPermanent", "FAILED_DELETE_ALL_DOCUMENTS_PERMANENT", span, &status)
+		return s.errorMerchantDocumentCommand.HandleDeleteAllMerchantDocumentPermanentError(err, "DeleteAllDocumentsPermanent", "FAILED_DELETE_ALL_DOCUMENTS_PERMANENT", span, &status, zap.Error(err))
 	}
 
 	s.logger.Debug("Successfully deleted all merchant documents permanently")

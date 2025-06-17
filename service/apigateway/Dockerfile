@@ -12,8 +12,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o apigateway ./cmd/main.go
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
+
 WORKDIR /root/
+RUN mkdir -p /var/log/app
+
+
 COPY --from=builder /app/apigateway .
 
-EXPOSE 5000
+EXPOSE 5000 8091
 CMD ["./apigateway"]

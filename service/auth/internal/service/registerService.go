@@ -39,7 +39,7 @@ type registerService struct {
 	role              repository.RoleRepository
 	userRole          repository.UserRoleRepository
 	hash              hash.HashPassword
-	kafka             kafka.Kafka
+	kafka             *kafka.Kafka
 	logger            logger.LoggerInterface
 	mapping           responseservice.UserResponseMapper
 	requestCounter    *prometheus.CounterVec
@@ -53,7 +53,7 @@ func NewRegisterService(ctx context.Context,
 	errorMarshal errorhandler.MarshalErrorHandler,
 	errorKafka errorhandler.KafkaErrorHandler,
 	mencache mencache.RegisterCache,
-	user repository.UserRepository, role repository.RoleRepository, userRole repository.UserRoleRepository, hash hash.HashPassword, kafka kafka.Kafka, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *registerService {
+	user repository.UserRepository, role repository.RoleRepository, userRole repository.UserRoleRepository, hash hash.HashPassword, kafka *kafka.Kafka, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *registerService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "register_service_requests_total",

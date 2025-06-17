@@ -51,7 +51,7 @@ type Server struct {
 func NewServer() (*Server, func(context.Context) error, error) {
 	flag.Parse()
 
-	logger, err := logger.NewLogger()
+	logger, err := logger.NewLogger("role-service")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -72,7 +72,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	ctx := context.Background()
 
-	depsRepo := repository.Deps{
+	depsRepo := &repository.Deps{
 		DB:  DB,
 		Ctx: ctx,
 	}
@@ -102,15 +102,15 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		return nil, nil, err
 	}
 
-	services := service.NewService(service.Deps{
+	services := service.NewService(&service.Deps{
 		Ctx:          ctx,
 		Redis:        myredis,
 		Repositories: repositories,
 		Logger:       logger,
 	})
 
-	handlers := handler.NewHandler(handler.Deps{
-		Service: *services,
+	handlers := handler.NewHandler(&handler.Deps{
+		Service: services,
 		Logger:  logger,
 	})
 

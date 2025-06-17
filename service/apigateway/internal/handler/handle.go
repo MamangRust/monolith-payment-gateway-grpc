@@ -25,15 +25,15 @@ type ServiceConnections struct {
 
 type Deps struct {
 	Conn               *grpc.ClientConn
-	Kafka              kafka.Kafka
+	Kafka              *kafka.Kafka
 	Token              auth.TokenManager
 	E                  *echo.Echo
 	Logger             logger.LoggerInterface
-	Mapping            apimapper.ResponseApiMapper
+	Mapping            *apimapper.ResponseApiMapper
 	ServiceConnections ServiceConnections
 }
 
-func NewHandler(deps Deps) {
+func NewHandler(deps *Deps) {
 	clientAuth := pb.NewAuthServiceClient(deps.ServiceConnections.Auth)
 	clientRole := pb.NewRoleServiceClient(deps.ServiceConnections.Role)
 	clientCard := pb.NewCardServiceClient(deps.ServiceConnections.Card)

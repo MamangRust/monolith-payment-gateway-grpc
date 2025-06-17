@@ -2,11 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
+	"sync"
 	"time"
 
 	_ "github.com/MamangRust/monolith-payment-gateway-apigateway/docs"
@@ -16,9 +17,11 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.uber.org/zap"
@@ -49,119 +52,102 @@ type ServiceAddresses struct {
 // @securityDefinitions.apikey BearerAuth
 // @in Header
 // @name Authorization
-func RunClient() {
-	addresses := ServiceAddresses{
-		Auth:        *flag.String("auth-addr", getEnvOrDefault("GRPC_AUTH_ADDR", "localhost:50051"), "Auth service address"),
-		Role:        *flag.String("role-addr", getEnvOrDefault("GRPC_ROLE_ADDR", "localhost:50052"), "Role service address"),
-		Card:        *flag.String("card-addr", getEnvOrDefault("GRPC_CARD_ADDR", "localhost:50053"), "Card service address"),
-		Merchant:    *flag.String("merchant-addr", getEnvOrDefault("GRPC_MERCHANT_ADDR", "localhost:50054"), "Merchant service address"),
-		User:        *flag.String("user-addr", getEnvOrDefault("GRPC_USER_ADDR", "localhost:50055"), "User service address"),
-		Saldo:       *flag.String("saldo-addr", getEnvOrDefault("GRPC_SALDO_ADDR", "localhost:50056"), "Saldo service address"),
-		Topup:       *flag.String("topup-addr", getEnvOrDefault("GRPC_TOPUP_ADDR", "localhost:50057"), "Topup service address"),
-		Transaction: *flag.String("transaction-addr", getEnvOrDefault("GRPC_TRANSACTION_ADDR", "localhost:50058"), "Transaction service address"),
-		Transfer:    *flag.String("transfer-addr", getEnvOrDefault("GRPC_TRANSFER_ADDR", "localhost:50059"), "Transfer service address"),
-		Withdraw:    *flag.String("withdraw-addr", getEnvOrDefault("GRPC_WITHDRAW_ADDR", "localhost:50060"), "Withdraw service address"),
-	}
+type Client struct {
+	App    *echo.Echo
+	Logger logger.LoggerInterface
+}
 
+func (c *Client) Shutdown(ctx context.Context) error {
+	return c.App.Shutdown(ctx)
+}
+
+func RunClient() (*Client, func(), error) {
 	flag.Parse()
 
-	logger, err := logger.NewLogger()
-	limiter := middlewares.NewRateLimiter(20, 50)
+	addresses := loadServiceAddresses()
 
+	log, err := logger.NewLogger("apigateway")
 	if err != nil {
-		logger.Fatal("Failed to create logger", zap.Error(err))
+		return nil, nil, fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	err = dotenv.Viper()
-	if err != nil {
-		logger.Fatal("Failed to load .env file", zap.Error(err))
+	log.Debug("Loading environment variables")
+	if err := dotenv.Viper(); err != nil {
+		log.Fatal("Failed to load .env file", zap.Error(err))
 	}
 
-	connections, err := createServiceConnections(addresses, logger)
+	log.Debug("Creating gRPC connections...")
+	conns, err := createServiceConnections(addresses, log)
 	if err != nil {
-		logger.Fatal("Failed to connect to one or more services", zap.Error(err))
+		return nil, nil, fmt.Errorf("failed to connect services: %w", err)
 	}
 
-	e := echo.New()
-
-	e.Use(limiter.Limit)
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://localhost:1420", "http://localhost:33451"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
-		AllowHeaders: []string{
-			echo.HeaderOrigin,
-			echo.HeaderContentType,
-			echo.HeaderAccept,
-			echo.HeaderAuthorization,
-			"X-API-Key",
-		},
-		AllowCredentials: true,
-	}))
-
-	e.Use(middleware.Recover())
-	e.Use(middleware.Logger())
-
-	middlewares.WebSecurityConfig(e)
-
-	e.GET("/swagger/*", echoSwagger.WrapHandler)
+	e := setupEcho(log)
 
 	token, err := auth.NewManager(viper.GetString("SECRET_KEY"))
 	if err != nil {
-		logger.Fatal("Failed to create token manager", zap.Error(err))
+		log.Fatal("Failed to create token manager", zap.Error(err))
 	}
 
+	ctx := context.Background()
+	shutdownTracer, err := otel_pkg.InitTracerProvider("auth-service", ctx)
+	if err != nil {
+		log.Fatal("Failed to initialize tracer provider", zap.Error(err))
+	}
+
+	myKafka := kafka.NewKafka(log, []string{os.Getenv("KAFKA_BROKERS")})
 	mapping := apimapper.NewResponseApiMapper()
 
-	myKafka := kafka.NewKafka(logger, []string{os.Getenv("KAFKA_BROKERS")})
-
-	depsHandler := handler.Deps{
-		Conn:               connections.Auth,
-		Kafka:              *myKafka,
+	deps := &handler.Deps{
+		Conn:               conns.Auth,
+		Kafka:              myKafka,
 		Token:              token,
 		E:                  e,
-		Logger:             logger,
-		Mapping:            *mapping,
-		ServiceConnections: handler.ServiceConnections(connections),
+		Logger:             log,
+		Mapping:            mapping,
+		ServiceConnections: handler.ServiceConnections(conns),
 	}
 
-	handler.NewHandler(depsHandler)
+	handler.NewHandler(deps)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	go func() {
-		if err := e.Start(":5000"); err != nil {
-			e.Logger.Info("shutting down the server")
+		defer wg.Done()
+		log.Info("Starting API Gateway server on :5000")
+		if err := e.Start(":5000"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("Echo server error", zap.Error(err))
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	go func() {
+		defer wg.Done()
+		log.Info("Starting Prometheus metrics server on :8091")
+		if err := http.ListenAndServe(":8091", promhttp.Handler()); err != nil {
+			log.Fatal("Metrics server error", zap.Error(err))
+		}
+	}()
 
-	<-quit
+	shutdown := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		log.Info("Shutting down API Gateway...")
+		if err := e.Shutdown(ctx); err != nil {
+			log.Error("Echo shutdown failed", zap.Error(err))
+		}
 
-	if err := e.Server.Shutdown(ctx); err != nil {
-		e.Logger.Fatal(err)
-	}
+		closeConnections(conns, log)
 
-	for name, conn := range map[string]*grpc.ClientConn{
-		"Auth":        connections.Auth,
-		"Role":        connections.Role,
-		"Card":        connections.Card,
-		"Merchant":    connections.Merchant,
-		"User":        connections.User,
-		"Saldo":       connections.Saldo,
-		"Topup":       connections.Topup,
-		"Transaction": connections.Transaction,
-		"Transfer":    connections.Transfer,
-		"Withdraw":    connections.Withdraw,
-	} {
-		if conn != nil {
-			if err := conn.Close(); err != nil {
-				logger.Error(fmt.Sprintf("Failed to close %s connection", name), zap.Error(err))
+		if shutdownTracer != nil {
+			if err := shutdownTracer(context.Background()); err != nil {
+				log.Error("Tracer shutdown failed", zap.Error(err))
 			}
 		}
 	}
+
+	return &Client{App: e, Logger: log}, shutdown, nil
 }
 
 func createServiceConnections(addresses ServiceAddresses, logger logger.LoggerInterface) (handler.ServiceConnections, error) {
@@ -237,4 +223,59 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func loadServiceAddresses() ServiceAddresses {
+	return ServiceAddresses{
+		Auth:        getEnvOrDefault("GRPC_AUTH_ADDR", "localhost:50051"),
+		Role:        getEnvOrDefault("GRPC_ROLE_ADDR", "localhost:50052"),
+		Card:        getEnvOrDefault("GRPC_CARD_ADDR", "localhost:50053"),
+		Merchant:    getEnvOrDefault("GRPC_MERCHANT_ADDR", "localhost:50054"),
+		User:        getEnvOrDefault("GRPC_USER_ADDR", "localhost:50055"),
+		Saldo:       getEnvOrDefault("GRPC_SALDO_ADDR", "localhost:50056"),
+		Topup:       getEnvOrDefault("GRPC_TOPUP_ADDR", "localhost:50057"),
+		Transaction: getEnvOrDefault("GRPC_TRANSACTION_ADDR", "localhost:50058"),
+		Transfer:    getEnvOrDefault("GRPC_TRANSFER_ADDR", "localhost:50059"),
+		Withdraw:    getEnvOrDefault("GRPC_WITHDRAW_ADDR", "localhost:50060"),
+	}
+}
+
+func setupEcho(log logger.LoggerInterface) *echo.Echo {
+	e := echo.New()
+
+	limiter := middlewares.NewRateLimiter(20, 50)
+	e.Use(limiter.Limit, middleware.Recover(), middleware.Logger())
+
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     []string{"http://localhost:1420", "http://localhost:33451"},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization, "X-API-Key"},
+		AllowCredentials: true,
+	}))
+
+	middlewares.WebSecurityConfig(e)
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
+
+	return e
+}
+
+func closeConnections(conns handler.ServiceConnections, log logger.LoggerInterface) {
+	for name, conn := range map[string]*grpc.ClientConn{
+		"Auth":        conns.Auth,
+		"Role":        conns.Role,
+		"Card":        conns.Card,
+		"Merchant":    conns.Merchant,
+		"User":        conns.User,
+		"Saldo":       conns.Saldo,
+		"Topup":       conns.Topup,
+		"Transaction": conns.Transaction,
+		"Transfer":    conns.Transfer,
+		"Withdraw":    conns.Withdraw,
+	} {
+		if conn != nil {
+			if err := conn.Close(); err != nil {
+				log.Error(fmt.Sprintf("Failed to close %s connection", name), zap.Error(err))
+			}
+		}
+	}
 }

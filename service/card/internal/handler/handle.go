@@ -6,7 +6,7 @@ import (
 )
 
 type Deps struct {
-	Service service.Service
+	Service *service.Service
 	Logger  logger.LoggerInterface
 }
 
@@ -14,7 +14,7 @@ type Handler struct {
 	Card CardHandleGrpc
 }
 
-func NewHandler(deps Deps) *Handler {
+func NewHandler(deps *Deps) *Handler {
 	return &Handler{
 		Card: NewCardHandleGrpc(deps.Service, deps.Logger),
 	}

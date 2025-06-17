@@ -12,7 +12,6 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
@@ -109,11 +108,13 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 			expirationDuration := time.Until(expiryTime)
 
 			s.mencache.SetRefreshToken(refreshToken, expirationDuration)
+
 			s.logger.Debug("Stored new refresh token in cache",
 				zap.String("new_token", refreshToken),
 				zap.Duration("expiration", expirationDuration))
 
 			s.logger.Debug("Refresh token refreshed successfully (cached)", zap.Int("user_id", userId))
+
 			span.SetStatus(codes.Ok, "Token refreshed successfully from cache")
 
 			return &response.TokenResponse{
@@ -126,12 +127,11 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 	userIdStr, err := s.token.ValidateToken(token)
 	if err != nil {
 		if errors.Is(err, auth.ErrTokenExpired) {
-			traceID := traceunic.GenerateTraceID("TOKEN_EXPIRED")
 			s.mencache.DeleteRefreshToken(token)
 			if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
-				return s.errorhandler.HandleDeleteRefreshTokenError(err, "RefreshToken", "DELETE_REFRESH_TOKEN", span, &status, zap.String("trace_id", traceID))
+				return s.errorhandler.HandleDeleteRefreshTokenError(err, "RefreshToken", "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 			}
-			return s.errorhandler.HandleExpiredRefreshTokenError(err, "RefreshToken", "TOKEN_EXPIRED", span, &status, zap.String("trace_id", traceID))
+			return s.errorhandler.HandleExpiredRefreshTokenError(err, "RefreshToken", "TOKEN_EXPIRED", span, &status, zap.String("token", token))
 		}
 
 		return s.errorhandler.HandleInvalidTokenError(err, "RefreshToken", "INVALID_TOKEN", span, &status, zap.String("token", token))
@@ -146,7 +146,7 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 
 	s.mencache.DeleteRefreshToken(token)
 	if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
-		s.logger.Debug("Failed to delete old refresh token", zap.Error(err))
+		return s.errorhandler.HandleDeleteRefreshTokenError(err, "RefreshToken", "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 	}
 
 	accessToken, err := s.tokenService.createAccessToken(ctx, userId)

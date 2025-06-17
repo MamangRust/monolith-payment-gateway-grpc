@@ -33,7 +33,7 @@ type passwordResetService struct {
 	errorKafka        errorhandler.KafkaErrorHandler
 	mencache          mencache.PasswordResetCache
 	trace             trace.Tracer
-	kafka             kafka.Kafka
+	kafka             *kafka.Kafka
 	logger            logger.LoggerInterface
 	user              repository.UserRepository
 	resetToken        repository.ResetTokenRepository
@@ -48,7 +48,8 @@ func NewPasswordResetService(ctx context.Context,
 	errorPassword errorhandler.PasswordErrorHandler,
 	errorKafka errorhandler.KafkaErrorHandler,
 	mencache mencache.PasswordResetCache,
-	kafka kafka.Kafka, logger logger.LoggerInterface, user repository.UserRepository, resetToken repository.ResetTokenRepository) *passwordResetService {
+	kafka *kafka.Kafka, logger logger.LoggerInterface, user repository.UserRepository, resetToken repository.ResetTokenRepository) *passwordResetService {
+
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "password_reset_service_requests_total",

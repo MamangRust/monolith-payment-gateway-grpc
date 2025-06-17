@@ -25,7 +25,7 @@ type Deps struct {
 	Logger       logger.LoggerInterface
 }
 
-func NewService(deps Deps) *Service {
+func NewService(deps *Deps) *Service {
 	roleMapper := responseservice.NewRoleResponseMapper()
 
 	return &Service{

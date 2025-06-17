@@ -55,7 +55,7 @@ type Server struct {
 func NewServer() (*Server, func(context.Context) error, error) {
 	flag.Parse()
 
-	logger, err := logger.NewLogger()
+	logger, err := logger.NewLogger("card-service")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -75,7 +75,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	ctx := context.Background()
 	mapperRecord := recordmapper.NewRecordMapper()
 
-	depsRepo := repository.Deps{
+	depsRepo := &repository.Deps{
 		DB:           DB,
 		Ctx:          ctx,
 		MapperRecord: mapperRecord,
@@ -114,18 +114,18 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	errorhandler := errorhandler.NewErrorHandler(logger)
 
-	services := service.NewService(service.Deps{
-		ErrorHandler: *errorhandler,
-		Mencache:     *mencache,
+	services := service.NewService(&service.Deps{
+		ErrorHandler: errorhandler,
+		Mencache:     mencache,
 		Ctx:          ctx,
 		Repositories: repositories,
 		Logger:       logger,
-		Kafka:        *myKafka,
+		Kafka:        myKafka,
 	})
 
-	handlers := handler.NewHandler(handler.Deps{
+	handlers := handler.NewHandler(&handler.Deps{
 		Logger:  logger,
-		Service: *services,
+		Service: services,
 	})
 
 	return &Server{

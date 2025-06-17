@@ -21,14 +21,14 @@ type Service struct {
 
 type Deps struct {
 	Ctx          context.Context
-	Mencache     mencache.Mencache
-	ErrorHandler errorhandler.ErrorHandler
+	Mencache     *mencache.Mencache
+	ErrorHandler *errorhandler.ErrorHandler
 	Repositories *repository.Repositories
 	Logger       logger.LoggerInterface
-	Kafka        kafka.Kafka
+	Kafka        *kafka.Kafka
 }
 
-func NewService(deps Deps) *Service {
+func NewService(deps *Deps) *Service {
 	cardMapper := responseservice.NewCardResponseMapper()
 
 	return &Service{

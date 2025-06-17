@@ -7,6 +7,10 @@ spec:
   selector:
     app: merchant
   ports:
-  - port: 8084
-    targetPort: 8084
+    - name: http-metrics
+      port: 8084
+      targetPort: 8084
+    - name: grpc
+      port: 50054
+      targetPort: 50054
   type: ClusterIP

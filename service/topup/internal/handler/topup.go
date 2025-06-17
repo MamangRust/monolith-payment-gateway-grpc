@@ -25,7 +25,7 @@ type topupHandleGrpc struct {
 	logger            logger.LoggerInterface
 }
 
-func NewTopupHandleGrpc(service service.Service, logger logger.LoggerInterface) *topupHandleGrpc {
+func NewTopupHandleGrpc(service *service.Service, logger logger.LoggerInterface) *topupHandleGrpc {
 	return &topupHandleGrpc{
 		topupQuery:        service.TopupQuery,
 		topupStatistic:    service.TopupStatistic,

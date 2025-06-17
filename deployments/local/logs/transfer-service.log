@@ -1,0 +1,46 @@
+{"level":"debug","ts":"2025-06-13T03:35:27.600Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T03:35:27.607Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T06:08:25.976Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T06:08:25.981Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T06:13:44.125Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T06:13:44.139Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T06:32:25.954Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T06:32:25.973Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T06:36:55.999Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T06:36:56.025Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T06:39:24.167Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T06:39:24.178Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T07:30:08.554Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T07:30:08.565Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T07:31:44.753Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T07:31:44.760Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T07:36:54.781Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T07:36:54.797Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T08:36:21.372Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T08:36:21.398Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T11:44:31.822Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T11:44:31.847Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T11:49:26.263Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T11:49:26.271Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-13T11:53:59.154Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-13T11:53:59.164Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T07:37:59.307Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T07:37:59.320Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T07:45:46.121Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T07:45:46.139Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:00:35.970Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:00:36.000Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:03:17.457Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:03:17.471Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:08:12.659Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:08:12.688Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:11:31.104Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:11:31.119Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:21:58.648Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:21:58.670Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T08:32:04.444Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T08:32:04.465Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T16:28:03.728Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T16:28:03.737Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}
+{"level":"debug","ts":"2025-06-16T22:41:28.840Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-16T22:41:28.861Z","caller":"apps/server.go:166","msg":"Server running on port 50059"}

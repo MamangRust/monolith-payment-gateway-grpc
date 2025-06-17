@@ -23,7 +23,7 @@ type roleHandleGrpc struct {
 	logger      logger.LoggerInterface
 }
 
-func NewRoleHandleGrpc(service service.Service, logger logger.LoggerInterface) *roleHandleGrpc {
+func NewRoleHandleGrpc(service *service.Service, logger logger.LoggerInterface) *roleHandleGrpc {
 	return &roleHandleGrpc{
 		roleQuery:   service.RoleQuery,
 		roleCommand: service.RoleCommand,

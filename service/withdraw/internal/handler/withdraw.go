@@ -26,7 +26,7 @@ type withdrawHandleGrpc struct {
 	mapping             protomapper.WithdrawalProtoMapper
 }
 
-func NewWithdrawHandleGrpc(service service.Service, logger logger.LoggerInterface) *withdrawHandleGrpc {
+func NewWithdrawHandleGrpc(service *service.Service, logger logger.LoggerInterface) *withdrawHandleGrpc {
 	return &withdrawHandleGrpc{
 		withdrawQuery:       service.WithdrawQuery,
 		withdrawCommand:     service.WithdrawCommand,

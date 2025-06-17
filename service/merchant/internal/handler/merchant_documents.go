@@ -24,7 +24,7 @@ type merchantDocumentHandleGrpc struct {
 }
 
 func NewMerchantDocumentHandleGrpc(
-	service service.Service,
+	service *service.Service,
 	mapping protomapper.MerchantDocumentProtoMapper,
 	logger logger.LoggerInterface,
 ) pb.MerchantDocumentServiceServer {

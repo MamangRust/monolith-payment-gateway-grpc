@@ -27,7 +27,7 @@ type cardCommandService struct {
 	errorhandler          errorhandler.CardCommandErrorHandler
 	mencache              mencache.CardCommandCache
 	trace                 trace.Tracer
-	kafka                 kafka.Kafka
+	kafka                 *kafka.Kafka
 	userRepository        repository.UserRepository
 	cardCommentRepository repository.CardCommandRepository
 	logger                logger.LoggerInterface
@@ -36,7 +36,7 @@ type cardCommandService struct {
 	requestDuration       *prometheus.HistogramVec
 }
 
-func NewCardCommandService(ctx context.Context, errorHandler errorhandler.CardCommandErrorHandler, mencache mencache.CardCommandCache, kafka kafka.Kafka, userRepository repository.UserRepository, cardCommentRepository repository.CardCommandRepository, logger logger.LoggerInterface, mapper responseservice.CardResponseMapper) *cardCommandService {
+func NewCardCommandService(ctx context.Context, errorHandler errorhandler.CardCommandErrorHandler, mencache mencache.CardCommandCache, kafka *kafka.Kafka, userRepository repository.UserRepository, cardCommentRepository repository.CardCommandRepository, logger logger.LoggerInterface, mapper responseservice.CardResponseMapper) *cardCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "card_command_service_requests_total",

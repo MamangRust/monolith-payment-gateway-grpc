@@ -23,7 +23,7 @@ type authHandleGrpc struct {
 	mapping              protomapper.AuthProtoMapper
 }
 
-func NewAuthHandleGrpc(authService service.Service, logger logger.LoggerInterface) pb.AuthServiceServer {
+func NewAuthHandleGrpc(authService *service.Service, logger logger.LoggerInterface) pb.AuthServiceServer {
 	return &authHandleGrpc{
 		registerService:      authService.Register,
 		loginService:         authService.Login,

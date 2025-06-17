@@ -19,13 +19,13 @@ type Service struct {
 }
 
 type Deps struct {
-	Kafka        kafka.Kafka
-	ErrorHandler errorhandler.ErrorHandler
-	Mencache     mencache.Mencache
+	Kafka        *kafka.Kafka
+	ErrorHandler *errorhandler.ErrorHandler
+	Mencache     *mencache.Mencache
 	Ctx          context.Context
 	Repositories *repository.Repositories
 	Logger       logger.LoggerInterface
-	Mapper       responseservice.ResponseServiceMapper
+	Mapper       *responseservice.ResponseServiceMapper
 }
 
 func NewService(deps *Deps) *Service {

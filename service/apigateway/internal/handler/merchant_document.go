@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
@@ -10,6 +12,11 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcode "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -18,13 +25,36 @@ type merchantDocumentHandleApi struct {
 	merchantDocument pb.MerchantDocumentServiceClient
 	logger           logger.LoggerInterface
 	mapping          apimapper.MerchantDocumentResponseMapper
+	trace            trace.Tracer
+	requestCounter   *prometheus.CounterVec
+	requestDuration  *prometheus.HistogramVec
 }
 
 func NewHandlerMerchantDocument(merchantDocument pb.MerchantDocumentServiceClient, router *echo.Echo, logger logger.LoggerInterface, ma apimapper.MerchantDocumentResponseMapper) *merchantDocumentHandleApi {
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "merchant_document_handler_requests_total",
+			Help: "Total number of card requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "merchant_document_handler_request_duration_seconds",
+			Help:    "Duration of card requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
 	merchantDocumentHandler := &merchantDocumentHandleApi{
 		merchantDocument: merchantDocument,
 		logger:           logger,
 		mapping:          ma,
+		trace:            otel.Tracer("merchant-document-handler"),
+		requestCounter:   requestCounter,
+		requestDuration:  requestDuration,
 	}
 
 	routerMerchantDocument := router.Group("/api/merchant-documents")
@@ -62,6 +92,17 @@ func NewHandlerMerchantDocument(merchantDocument pb.MerchantDocumentServiceClien
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant document data"
 // @Router /api/merchant-documents [get]
 func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
+	const method = "FindAll"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -74,8 +115,6 @@ func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -84,11 +123,16 @@ func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
 
 	res, err := h.merchantDocument.FindAll(ctx, req)
 	if err != nil {
-		h.logger.Debug("Failed to retrieve merchant document data", zap.Error(err))
+		status = "error"
+
+		logError("failed find all", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedFindAllMerchantDocuments(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationMerchantDocument(res)
+
+	logSuccess("success find all", zap.Any("response", so))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -106,24 +150,43 @@ func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to get document"
 // @Router /api/merchant-documents/{id} [get]
 func (h *merchantDocumentHandleApi) FindById(c echo.Context) error {
+	const method = "FindById"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
+		status = "error"
+
+		logError("failed find by id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.merchantDocument.FindById(ctx, &pb.FindMerchantDocumentByIdRequest{
 		DocumentId: int32(id),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to get merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed find by id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedFindByIdMerchantDocument(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("success find by id", zap.Error(err))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -142,6 +205,18 @@ func (h *merchantDocumentHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve active merchant documents"
 // @Router /api/merchant-documents/active [get]
 func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
+	const method = "FindAllActive"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -154,8 +229,6 @@ func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -164,11 +237,16 @@ func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
 
 	res, err := h.merchantDocument.FindAllActive(ctx, req)
 	if err != nil {
-		h.logger.Debug("Failed to retrieve active merchant document data", zap.Error(err))
+		status = "error"
+
+		logError("failed find all active", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedFindAllActiveMerchantDocuments(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationMerchantDocument(res)
+
+	logSuccess("success find all active", zap.Error(err))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -187,6 +265,18 @@ func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed merchant documents"
 // @Router /api/merchant-documents/trashed [get]
 func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
+	const method = "FindAllTrashed"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil || page <= 0 {
 		page = 1
@@ -199,8 +289,6 @@ func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
 
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
 	req := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
@@ -209,11 +297,16 @@ func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
 
 	res, err := h.merchantDocument.FindAllTrashed(ctx, req)
 	if err != nil {
-		h.logger.Debug("Failed to retrieve trashed merchant document data", zap.Error(err))
+		status = "error"
+
+		logError("failed find all trashed", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedFindAllTrashedMerchantDocuments(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationMerchantDocumentDeleteAt(res)
+
+	logSuccess("success find all trashed", zap.Error(err))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -231,19 +324,35 @@ func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to create document"
 // @Router /api/merchant-documents/create [post]
 func (h *merchantDocumentHandleApi) Create(c echo.Context) error {
+	const method = "Create"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	var body requests.CreateMerchantDocumentRequest
 
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Bad Request", zap.Error(err))
+		status = "error"
+
+		logError("failed bind create", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindCreateMerchantDocument(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation Error", zap.Error(err))
+		status = "error"
+
+		logError("failed validate create", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindCreateMerchantDocument(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.CreateMerchantDocumentRequest{
 		MerchantId:   int32(body.MerchantID),
@@ -254,11 +363,16 @@ func (h *merchantDocumentHandleApi) Create(c echo.Context) error {
 	res, err := h.merchantDocument.Create(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to create merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed create", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedCreateMerchantDocument(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("success create", zap.Error(err))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -277,6 +391,18 @@ func (h *merchantDocumentHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update document"
 // @Router /api/merchant-documents/update/{id} [post]
 func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
+	const method = "Update"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
@@ -286,16 +412,21 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateMerchantDocumentRequest
 
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Bad Request", zap.Error(err))
+		status = "error"
+
+		logError("failed bind update", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocument(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation Error", zap.Error(err))
+		status = "error"
+
+		logError("failed validate update", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiValidateUpdateMerchantDocument(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.UpdateMerchantDocumentRequest{
 		DocumentId:   int32(id),
 		MerchantId:   int32(body.MerchantID),
@@ -308,11 +439,16 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 	res, err := h.merchantDocument.Update(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to update merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed update", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedUpdateMerchantDocument(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("success update", zap.Error(err))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -331,23 +467,46 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update document status"
 // @Router /api/merchants-documents/update-status/{id} [post]
 func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
+	const method = "UpdateStatus"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
+
 	if err != nil {
+		status = "error"
+
+		logError("failed parse id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
 	}
 
 	var body requests.UpdateMerchantDocumentStatusRequest
+
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Bad Request", zap.Error(err))
+		status = "error"
+
+		logError("failed bind update status", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation Error", zap.Error(err))
+		status = "error"
+
+		logError("failed validate update status", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.UpdateMerchantDocumentStatusRequest{
 		DocumentId: int32(id),
 		MerchantId: int32(body.MerchantID),
@@ -357,11 +516,17 @@ func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
 
 	res, err := h.merchantDocument.UpdateStatus(ctx, req)
 	if err != nil {
-		h.logger.Debug("Failed to update merchant document status", zap.Error(err))
+		status = "error"
+
+		logError("failed update status", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("success update status", zap.Error(err))
+
 	return c.JSON(http.StatusOK, so)
 }
 
@@ -378,27 +543,46 @@ func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed document"
 // @Router /api/merchant-documents/trashed/{id} [post]
 func (h *merchantDocumentHandleApi) TrashedDocument(c echo.Context) error {
+	const method = "TrashedDocument"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		h.logger.Debug("Bad Request", zap.Error(err))
+		status = "error"
+
+		logError("failed parse id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.merchantDocument.Trashed(ctx, &pb.TrashedMerchantDocumentRequest{
 		DocumentId: int32(idInt),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to trashed merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed trashed", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedTrashMerchantDocument(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("success trashed", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
 }
 
@@ -415,27 +599,46 @@ func (h *merchantDocumentHandleApi) TrashedDocument(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore document"
 // @Router /api/merchant-documents/restore/{id} [post]
 func (h *merchantDocumentHandleApi) RestoreDocument(c echo.Context) error {
+	const method = "RestoreDocument"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		h.logger.Debug("Bad Request", zap.Error(err))
+		status = "error"
+
+		logError("failed parse id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.merchantDocument.Restore(ctx, &pb.RestoreMerchantDocumentRequest{
 		DocumentId: int32(idInt),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to restore merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed restore", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedRestoreMerchantDocument(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocument(res)
+
+	logSuccess("Success restore merchant document", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
 }
 
@@ -452,24 +655,43 @@ func (h *merchantDocumentHandleApi) RestoreDocument(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete document"
 // @Router /api/merchant-documents/permanent/{id} [delete]
 func (h *merchantDocumentHandleApi) Delete(c echo.Context) error {
+	const method = "Delete"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
+		status = "error"
+
+		logError("failed parse id", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.merchantDocument.DeletePermanent(ctx, &pb.DeleteMerchantDocumentPermanentRequest{
 		DocumentId: int32(id),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to delete merchant document", zap.Error(err))
+		status = "error"
+
+		logError("failed delete", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedDeleteMerchantDocumentPermanent(c)
 	}
 
 	so := h.mapping.ToApiResponseMerchantDocumentDeleteAt(res)
+
+	logSuccess("Successfully deleted merchant document", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -485,18 +707,31 @@ func (h *merchantDocumentHandleApi) Delete(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all documents"
 // @Router /api/merchant-documents/restore/all [post]
 func (h *merchantDocumentHandleApi) RestoreAllDocuments(c echo.Context) error {
+	const method = "RestoreAllDocuments"
+
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
 
 	res, err := h.merchantDocument.RestoreAll(ctx, &emptypb.Empty{})
 	if err != nil {
-		h.logger.Error("Failed to restore all merchant documents",
-			zap.Error(err),
-			zap.String("method", "POST"),
-		)
+		status = "error"
+
+		logError("failed restore all", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedRestoreAllMerchantDocuments(c)
 	}
 
 	response := h.mapping.ToApiResponseMerchantDocumentAll(res)
+
+	logSuccess("Successfully restored all merchant documents")
+
 	return c.JSON(http.StatusOK, response)
 }
 
@@ -511,18 +746,77 @@ func (h *merchantDocumentHandleApi) RestoreAllDocuments(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to permanently delete all documents"
 // @Router /api/merchant-documents/permanent/all [post]
 func (h *merchantDocumentHandleApi) DeleteAllDocumentsPermanent(c echo.Context) error {
+	const method = "DeleteAllDocumentsPermanent"
+
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	status := "success"
+
+	defer func() {
+		end(status)
+	}()
 
 	res, err := h.merchantDocument.DeleteAllPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		h.logger.Error("Failed to permanently delete all merchant documents",
-			zap.Error(err),
-			zap.String("method", "POST"),
-		)
+		status = "error"
+
+		logError("failed delete all", err, zap.Error(err))
+
 		return merchantdocument_errors.ErrApiFailedDeleteAllMerchantDocumentsPermanent(c)
 	}
 
 	response := h.mapping.ToApiResponseMerchantDocumentAll(res)
+
+	logSuccess("Successfully deleted all merchant documents permanently")
+
 	return c.JSON(http.StatusOK, response)
+}
+
+func (s *merchantDocumentHandleApi) startTracingAndLogging(
+	ctx context.Context,
+	method string,
+	attrs ...attribute.KeyValue,
+) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+	start := time.Now()
+	_, span := s.trace.Start(ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := otelcode.Ok
+		if status != "success" {
+			code = otelcode.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	logError := func(msg string, err error, fields ...zap.Field) {
+		span.RecordError(err)
+		span.SetStatus(otelcode.Error, msg)
+		span.AddEvent(msg)
+		allFields := append([]zap.Field{zap.Error(err)}, fields...)
+		s.logger.Error(msg, allFields...)
+	}
+
+	return end, logSuccess, logError
+}
+
+func (s *merchantDocumentHandleApi) recordMetrics(method string, status string, start time.Time) {
+	s.requestCounter.WithLabelValues(method, status).Inc()
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

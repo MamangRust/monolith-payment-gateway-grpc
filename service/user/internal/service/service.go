@@ -18,14 +18,14 @@ type Service struct {
 
 type Deps struct {
 	Ctx          context.Context
-	ErrorHandler errorhandler.ErrorHandler
-	Mencache     mencache.Mencache
+	ErrorHandler *errorhandler.ErrorHandler
+	Mencache     *mencache.Mencache
 	Repositories *repository.Repositories
 	Hash         hash.HashPassword
 	Logger       logger.LoggerInterface
 }
 
-func NewService(deps Deps) *Service {
+func NewService(deps *Deps) *Service {
 	userMapper := responseservice.NewUserResponseMapper()
 
 	return &Service{

@@ -27,7 +27,7 @@ import (
 )
 
 type transferCommandService struct {
-	kafka                     kafka.Kafka
+	kafka                     *kafka.Kafka
 	errorhandler              errorhandler.TransferCommandErrorHandler
 	mencache                  mencache.TransferCommandCache
 	ctx                       context.Context
@@ -43,7 +43,7 @@ type transferCommandService struct {
 }
 
 func NewTransferCommandService(
-	kafka kafka.Kafka,
+	kafka *kafka.Kafka,
 	ctx context.Context,
 	errorhandler errorhandler.TransferCommandErrorHandler,
 	mencache mencache.TransferCommandCache,

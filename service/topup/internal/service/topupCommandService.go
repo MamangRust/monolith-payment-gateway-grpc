@@ -27,7 +27,7 @@ import (
 )
 
 type topupCommandService struct {
-	kafka                  kafka.Kafka
+	kafka                  *kafka.Kafka
 	errorhandler           errorhandler.TopupCommandErrorHandler
 	mencache               mencache.TopupCommandCache
 	ctx                    context.Context
@@ -43,7 +43,7 @@ type topupCommandService struct {
 }
 
 func NewTopupCommandService(
-	kafka kafka.Kafka,
+	kafka *kafka.Kafka,
 	errorhandler errorhandler.TopupCommandErrorHandler,
 	mencache mencache.TopupCommandCache,
 	ctx context.Context,

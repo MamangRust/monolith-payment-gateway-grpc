@@ -23,7 +23,7 @@ type Deps struct {
 	MapperRecord *recordmapper.RecordMapper
 }
 
-func NewRepositories(deps Deps) *Repositories {
+func NewRepositories(deps *Deps) *Repositories {
 	return &Repositories{
 		TopupQuery:           NewTopupQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),
 		TopupStatistic:       NewTopupStatisticRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),

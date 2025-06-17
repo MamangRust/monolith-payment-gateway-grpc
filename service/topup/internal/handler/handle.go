@@ -7,8 +7,8 @@ import (
 )
 
 type Deps struct {
-	Service service.Service
-	Mapper  protomapper.ProtoMapper
+	Service *service.Service
+	Mapper  *protomapper.ProtoMapper
 	Logger  logger.LoggerInterface
 }
 

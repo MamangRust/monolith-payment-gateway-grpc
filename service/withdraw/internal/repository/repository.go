@@ -22,7 +22,7 @@ type Deps struct {
 	MapperRecord *recordmapper.RecordMapper
 }
 
-func NewRepositories(deps Deps) *Repositories {
+func NewRepositories(deps *Deps) *Repositories {
 	return &Repositories{
 		Card:                NewCardRepository(deps.DB, deps.Ctx, deps.MapperRecord.CardRecordMapper),
 		Saldo:               NewSaldoRepository(deps.DB, deps.Ctx, deps.MapperRecord.SaldoRecordMapper),
