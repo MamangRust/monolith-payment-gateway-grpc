@@ -17,7 +17,7 @@ type IdentityCache interface {
 
 type LoginCache interface {
 	SetCachedLogin(email string, data *response.TokenResponse, expiration time.Duration)
-	GetCachedLogin(email string) *response.TokenResponse
+	GetCachedLogin(email string) (*response.TokenResponse, bool)
 }
 
 type PasswordResetCache interface {

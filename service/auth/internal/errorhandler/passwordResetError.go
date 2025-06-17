@@ -21,7 +21,7 @@ func NewPasswordResetError(logger logger.LoggerInterface) *passwordResetError {
 func (e *passwordResetError) HandleFindEmailError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -36,7 +36,7 @@ func (e *passwordResetError) HandleFindEmailError(
 func (e *passwordResetError) HandleCreateResetTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -51,7 +51,7 @@ func (e *passwordResetError) HandleCreateResetTokenError(
 func (e *passwordResetError) HandleFindTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -66,7 +66,7 @@ func (e *passwordResetError) HandleFindTokenError(
 func (e *passwordResetError) HandleUpdatePasswordError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -81,7 +81,7 @@ func (e *passwordResetError) HandleUpdatePasswordError(
 func (e *passwordResetError) HandleDeleteTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -96,7 +96,7 @@ func (e *passwordResetError) HandleDeleteTokenError(
 func (e *passwordResetError) HandleUpdateVerifiedError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,
@@ -111,7 +111,7 @@ func (e *passwordResetError) HandleUpdateVerifiedError(
 func (e *passwordResetError) HandleVerifyCodeError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err,
 		method,

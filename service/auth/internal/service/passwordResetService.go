@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -88,28 +89,28 @@ func NewPasswordResetService(ctx context.Context,
 }
 
 func (s *passwordResetService) ForgotPassword(email string) (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "ForgotPassword"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("email", email))
+
 	defer func() {
-		s.recordMetrics("ForgotPassword", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "PasswordService.ForgotPassword")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("user.email", email))
-	s.logger.Debug("Starting forgot password process", zap.String("email", email))
 
 	res, err := s.user.FindByEmail(email)
 	if err != nil {
-		return s.errorhandler.HandleFindEmailError(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
+		status = "error"
+
+		return s.errorhandler.HandleFindEmailError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
 	}
 
 	span.SetAttributes(attribute.Int("user.id", res.ID))
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		return s.errorRandomString.HandleRandomStringErrorForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
+		status = "error"
+
+		return s.errorRandomString.HandleRandomStringErrorForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
 	}
 
 	_, err = s.resetToken.CreateResetToken(&requests.CreateResetTokenRequest{
@@ -118,7 +119,9 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 		ExpiredAt:  time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05"),
 	})
 	if err != nil {
-		return s.errorhandler.HandleCreateResetTokenError(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
+		status = "error"
+
+		return s.errorhandler.HandleCreateResetTokenError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
 	}
 
 	s.mencache.SetResetTokenCache(random, res.ID, 5*time.Minute)
@@ -138,34 +141,31 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		return s.errorMarshal.HandleMarsalForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status)
+		status = "error"
+
+		return s.errorMarshal.HandleMarsalForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-forgot-password", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		return s.errorKafka.HandleSendEmailForgotPassword(err, "ForgotPassword", "FORGOT_PASSWORD_ERR", span, &status)
+		status = "error"
+
+		return s.errorKafka.HandleSendEmailForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Password reset email sent successfully",
-		zap.Int("user_id", res.ID),
-		zap.String("email", res.Email),
-	)
-	span.SetStatus(codes.Ok, "Password reset initiated")
+	logSuccess("Successfully sent password reset email", zap.String("email", email))
+
 	return true, nil
 }
 
 func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRequest) (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "ResetPassword"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("reset_token", req.ResetToken))
+
 	defer func() {
-		s.recordMetrics("ResetPassword", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "PasswordService.ResetPassword")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("reset_token", req.ResetToken))
-	s.logger.Debug("Starting password reset process", zap.String("reset_token", req.ResetToken))
 
 	var userID int
 	var found bool
@@ -174,7 +174,9 @@ func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRe
 	if !found {
 		res, err := s.resetToken.FindByToken(req.ResetToken)
 		if err != nil {
-			return s.errorhandler.HandleFindTokenError(err, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+			status = "error"
+
+			return s.errorhandler.HandleFindTokenError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 		}
 		userID = int(res.UserID)
 
@@ -182,56 +184,91 @@ func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRe
 	}
 
 	if req.Password != req.ConfirmPassword {
-		return s.errorPassword.HandlePasswordNotMatchError(nil, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+		status = "error"
+
+		err := errors.New("password and confirm password do not match")
+		return s.errorPassword.HandlePasswordNotMatchError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
 	_, err := s.user.UpdateUserPassword(userID, req.Password)
 	if err != nil {
-		return s.errorhandler.HandleUpdatePasswordError(err, "ResetPassword", "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+		status = "error"
+
+		return s.errorhandler.HandleUpdatePasswordError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
 	_ = s.resetToken.DeleteResetToken(userID)
 	s.mencache.DeleteResetTokenCache(req.ResetToken)
 
-	s.logger.Debug("Password reset successfully", zap.Int("user_id", userID))
-	span.SetStatus(codes.Ok, "Password reset successful")
+	logSuccess("Successfully reset password", zap.String("reset_token", req.ResetToken))
+
 	return true, nil
 }
 
 func (s *passwordResetService) VerifyCode(code string) (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "VerifyCode"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("code", code))
+
 	defer func() {
-		s.recordMetrics("VerifyCode", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "PasswordService.VerifyCode")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("verification_code", code),
-	)
-
-	s.logger.Debug("Starting verification code process",
-		zap.String("code", code),
-	)
 
 	res, err := s.user.FindByVerificationCode(code)
 	if err != nil {
-		return s.errorhandler.HandleVerifyCodeError(err, "VerifyCode", "VERIFY_CODE_ERR", span, &status, zap.String("code", code))
+		status = "error"
+		return s.errorhandler.HandleVerifyCodeError(err, method, "VERIFY_CODE_ERR", span, &status, zap.String("code", code))
 	}
 
 	_, err = s.user.UpdateUserIsVerified(res.ID, true)
 	if err != nil {
-		return s.errorhandler.HandleUpdateVerifiedError(err, "VerifyCode", "VERIFY_CODE_ERR", span, &status, zap.Int("user_id", res.ID))
+		status = "error"
+
+		return s.errorhandler.HandleUpdateVerifiedError(err, method, "VERIFY_CODE_ERR", span, &status, zap.Int("user.id", res.ID))
 	}
 
-	s.mencache.DeleteVerificationCodeCache("register:verify:" + res.Email)
+	s.mencache.DeleteVerificationCodeCache(res.Email)
 
-	s.logger.Debug("User verified successfully",
-		zap.Int("user_id", res.ID),
-	)
+	logSuccess("Successfully verify code", zap.String("code", code))
+
 	return true, nil
+}
+
+func (s *passwordResetService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *passwordResetService) recordMetrics(method string, status string, start time.Time) {

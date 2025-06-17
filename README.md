@@ -38,7 +38,13 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 
 ## Architecture Digital Payment Platform
 
-<img src="./images/architecture.png" alt="hello-architecture">
+### Docker
+
+<img src="./images/docker-architecture.png" alt="docker-architecture">
+
+### Kubernetes
+
+<img src="./images/kubernetes-architecture.png" alt="kubernetes-architecture">
 
 ---
 

@@ -22,7 +22,7 @@ func NewRegisterError(logger logger.LoggerInterface) *registerError {
 func (e *registerError) HandleAssignRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,
@@ -37,7 +37,7 @@ func (e *registerError) HandleAssignRoleError(
 func (e *registerError) HandleFindEmailError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,
@@ -52,7 +52,7 @@ func (e *registerError) HandleFindEmailError(
 func (e *registerError) HandleFindRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,
@@ -67,7 +67,7 @@ func (e *registerError) HandleFindRoleError(
 func (e *registerError) HandleCreateUserError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,

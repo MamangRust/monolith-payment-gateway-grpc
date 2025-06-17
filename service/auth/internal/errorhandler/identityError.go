@@ -22,7 +22,7 @@ func NewIdentityError(logger logger.LoggerInterface) *identityError {
 func (e *identityError) HandleInvalidTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.TokenResponse, *response.ErrorResponse) {
-	return handleErrorTokenTemplate[*response.TokenResponse](
+	return handleErrorRepository[*response.TokenResponse](
 		e.logger,
 		err,
 		method,
@@ -37,7 +37,7 @@ func (e *identityError) HandleInvalidTokenError(
 func (e *identityError) HandleExpiredRefreshTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.TokenResponse, *response.ErrorResponse) {
-	return handleErrorTokenTemplate[*response.TokenResponse](
+	return handleErrorRepository[*response.TokenResponse](
 		e.logger,
 		err,
 		method,
@@ -72,7 +72,7 @@ func HandleInvalidFormatUserIDError[T any](
 func (e *identityError) HandleDeleteRefreshTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.TokenResponse, *response.ErrorResponse) {
-	return handleErrorTokenTemplate[*response.TokenResponse](
+	return handleErrorRepository[*response.TokenResponse](
 		e.logger,
 		err,
 		method,
@@ -87,7 +87,7 @@ func (e *identityError) HandleDeleteRefreshTokenError(
 func (e *identityError) HandleUpdateRefreshTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.TokenResponse, *response.ErrorResponse) {
-	return handleErrorTokenTemplate[*response.TokenResponse](
+	return handleErrorRepository[*response.TokenResponse](
 		e.logger,
 		err,
 		method,
@@ -102,7 +102,7 @@ func (e *identityError) HandleUpdateRefreshTokenError(
 func (e *identityError) HandleValidateTokenError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTokenTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,
@@ -117,7 +117,7 @@ func (e *identityError) HandleValidateTokenError(
 func (e *identityError) HandleFindByIdError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,
@@ -132,7 +132,7 @@ func (e *identityError) HandleFindByIdError(
 func (e *identityError) HandleGetMeError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](
+	return handleErrorRepository[*response.UserResponse](
 		e.logger,
 		err,
 		method,

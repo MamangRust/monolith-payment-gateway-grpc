@@ -95,35 +95,26 @@ func NewRegisterService(ctx context.Context,
 }
 
 func (s *registerService) Register(request *requests.RegisterRequest) (*response.UserResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "Register"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("email", request.Email))
+
 	defer func() {
-		s.recordMetrics("Register", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RegisterUser")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("email", request.Email),
-		attribute.String("first_name", request.FirstName),
-		attribute.String("last_name", request.LastName),
-	)
-
-	s.logger.Debug("Starting user registration",
-		zap.String("email", request.Email),
-		zap.String("first_name", request.FirstName),
-		zap.String("last_name", request.LastName),
-	)
 
 	existingUser, err := s.user.FindByEmail(request.Email)
 	if err == nil && existingUser != nil {
+		status = "error"
+
 		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
 			zap.String("email", request.Email), zap.Error(err))
 	}
 
 	passwordHash, err := s.hash.HashPassword(request.Password)
 	if err != nil {
+		status = "error"
+
 		return s.errorPassword.HandleHashPasswordError(err, "Register", "REGISTER_ERR", span, &status)
 	}
 	request.Password = passwordHash
@@ -133,12 +124,16 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	role, err := s.role.FindByName(defaultRoleName)
 
 	if err != nil || role == nil {
+		status = "error"
+
 		return s.errohandler.HandleFindRoleError(err, "Register", "REGISTER_ERR", span, &status,
 			zap.String("role_name", defaultRoleName), zap.Error(err))
 	}
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
+		status = "error"
+
 		return s.errorRandomString.HandleRandomStringErrorRegister(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
@@ -147,6 +142,8 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	newUser, err := s.user.CreateUser(request)
 	if err != nil {
+		status = "error"
+
 		return s.errohandler.HandleCreateUserError(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
@@ -165,11 +162,15 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
+		status = "error"
+
 		return s.errorMarshal.HandleMarshalRegisterError(err, "Register", "MARSHAL_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-register", strconv.Itoa(newUser.ID), payloadBytes)
 	if err != nil {
+		status = "error"
+
 		return s.errorKafka.HandleSendEmailRegister(err, "Register", "SEND_EMAIL_ERR", span, &status, zap.Error(err))
 	}
 
@@ -178,6 +179,8 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 		RoleId: role.ID,
 	})
 	if err != nil {
+		status = "error"
+
 		return s.errohandler.HandleAssignRoleError(err, "Register", "ASSIGN_ROLE_ERR", span, &status, zap.Error(err))
 	}
 
@@ -185,10 +188,50 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	userResponse := s.mapping.ToUserResponse(newUser)
 
-	s.logger.Debug("User registered successfully", zap.Int("user_id", newUser.ID), zap.String("email", request.Email))
-	span.SetStatus(codes.Ok, "User registered successfully")
+	logSuccess("User registered successfully",
+		zap.String("email", request.Email),
+		zap.String("first_name", request.FirstName),
+		zap.String("last_name", request.LastName),
+	)
 
 	return userResponse, nil
+}
+
+func (s *registerService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *registerService) recordMetrics(method string, status string, start time.Time) {

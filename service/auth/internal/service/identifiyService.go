@@ -76,17 +76,13 @@ func NewIdentityService(ctx context.Context, errohandler errorhandler.IdentityEr
 }
 
 func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "RefreshToken"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("token", token))
+
 	defer func() {
-		s.recordMetrics("RefreshToken", status, startTime)
+		end(status)
 	}()
-
-	ctx, span := s.trace.Start(s.ctx, "IdentityService.RefreshToken")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("token", token))
-	s.logger.Debug("Refreshing token", zap.String("token", token))
 
 	if cachedUserID, found := s.mencache.GetRefreshToken(token); found {
 		userId, err := strconv.Atoi(cachedUserID)
@@ -94,27 +90,29 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 			s.mencache.DeleteRefreshToken(token)
 			s.logger.Debug("Invalidated old refresh token from cache", zap.String("token", token))
 
-			accessToken, err := s.tokenService.createAccessToken(ctx, userId)
+			accessToken, err := s.tokenService.createAccessToken(s.ctx, userId)
 			if err != nil {
-				return s.errorToken.HandleCreateAccessTokenError(err, "RefreshToken", "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user_id", userId))
+				status = "error"
+
+				return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 			}
 
-			refreshToken, err := s.tokenService.createRefreshToken(ctx, userId)
+			refreshToken, err := s.tokenService.createRefreshToken(s.ctx, userId)
 			if err != nil {
-				return s.errorToken.HandleCreateRefreshTokenError(err, "RefreshToken", "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user_id", userId))
+				status = "error"
+
+				return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 			}
 
 			expiryTime := time.Now().Add(24 * time.Hour)
 			expirationDuration := time.Until(expiryTime)
 
 			s.mencache.SetRefreshToken(refreshToken, expirationDuration)
-
 			s.logger.Debug("Stored new refresh token in cache",
 				zap.String("new_token", refreshToken),
 				zap.Duration("expiration", expirationDuration))
 
 			s.logger.Debug("Refresh token refreshed successfully (cached)", zap.Int("user_id", userId))
-
 			span.SetStatus(codes.Ok, "Token refreshed successfully from cache")
 
 			return &response.TokenResponse{
@@ -129,34 +127,48 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 		if errors.Is(err, auth.ErrTokenExpired) {
 			s.mencache.DeleteRefreshToken(token)
 			if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
-				return s.errorhandler.HandleDeleteRefreshTokenError(err, "RefreshToken", "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
+				status = "error"
+
+				return s.errorhandler.HandleDeleteRefreshTokenError(err, method, "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 			}
-			return s.errorhandler.HandleExpiredRefreshTokenError(err, "RefreshToken", "TOKEN_EXPIRED", span, &status, zap.String("token", token))
+			status = "error"
+
+			return s.errorhandler.HandleExpiredRefreshTokenError(err, method, "TOKEN_EXPIRED", span, &status, zap.String("token", token))
 		}
 
-		return s.errorhandler.HandleInvalidTokenError(err, "RefreshToken", "INVALID_TOKEN", span, &status, zap.String("token", token))
+		return s.errorhandler.HandleInvalidTokenError(err, method, "INVALID_TOKEN", span, &status, zap.String("token", token))
 	}
 
 	userId, err := strconv.Atoi(userIdStr)
 	if err != nil {
-		return errorhandler.HandleInvalidFormatUserIDError[*response.TokenResponse](s.logger, err, "RefreshToken", "INVALID_USER_ID", span, &status, zap.Int("user_id", userId))
+		status = "error"
+
+		return errorhandler.HandleInvalidFormatUserIDError[*response.TokenResponse](s.logger, err, method, "INVALID_USER_ID", span, &status, zap.Int("user.id", userId))
 	}
 
 	span.SetAttributes(attribute.Int("user.id", userId))
 
 	s.mencache.DeleteRefreshToken(token)
 	if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
-		return s.errorhandler.HandleDeleteRefreshTokenError(err, "RefreshToken", "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
+		s.logger.Debug("Failed to delete old refresh token", zap.Error(err))
+
+		status = "error"
+
+		return s.errorhandler.HandleDeleteRefreshTokenError(err, method, "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 	}
 
-	accessToken, err := s.tokenService.createAccessToken(ctx, userId)
+	accessToken, err := s.tokenService.createAccessToken(s.ctx, userId)
 	if err != nil {
-		return s.errorToken.HandleCreateAccessTokenError(err, "RefreshToken", "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user_id", userId))
+		status = "error"
+
+		return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
 
-	refreshToken, err := s.tokenService.createRefreshToken(ctx, userId)
+	refreshToken, err := s.tokenService.createRefreshToken(s.ctx, userId)
 	if err != nil {
-		return s.errorToken.HandleCreateRefreshTokenError(err, "RefreshToken", "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user_id", userId))
+		status = "error"
+
+		return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
 
 	expiryTime := time.Now().Add(24 * time.Hour)
@@ -168,17 +180,16 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 
 	if _, err = s.refreshToken.UpdateRefreshToken(updateRequest); err != nil {
 		s.mencache.DeleteRefreshToken(refreshToken)
-		return s.errorhandler.HandleUpdateRefreshTokenError(err, "RefreshToken", "UPDATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user_id", userId))
+
+		status = "error"
+
+		return s.errorhandler.HandleUpdateRefreshTokenError(err, method, "UPDATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
 
 	expirationDuration := time.Until(expiryTime)
 	s.mencache.SetRefreshToken(refreshToken, expirationDuration)
-	s.logger.Debug("Stored new refresh token in cache after DB update",
-		zap.String("new_token", refreshToken),
-		zap.Duration("expiration", expirationDuration))
 
-	s.logger.Debug("Refresh token refreshed successfully", zap.Int("user_id", userId))
-	span.SetStatus(codes.Ok, "Token refreshed successfully")
+	logSuccess("Refresh token refreshed successfully", zap.Int("user.id", userId))
 
 	return &response.TokenResponse{
 		AccessToken:  accessToken,
@@ -186,49 +197,89 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 	}, nil
 }
 func (s *identityService) GetMe(token string) (*response.UserResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "GetMe"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("token", token))
+
 	defer func() {
-		s.recordMetrics("GetMe", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "IdentityService.GetMe")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("token", token))
 	s.logger.Debug("Fetching user details", zap.String("token", token))
 
 	userIdStr, err := s.token.ValidateToken(token)
 	if err != nil {
-		return s.errorhandler.HandleValidateTokenError(err, "GetMe", "INVALID_TOKEN", span, &status, zap.String("token", token))
+		status = "error"
+
+		return s.errorhandler.HandleValidateTokenError(err, method, "INVALID_TOKEN", span, &status, zap.String("token", token))
 	}
 
 	userId, err := strconv.Atoi(userIdStr)
 	if err != nil {
-		return errorhandler.HandleInvalidFormatUserIDError[*response.UserResponse](s.logger, err, "GetMe", "INVALID_USER_ID", span, &status, zap.Int("user_id", userId))
-	}
+		status = "error"
 
-	if cachedUser, found := s.mencache.GetCachedUserInfo(userIdStr); found {
-		s.logger.Debug("User info retrieved from cache", zap.Int("user_id", userId))
-		span.SetStatus(codes.Ok, "User details fetched from cache")
-		return cachedUser, nil
+		return errorhandler.HandleInvalidFormatUserIDError[*response.UserResponse](
+			s.logger, err, method, "INVALID_USER_ID", span, &status, zap.String("user_id_str", userIdStr),
+		)
 	}
 
 	span.SetAttributes(attribute.Int("user.id", userId))
 
+	if cachedUser, found := s.mencache.GetCachedUserInfo(userIdStr); found {
+		logSuccess("User info retrieved from cache", zap.Int("user.id", userId))
+		return cachedUser, nil
+	}
+
 	user, err := s.user.FindById(userId)
 	if err != nil {
-		return s.errorhandler.HandleFindByIdError(err, "GetMe", "FAILED_FETCH_USER", span, &status, zap.Int("user_id", userId))
+		status = "error"
+
+		return s.errorhandler.HandleFindByIdError(err, method, "FAILED_FETCH_USER", span, &status, zap.Int("user.id", userId))
 	}
 
 	userResponse := s.mapping.ToUserResponse(user)
 
 	s.mencache.SetCachedUserInfo(userResponse, time.Minute*5)
 
-	s.logger.Debug("User details fetched successfully", zap.Int("user_id", userId))
-	span.SetStatus(codes.Ok, "User details fetched")
+	logSuccess("User details fetched successfully", zap.Int("user.id", userId))
 
 	return userResponse, nil
+}
+
+func (s *identityService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *identityService) recordMetrics(method string, status string, start time.Time) {

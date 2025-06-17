@@ -17,16 +17,16 @@ func NewLoginCache(store *CacheStore) *loginCache {
 	return &loginCache{store: store}
 }
 
-func (s *loginCache) GetCachedLogin(email string) *response.TokenResponse {
+func (s *loginCache) GetCachedLogin(email string) (*response.TokenResponse, bool) {
 	key := fmt.Sprintf(keylogin, email)
 
-	result, found := GetFromCache[response.TokenResponse](s.store, key)
+	result, found := GetFromCache[*response.TokenResponse](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
 
-	return result
+	return *result, true
 }
 
 func (s *loginCache) SetCachedLogin(email string, data *response.TokenResponse, expiration time.Duration) {

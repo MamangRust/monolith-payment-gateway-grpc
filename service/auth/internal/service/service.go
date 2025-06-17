@@ -34,7 +34,7 @@ type Deps struct {
 }
 
 func NewService(deps *Deps) *Service {
-	tokenService := NewTokenService(deps.Repositories.RefreshToken, deps.Token, deps.Logger)
+	tokenService := NewTokenService(deps.Context, deps.Repositories.RefreshToken, deps.Token, deps.Logger)
 
 	return &Service{
 		Login:         NewLoginService(deps.Context, deps.ErrorHandler.PasswordError, deps.ErrorHandler.TokenError, deps.ErrorHandler.LoginError, deps.Mencache.LoginCache, deps.Logger, deps.Hash, deps.Repositories.User, deps.Repositories.RefreshToken, deps.Token, *tokenService),

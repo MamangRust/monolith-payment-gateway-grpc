@@ -21,7 +21,7 @@ func NewLoginError(logger logger.LoggerInterface) *loginError {
 func (e *loginError) HandleFindEmailError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.TokenResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.TokenResponse](
+	return handleErrorRepository[*response.TokenResponse](
 		e.logger,
 		err,
 		method,
