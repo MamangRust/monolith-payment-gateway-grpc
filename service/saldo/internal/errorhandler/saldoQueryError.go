@@ -25,7 +25,7 @@ func (e *saldoQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.SaldoResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.SaldoResponse](e.logger, err, method, tracePrefix, span, status, saldo_errors.ErrFailedFindAllSaldos, fields...)
+	return handleErrorPagination[[]*response.SaldoResponse](e.logger, err, method, tracePrefix, span, status, saldo_errors.ErrFailedFindAllSaldos, fields...)
 }
 
 func (e *saldoQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -36,7 +36,7 @@ func (e *saldoQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.SaldoResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.SaldoResponseDeleteAt](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.SaldoResponseDeleteAt](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (e *saldoQueryError) HandleRepositorySingleError(
@@ -47,5 +47,5 @@ func (e *saldoQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.SaldoResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }

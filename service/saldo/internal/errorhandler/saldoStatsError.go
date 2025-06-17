@@ -21,7 +21,7 @@ func NewSaldoStatisticError(logger logger.LoggerInterface) *saldoStatisticError 
 func (e *saldoStatisticError) HandleMonthlyTotalSaldoBalanceError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) ([]*response.SaldoMonthTotalBalanceResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.SaldoMonthTotalBalanceResponse](
+	return handleErrorRepository[[]*response.SaldoMonthTotalBalanceResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedFindMonthlyTotalSaldoBalance,
@@ -32,7 +32,7 @@ func (e *saldoStatisticError) HandleMonthlyTotalSaldoBalanceError(
 func (e *saldoStatisticError) HandleYearlyTotalSaldoBalanceError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) ([]*response.SaldoYearTotalBalanceResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.SaldoYearTotalBalanceResponse](
+	return handleErrorRepository[[]*response.SaldoYearTotalBalanceResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedFindYearTotalSaldoBalance,
@@ -43,7 +43,7 @@ func (e *saldoStatisticError) HandleYearlyTotalSaldoBalanceError(
 func (e *saldoStatisticError) HandleMonthlySaldoBalancesError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) ([]*response.SaldoMonthBalanceResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.SaldoMonthBalanceResponse](
+	return handleErrorRepository[[]*response.SaldoMonthBalanceResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedFindMonthlySaldoBalances,
@@ -54,7 +54,7 @@ func (e *saldoStatisticError) HandleMonthlySaldoBalancesError(
 func (e *saldoStatisticError) HandleYearlySaldoBalancesError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) ([]*response.SaldoYearBalanceResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.SaldoYearBalanceResponse](
+	return handleErrorRepository[[]*response.SaldoYearBalanceResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedFindYearlySaldoBalances,

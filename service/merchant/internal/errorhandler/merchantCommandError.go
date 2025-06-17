@@ -21,7 +21,7 @@ func NewMerchantCommandError(logger logger.LoggerInterface) *merchantCommandErro
 func (e *merchantCommandError) HandleCreateMerchantError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
+	return handleErrorRepository[*response.MerchantResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedCreateMerchant,
@@ -32,7 +32,7 @@ func (e *merchantCommandError) HandleCreateMerchantError(
 func (e *merchantCommandError) HandleUpdateMerchantError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
+	return handleErrorRepository[*response.MerchantResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedUpdateMerchant,
@@ -43,7 +43,7 @@ func (e *merchantCommandError) HandleUpdateMerchantError(
 func (e *merchantCommandError) HandleUpdateMerchantStatusError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
+	return handleErrorRepository[*response.MerchantResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedUpdateMerchant,
@@ -54,7 +54,7 @@ func (e *merchantCommandError) HandleUpdateMerchantStatusError(
 func (e *merchantCommandError) HandleTrashedMerchantError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
+	return handleErrorRepository[*response.MerchantResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedTrashMerchant,
@@ -65,7 +65,7 @@ func (e *merchantCommandError) HandleTrashedMerchantError(
 func (e *merchantCommandError) HandleRestoreMerchantError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
+	return handleErrorRepository[*response.MerchantResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedRestoreMerchant,
@@ -76,7 +76,7 @@ func (e *merchantCommandError) HandleRestoreMerchantError(
 func (e *merchantCommandError) HandleDeleteMerchantPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedDeleteMerchant,
@@ -87,7 +87,7 @@ func (e *merchantCommandError) HandleDeleteMerchantPermanentError(
 func (e *merchantCommandError) HandleRestoreAllMerchantError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedRestoreAllMerchants,
@@ -98,7 +98,7 @@ func (e *merchantCommandError) HandleRestoreAllMerchantError(
 func (e *merchantCommandError) HandleDeleteAllMerchantPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchant_errors.ErrFailedDeleteAllMerchants,

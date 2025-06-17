@@ -25,7 +25,7 @@ func (e *merchantQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.MerchantResponse](
+	return handleErrorPagination[[]*response.MerchantResponse](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindAllMerchants, fields...,
 	)
 }
@@ -38,7 +38,7 @@ func (e *merchantQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.MerchantResponseDeleteAt](
+	return handleErrorPagination[[]*response.MerchantResponseDeleteAt](
 		e.logger, err, method, tracePrefix, span, status, errResp, fields...,
 	)
 }
@@ -50,19 +50,7 @@ func (e *merchantQueryError) HandleRepositoryListError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponse](
+	return handleErrorRepository[[]*response.MerchantResponse](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindAllMerchants, fields...,
-	)
-}
-
-func (e *merchantQueryError) HandleRepositorySingleError(
-	err error,
-	method, tracePrefix string,
-	span trace.Span,
-	status *string,
-	fields ...zap.Field,
-) (*response.MerchantResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantResponse](
-		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrMerchantNotFoundRes, fields...,
 	)
 }

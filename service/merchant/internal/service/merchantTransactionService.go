@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -63,130 +64,82 @@ func NewMerchantTransactionService(ctx context.Context,
 }
 
 func (s *merchantTransactionService) FindAllTransactions(req *requests.FindAllMerchantTransactions) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAllTransactions", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAllTransactions")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindAllTransactions"
 
-	s.logger.Debug("Fetching all merchant records",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	merchants, totalRecords, err := s.merchantTransactionRepository.FindAllTransactions(req)
 
 	if err != nil {
 		return s.errorHandler.HandleRepositoryAllError(
-			err, "FindAllTransactions", "FAILED_FIND_ALL_TRANSACTIONS", span, &status, zap.Error(err),
+			err, method, "FAILED_FIND_ALL_TRANSACTIONS", span, &status, zap.Error(err),
 		)
 	}
 
 	merchantResponses := s.mapping.ToMerchantsTransactionResponse(merchants)
 
-	s.logger.Debug("Successfully all merchant records",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved all merchant records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return merchantResponses, totalRecords, nil
 }
 
 func (s *merchantTransactionService) FindAllTransactionsByMerchant(req *requests.FindAllMerchantTransactionsById) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAllTransactionsByMerchant", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAllTransactionsByMerchant")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindAllTransactionsByMerchant"
 
-	s.logger.Debug("Fetching all merchant records",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	merchants, totalRecords, err := s.merchantTransactionRepository.FindAllTransactionsByMerchant(req)
 
 	if err != nil {
 		return s.errorHandler.HandleRepositoryAllError(
-			err, "FindAllTransactionsByMerchant", "FAILED_FIND_ALL_TRANSACTIONS_BY_MERCHANT", span, &status, zap.Error(err),
+			err, method, "FAILED_FIND_ALL_TRANSACTIONS_BY_MERCHANT", span, &status, zap.Error(err),
 		)
 	}
 
 	merchantResponses := s.mapping.ToMerchantsTransactionResponse(merchants)
 
-	s.logger.Debug("Successfully fetched active merchant",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved all merchant records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return merchantResponses, totalRecords, nil
 }
 
 func (s *merchantTransactionService) FindAllTransactionsByApikey(req *requests.FindAllMerchantTransactionsByApiKey) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAllTransactionsByApikey", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAllTransactionsByApikey")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindAllTransactionsByApikey"
 
-	s.logger.Debug("Fetching all transaction merchant records",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	merchants, totalRecords, err := s.merchantTransactionRepository.FindAllTransactionsByApikey(req)
 
 	if err != nil {
 		return s.errorHandler.HandleRepositoryAllError(
-			err, "FindAllTransactionsByApikey", "FAILED_FIND_ALL_TRANSACTIONS_BY_APIKEY", span, &status, zap.Error(err),
+			err, method, "FAILED_FIND_ALL_TRANSACTIONS_BY_APIKEY", span, &status, zap.Error(err),
 		)
 	}
 
 	merchantResponses := s.mapping.ToMerchantsTransactionResponse(merchants)
 
-	s.logger.Debug("Successfully all transaction merchant records",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved all merchant records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return merchantResponses, totalRecords, nil
 }
@@ -199,6 +152,43 @@ func (s *merchantTransactionService) normalizePagination(page, pageSize int) (in
 		pageSize = 10
 	}
 	return page, pageSize
+}
+
+func (s *merchantTransactionService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *merchantTransactionService) recordMetrics(method string, status string, start time.Time) {

@@ -25,7 +25,7 @@ func (e *merchantStatisticByMerchantError) HandleMonthlyPaymentMethodByMerchants
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseMonthlyPaymentMethod, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseMonthlyPaymentMethod](
+	return handleErrorRepository[[]*response.MerchantResponseMonthlyPaymentMethod](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindMonthlyPaymentMethodByMerchants, fields...,
 	)
 }
@@ -37,7 +37,7 @@ func (e *merchantStatisticByMerchantError) HandleYearlyPaymentMethodByMerchantsE
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseYearlyPaymentMethod, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseYearlyPaymentMethod](
+	return handleErrorRepository[[]*response.MerchantResponseYearlyPaymentMethod](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindYearlyPaymentMethodByMerchants, fields...,
 	)
 }
@@ -49,7 +49,7 @@ func (e *merchantStatisticByMerchantError) HandleMonthlyAmountByMerchantsError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseMonthlyAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseMonthlyAmount](
+	return handleErrorRepository[[]*response.MerchantResponseMonthlyAmount](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindMonthlyAmountByMerchants, fields...,
 	)
 }
@@ -61,7 +61,7 @@ func (e *merchantStatisticByMerchantError) HandleYearlyAmountByMerchantsError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseYearlyAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseYearlyAmount](
+	return handleErrorRepository[[]*response.MerchantResponseYearlyAmount](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindYearlyAmountByMerchants, fields...,
 	)
 }
@@ -73,7 +73,7 @@ func (e *merchantStatisticByMerchantError) HandleMonthlyTotalAmountByMerchantsEr
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseMonthlyTotalAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseMonthlyTotalAmount](
+	return handleErrorRepository[[]*response.MerchantResponseMonthlyTotalAmount](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindMonthlyTotalAmountByMerchants, fields...,
 	)
 }
@@ -85,7 +85,7 @@ func (e *merchantStatisticByMerchantError) HandleYearlyTotalAmountByMerchantsErr
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantResponseYearlyTotalAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.MerchantResponseYearlyTotalAmount](
+	return handleErrorRepository[[]*response.MerchantResponseYearlyTotalAmount](
 		e.logger, err, method, tracePrefix, span, status, merchant_errors.ErrFailedFindYearlyTotalAmountByMerchants, fields...,
 	)
 }

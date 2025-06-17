@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -71,25 +72,20 @@ func NewMerchantStatisByApiKeyService(
 }
 
 func (s *merchantStatisByApiKeyService) FindMonthlyPaymentMethodByApikeys(req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseMonthlyPaymentMethod, *response.ErrorResponse) {
-	startTime := time.Now()
-
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindMonthlyPaymentMethodByApikeys", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyPaymentMethodByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	s.logger.Debug("Finding monthly payment methods by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	const method = "FindMonthlyPaymentMethodByApikeys"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetMonthlyPaymentMethodByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+
 		return cachedMerchant, nil
 	}
 
@@ -97,7 +93,7 @@ func (s *merchantStatisByApiKeyService) FindMonthlyPaymentMethodByApikeys(req *r
 
 	if err != nil {
 		return s.errorHandler.HandleMonthlyPaymentMethodByApikeysError(
-			err, "FindMonthlyPaymentMethodByApikeys", "FAILED_FIND_MONTHLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_MONTHLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -106,34 +102,25 @@ func (s *merchantStatisByApiKeyService) FindMonthlyPaymentMethodByApikeys(req *r
 
 	s.mencache.SetMonthlyPaymentMethodByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found monthly payment methods by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *merchantStatisByApiKeyService) FindYearlyPaymentMethodByApikeys(req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseYearlyPaymentMethod, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindYearlyPaymentMethodByApikeys", status, startTime)
-	}()
-	_, span := s.trace.Start(s.ctx, "FindYearlyPaymentMethodByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("api_key", api_key),
-		attribute.Int("year", year),
-	)
+	const method = "FindYearlyPaymentMethodByApikeys"
 
-	s.logger.Debug("Finding yearly payment methods by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetYearlyPaymentMethodByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
@@ -141,7 +128,7 @@ func (s *merchantStatisByApiKeyService) FindYearlyPaymentMethodByApikeys(req *re
 
 	if err != nil {
 		return s.errorHandler.HandleYearlyPaymentMethodByApikeysError(
-			err, "FindYearlyPaymentMethodByApikeys", "FAILED_FIND_YEARLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_YEARLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -150,35 +137,26 @@ func (s *merchantStatisByApiKeyService) FindYearlyPaymentMethodByApikeys(req *re
 
 	s.mencache.SetYearlyPaymentMethodByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found yearly payment methods by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *merchantStatisByApiKeyService) FindMonthlyAmountByApikeys(req *requests.MonthYearAmountApiKey) ([]*response.MerchantResponseMonthlyAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindMonthlyAmountByApikeys", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyAmountByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("api_key", api_key),
-		attribute.Int("year", year),
-	)
+	const method = "FindMonthlyAmountByApikeys"
 
-	s.logger.Debug("Finding monthly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetMonthlyAmountByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+
 		return cachedMerchant, nil
 	}
 
@@ -186,7 +164,7 @@ func (s *merchantStatisByApiKeyService) FindMonthlyAmountByApikeys(req *requests
 
 	if err != nil {
 		return s.errorHandler.HandleMonthlyAmountByApikeysError(
-			err, "FindMonthlyAmountByApikeys", "FAILED_FIND_MONTHLY_AMOUNT_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_MONTHLY_AMOUNT_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -195,35 +173,25 @@ func (s *merchantStatisByApiKeyService) FindMonthlyAmountByApikeys(req *requests
 
 	s.mencache.SetMonthlyAmountByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found monthly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *merchantStatisByApiKeyService) FindYearlyAmountByApikeys(req *requests.MonthYearAmountApiKey) ([]*response.MerchantResponseYearlyAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindYearlyAmountByApikeys", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindYearlyAmountByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("api_key", api_key),
-		attribute.Int("year", year),
-	)
+	const method = "FindYearlyAmountByApikeys"
 
-	s.logger.Debug("Finding yearly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetYearlyAmountByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
@@ -231,7 +199,7 @@ func (s *merchantStatisByApiKeyService) FindYearlyAmountByApikeys(req *requests.
 
 	if err != nil {
 		return s.errorHandler.HandleYearlyAmountByApikeysError(
-			err, "FindYearlyAmountByApikeys", "FAILED_FIND_YEARLY_AMOUNT_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_YEARLY_AMOUNT_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -240,35 +208,25 @@ func (s *merchantStatisByApiKeyService) FindYearlyAmountByApikeys(req *requests.
 
 	s.mencache.SetYearlyAmountByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found yearly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *merchantStatisByApiKeyService) FindMonthlyTotalAmountByApikeys(req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseMonthlyTotalAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindMonthlyTotalAmountByApikeys", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTotalAmountByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("api_key", api_key),
-		attribute.Int("year", year),
-	)
+	const method = "FindMonthlyTotalAmountByApikeys"
 
-	s.logger.Debug("Finding monthly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetMonthlyTotalAmountByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
@@ -276,7 +234,7 @@ func (s *merchantStatisByApiKeyService) FindMonthlyTotalAmountByApikeys(req *req
 
 	if err != nil {
 		return s.errorHandler.HandleMonthlyTotalAmountByApikeysError(
-			err, "FindMonthlyTotalAmountByApikeys", "FAILED_FIND_MONTHLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_MONTHLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -285,35 +243,25 @@ func (s *merchantStatisByApiKeyService) FindMonthlyTotalAmountByApikeys(req *req
 
 	s.mencache.SetMonthlyTotalAmountByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found monthly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *merchantStatisByApiKeyService) FindYearlyTotalAmountByApikeys(req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseYearlyTotalAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindYearlyTotalAmountByApikeys", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindYearlyTotalAmountByApikeys")
-	defer span.End()
-
 	api_key := req.Apikey
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("api_key", api_key),
-		attribute.Int("year", year),
-	)
+	const method = "FindYearlyTotalAmountByApikeys"
 
-	s.logger.Debug("Finding yearly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("api_key", api_key), attribute.Int("year", year))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cachedMerchant := s.mencache.GetYearlyTotalAmountByApikeysCache(req); cachedMerchant != nil {
-		s.logger.Debug("Successfully fetched merchant from cache",
-			zap.String("api_key", api_key), zap.Int("year", year))
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
@@ -321,7 +269,7 @@ func (s *merchantStatisByApiKeyService) FindYearlyTotalAmountByApikeys(req *requ
 
 	if err != nil {
 		return s.errorHandler.HandleYearlyTotalAmountByApikeysError(
-			err, "FindYearlyTotalAmountByApikeys", "FAILED_FIND_YEARLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
+			err, method, "FAILED_FIND_YEARLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
 			zap.Error(err),
 		)
 	}
@@ -330,9 +278,46 @@ func (s *merchantStatisByApiKeyService) FindYearlyTotalAmountByApikeys(req *requ
 
 	s.mencache.SetYearlyTotalAmountByApikeysCache(req, so)
 
-	s.logger.Debug("Successfully found yearly amount by merchant", zap.String("api_key", api_key), zap.Int("year", year))
+	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
 
 	return so, nil
+}
+
+func (s *merchantStatisByApiKeyService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *merchantStatisByApiKeyService) recordMetrics(method string, status string, start time.Time) {

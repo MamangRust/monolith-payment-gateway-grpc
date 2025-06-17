@@ -23,14 +23,6 @@ type TopupQueryErrorHandler interface {
 		errResp *response.ErrorResponse,
 		fields ...zap.Field,
 	) ([]*response.TopupResponseDeleteAt, *int, *response.ErrorResponse)
-	HandleRepositorySingleError(
-		err error,
-		method, tracePrefix string,
-		span trace.Span,
-		status *string,
-		errResp *response.ErrorResponse,
-		fields ...zap.Field,
-	) (*response.TopupResponse, *response.ErrorResponse)
 }
 
 type TopupStatisticErrorHandler interface {
@@ -64,14 +56,6 @@ type TopupCommandErrorHandler interface {
 		span trace.Span,
 		status *string,
 		rawTime string,
-		fields ...zap.Field,
-	) (*response.TopupResponse, *response.ErrorResponse)
-	HandleRepositorySingleError(
-		err error,
-		method, tracePrefix string,
-		span trace.Span,
-		status *string,
-		errResp *response.ErrorResponse,
 		fields ...zap.Field,
 	) (*response.TopupResponse, *response.ErrorResponse)
 

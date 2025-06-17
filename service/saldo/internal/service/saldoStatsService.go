@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -65,153 +66,158 @@ func NewSaldoStatisticsService(ctx context.Context, errorhandler errorhandler.Sa
 }
 
 func (s *saldoStatisticsService) FindMonthlyTotalSaldoBalance(req *requests.MonthTotalSaldoBalance) ([]*response.SaldoMonthTotalBalanceResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindMonthlyTotalSaldoBalance", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTotalSaldoBalance")
-	defer span.End()
 
 	year := req.Year
 	month := req.Month
 
-	span.SetAttributes(
-		attribute.Int("year", year),
-		attribute.Int("month", month),
-	)
+	const method = "FindMonthlyTotalSaldoBalance"
 
-	s.logger.Debug("Fetching monthly total saldo balance", zap.Int("year", year), zap.Int("month", month))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("month", month))
+
+	defer func() {
+		end(status)
+	}()
 
 	if cache := s.mencache.GetMonthlyTotalSaldoBalanceCache(req); cache != nil {
-		s.logger.Debug("Successfully fetched monthly total saldo balance from cache", zap.Int("year", year), zap.Int("month", month))
+		logSuccess("Successfully fetched monthly total saldo balance from cache", zap.Int("year", year), zap.Int("month", month))
 		return cache, nil
 	}
 
 	res, err := s.saldoStatsRepository.GetMonthlyTotalSaldoBalance(req)
 	if err != nil {
-		return s.errorhandler.HandleMonthlyTotalSaldoBalanceError(err, "FindMonthlyTotalSaldoBalance", "FAILED_FIND_MONTHLY_TOTAL_SALDO_BALANCE", span, &status)
+		return s.errorhandler.HandleMonthlyTotalSaldoBalanceError(err, method, "FAILED_FIND_MONTHLY_TOTAL_SALDO_BALANCE", span, &status, zap.Error(err))
 	}
 
 	responses := s.mapping.ToSaldoMonthTotalBalanceResponses(res)
 
 	s.mencache.SetMonthlyTotalSaldoCache(req, responses)
 
-	s.logger.Debug("Successfully fetched monthly total saldo balance", zap.Int("year", year), zap.Int("month", month))
+	logSuccess("Successfully fetched monthly total saldo balance", zap.Int("year", year), zap.Int("month", month))
 
 	return responses, nil
 }
 
 func (s *saldoStatisticsService) FindYearTotalSaldoBalance(year int) ([]*response.SaldoYearTotalBalanceResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearTotalSaldoBalance"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearTotalSaldoBalance", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearTotalSaldoBalance")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("Fetching yearly total saldo balance", zap.Int("year", year))
-
 	if cache := s.mencache.GetYearTotalSaldoBalanceCache(year); cache != nil {
-		s.logger.Debug("Successfully fetched yearly total saldo balance from cache", zap.Int("year", year))
+		logSuccess("Successfully fetched yearly total saldo balance from cache", zap.Int("year", year))
 		return cache, nil
 	}
 
 	res, err := s.saldoStatsRepository.GetYearTotalSaldoBalance(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyTotalSaldoBalanceError(err, "FindYearTotalSaldoBalance", "FAILED_FIND_YEARLY_TOTAL_SALDO_BALANCE", span, &status)
+		return s.errorhandler.HandleYearlyTotalSaldoBalanceError(err, method, "FAILED_FIND_YEARLY_TOTAL_SALDO_BALANCE", span, &status, zap.Error(err))
 	}
 	so := s.mapping.ToSaldoYearTotalBalanceResponses(res)
 
 	s.mencache.SetYearTotalSaldoBalanceCache(year, so)
 
-	s.logger.Debug("Successfully fetched yearly total saldo balance", zap.Int("year", year))
+	logSuccess("Successfully fetched yearly total saldo balance", zap.Int("year", year))
 
 	return so, nil
 }
 
 func (s *saldoStatisticsService) FindMonthlySaldoBalances(year int) ([]*response.SaldoMonthBalanceResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlySaldoBalances"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlySaldoBalances", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlySaldoBalances")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("Fetching monthly saldo balances", zap.Int("year", year))
-
 	if cache := s.mencache.GetMonthlySaldoBalanceCache(year); cache != nil {
-		s.logger.Debug("Successfully fetched monthly saldo balances from cache", zap.Int("year", year))
+		logSuccess("Successfully fetched monthly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}
 
 	res, err := s.saldoStatsRepository.GetMonthlySaldoBalances(year)
 
 	if err != nil {
-		return s.errorhandler.HandleMonthlySaldoBalancesError(err, "FindMonthlySaldoBalances", "FAILED_FIND_MONTHLY_SALDO_BALANCES", span, &status)
+		return s.errorhandler.HandleMonthlySaldoBalancesError(err, method, "FAILED_FIND_MONTHLY_SALDO_BALANCES", span, &status, zap.Error(err))
 	}
 
 	responses := s.mapping.ToSaldoMonthBalanceResponses(res)
 
 	s.mencache.SetMonthlySaldoBalanceCache(year, responses)
 
-	s.logger.Debug("Successfully fetched monthly saldo balances", zap.Int("year", year))
+	logSuccess("Successfully fetched monthly saldo balances", zap.Int("year", year))
 
 	return responses, nil
 }
 
 func (s *saldoStatisticsService) FindYearlySaldoBalances(year int) ([]*response.SaldoYearBalanceResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlySaldoBalances"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlySaldoBalances", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlySaldoBalances")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("Fetching yearly saldo balances", zap.Int("year", year))
-
 	if cache := s.mencache.GetYearlySaldoBalanceCache(year); cache != nil {
-		s.logger.Debug("Successfully fetched yearly saldo balances from cache", zap.Int("year", year))
+		logSuccess("Successfully fetched yearly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}
 
 	res, err := s.saldoStatsRepository.GetYearlySaldoBalances(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlySaldoBalancesError(err, "FindYearlySaldoBalances", "FAILED_FIND_YEARLY_SALDO_BALANCES", span, &status)
+		return s.errorhandler.HandleYearlySaldoBalancesError(err, method, "FAILED_FIND_YEARLY_SALDO_BALANCES", span, &status, zap.Error(err))
 	}
 
 	responses := s.mapping.ToSaldoYearBalanceResponses(res)
 
 	s.mencache.SetYearlySaldoBalanceCache(year, responses)
 
-	s.logger.Debug("Successfully fetched yearly saldo balances", zap.Int("year", year))
+	logSuccess("Successfully fetched yearly saldo balances", zap.Int("year", year))
 
 	return responses, nil
+}
+
+func (s *saldoStatisticsService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *saldoStatisticsService) recordMetrics(method string, status string, start time.Time) {

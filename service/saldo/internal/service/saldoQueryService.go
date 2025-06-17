@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -66,221 +67,152 @@ func NewSaldoQueryService(ctx context.Context, errorhandler errorhandler.SaldoQu
 }
 
 func (s *saldoQueryService) FindAll(req *requests.FindAllSaldos) ([]*response.SaldoResponse, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAll", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAll")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindAll"
 
-	s.logger.Debug("Fetching saldo",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
-	s.logger.Debug("Fetching all saldo records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedSaldos(req); found {
-		s.logger.Debug("Successfully fetched saldo from cache",
-			zap.Int("totalRecords", *total))
+		logSuccess("Successfully retrieved all saldo records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindAllSaldos(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_SALDOS", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_SALDOS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponses(res)
 
-	s.logger.Debug("Successfully fetched saldo",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
+	logSuccess("Successfully retrieved all saldo records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
 func (s *saldoQueryService) FindByActive(req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindByActive", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByActive")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByActive"
 
-	s.logger.Debug("Fetching active saldo",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedSaldoByActive(req); found {
-		s.logger.Debug("Successfully fetched active saldo from cache",
-			zap.Int("totalRecords", *total))
+		logSuccess("Successfully fetched active saldo from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindByActive(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_SALDOS", span, &status, saldo_errors.ErrFailedFindActiveSaldos, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_ACTIVE_SALDOS", span, &status, saldo_errors.ErrFailedFindActiveSaldos, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponsesDeleteAt(res)
 
 	s.mencache.SetCachedSaldoByActive(req, so, totalRecords)
 
-	s.logger.Debug("Successfully fetched active saldo",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully fetched active saldo", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
 func (s *saldoQueryService) FindByTrashed(req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindByTrashed", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByTrashed")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByTrashed"
 
-	s.logger.Debug("Fetching saldo record",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedSaldoByTrashed(req); found {
-		s.logger.Debug("Successfully fetched trashed saldo from cache",
-			zap.Int("totalRecords", *total))
+		logSuccess("Successfully fetched trashed saldo from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
 	res, totalRecords, err := s.saldoQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_SALDOS", span, &status, saldo_errors.ErrFailedFindTrashedSaldos, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_SALDOS", span, &status, saldo_errors.ErrFailedFindTrashedSaldos, zap.Error(err))
 	}
 	so := s.mapping.ToSaldoResponsesDeleteAt(res)
 
 	s.mencache.SetCachedSaldoByTrashed(req, so, totalRecords)
 
-	s.logger.Debug("Successfully fetched trashed saldo",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
+	logSuccess("Successfully fetched trashed saldo", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
 func (s *saldoQueryService) FindById(saldo_id int) (*response.SaldoResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindById"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("saldo.id", saldo_id))
 
 	defer func() {
-		s.recordMetrics("FindById", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindById")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("saldo_id", saldo_id),
-	)
-
-	s.logger.Debug("Fetching saldo record by ID", zap.Int("saldo_id", saldo_id))
-
 	if data, found := s.mencache.GetCachedSaldoById(saldo_id); found {
-		s.logger.Debug("Successfully fetched saldo from cache", zap.Int("saldo_id", saldo_id))
+		logSuccess("Successfully fetched saldo from cache", zap.Int("saldo.id", saldo_id))
 		return data, nil
 	}
 
 	res, err := s.saldoQueryRepository.FindById(saldo_id)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
 
 	s.mencache.SetCachedSaldoById(saldo_id, so)
 
-	s.logger.Debug("Successfully fetched saldo", zap.Int("saldo_id", saldo_id))
+	logSuccess("Successfully fetched saldo", zap.Int("saldo.id", saldo_id))
 
 	return so, nil
 }
 
 func (s *saldoQueryService) FindByCardNumber(card_number string) (*response.SaldoResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindByCardNumber"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("card_number", card_number))
 
 	defer func() {
-		s.recordMetrics("FindByCardNumber", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindByCardNumber")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("card_number", card_number),
-	)
-
-	s.logger.Debug("Fetching saldo record by card number", zap.String("card_number", card_number))
-
 	if data, found := s.mencache.GetCachedSaldoByCardNumber(card_number); found {
-		s.logger.Debug("Successfully fetched saldo from cache by card number", zap.String("card_number", card_number))
+		logSuccess("Successfully fetched saldo by card number from cache", zap.String("card_number", card_number))
 		return data, nil
 	}
 
 	res, err := s.saldoQueryRepository.FindByCardNumber(card_number)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindByCardNumber", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	so := s.mapping.ToSaldoResponse(res)
 
 	s.mencache.SetCachedSaldoByCardNumber(card_number, so)
 
-	s.logger.Debug("Successfully fetched saldo by card number", zap.String("card_number", card_number))
+	logSuccess("Successfully fetched saldo by card number", zap.String("card_number", card_number))
 
 	return so, nil
 }
@@ -293,6 +225,43 @@ func (s *saldoQueryService) normalizePagination(page, pageSize int) (int, int) {
 		pageSize = 10
 	}
 	return page, pageSize
+}
+
+func (s *saldoQueryService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *saldoQueryService) recordMetrics(method string, status string, start time.Time) {

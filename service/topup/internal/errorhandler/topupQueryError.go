@@ -25,7 +25,7 @@ func (e *topupQueryError) HandleRepositoryPaginationError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TopupResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TopupResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.TopupResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (e *topupQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -36,7 +36,7 @@ func (e *topupQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TopupResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TopupResponseDeleteAt](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.TopupResponseDeleteAt](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (e *topupQueryError) HandleRepositorySingleError(
@@ -47,5 +47,5 @@ func (e *topupQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.TopupResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.TopupResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.TopupResponse](e.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }

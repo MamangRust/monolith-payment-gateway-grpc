@@ -21,7 +21,7 @@ func NewMerchantDocumentCommandError(logger logger.LoggerInterface) *merchantDoc
 func (e *merchantDocumentCommandError) HandleCreateMerchantDocumentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantDocumentResponse](
+	return handleErrorRepository[*response.MerchantDocumentResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedCreateMerchantDocument,
@@ -32,7 +32,7 @@ func (e *merchantDocumentCommandError) HandleCreateMerchantDocumentError(
 func (e *merchantDocumentCommandError) HandleUpdateMerchantDocumentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantDocumentResponse](
+	return handleErrorRepository[*response.MerchantDocumentResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedUpdateMerchantDocument,
@@ -43,7 +43,7 @@ func (e *merchantDocumentCommandError) HandleUpdateMerchantDocumentError(
 func (e *merchantDocumentCommandError) HandleUpdateMerchantDocumentStatusError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantDocumentResponse](
+	return handleErrorRepository[*response.MerchantDocumentResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedUpdateMerchantDocument,
@@ -54,7 +54,7 @@ func (e *merchantDocumentCommandError) HandleUpdateMerchantDocumentStatusError(
 func (e *merchantDocumentCommandError) HandleTrashedMerchantDocumentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantDocumentResponse](
+	return handleErrorRepository[*response.MerchantDocumentResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedTrashMerchantDocument,
@@ -65,7 +65,7 @@ func (e *merchantDocumentCommandError) HandleTrashedMerchantDocumentError(
 func (e *merchantDocumentCommandError) HandleRestoreMerchantDocumentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.MerchantDocumentResponse](
+	return handleErrorRepository[*response.MerchantDocumentResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedRestoreMerchantDocument,
@@ -76,7 +76,7 @@ func (e *merchantDocumentCommandError) HandleRestoreMerchantDocumentError(
 func (e *merchantDocumentCommandError) HandleDeleteMerchantDocumentPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedDeleteMerchantDocument,
@@ -87,7 +87,7 @@ func (e *merchantDocumentCommandError) HandleDeleteMerchantDocumentPermanentErro
 func (e *merchantDocumentCommandError) HandleRestoreAllMerchantDocumentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedRestoreAllMerchantDocuments,
@@ -98,7 +98,7 @@ func (e *merchantDocumentCommandError) HandleRestoreAllMerchantDocumentError(
 func (e *merchantDocumentCommandError) HandleDeleteAllMerchantDocumentPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		merchantdocument_errors.ErrFailedDeleteAllMerchantDocuments,

@@ -21,7 +21,7 @@ func NewRoleCommandError(logger logger.LoggerInterface) *roleCommandError {
 func (e *roleCommandError) HandleCreateRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.RoleResponse](
+	return handleErrorRepository[*response.RoleResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedCreateRole,
@@ -32,7 +32,7 @@ func (e *roleCommandError) HandleCreateRoleError(
 func (e *roleCommandError) HandleUpdateRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.RoleResponse](
+	return handleErrorRepository[*response.RoleResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedUpdateRole,
@@ -43,7 +43,7 @@ func (e *roleCommandError) HandleUpdateRoleError(
 func (e *roleCommandError) HandleTrashedRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.RoleResponse](
+	return handleErrorRepository[*response.RoleResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedTrashedRole,
@@ -54,7 +54,7 @@ func (e *roleCommandError) HandleTrashedRoleError(
 func (e *roleCommandError) HandleRestoreRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.RoleResponse](
+	return handleErrorRepository[*response.RoleResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedRestoreRole,
@@ -65,7 +65,7 @@ func (e *roleCommandError) HandleRestoreRoleError(
 func (e *roleCommandError) HandleDeleteRolePermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedDeletePermanent,
@@ -76,7 +76,7 @@ func (e *roleCommandError) HandleDeleteRolePermanentError(
 func (e *roleCommandError) HandleDeleteAllRolePermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedDeleteAll,
@@ -87,7 +87,7 @@ func (e *roleCommandError) HandleDeleteAllRolePermanentError(
 func (e *roleCommandError) HandleRestoreAllRoleError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		role_errors.ErrFailedRestoreAll,

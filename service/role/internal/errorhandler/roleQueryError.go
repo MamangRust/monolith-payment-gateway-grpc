@@ -25,7 +25,7 @@ func (e *roleQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.RoleResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.RoleResponse](
+	return handleErrorPagination[[]*response.RoleResponse](
 		e.logger, err, method, tracePrefix, span, status, role_errors.ErrFailedFindAll, fields...,
 	)
 }
@@ -38,7 +38,7 @@ func (e *roleQueryError) HandleRepositoryPaginationDeletedError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.RoleResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.RoleResponseDeleteAt](
+	return handleErrorPagination[[]*response.RoleResponseDeleteAt](
 		e.logger, err, method, tracePrefix, span, status, errResp, fields...,
 	)
 }
@@ -50,7 +50,7 @@ func (e *roleQueryError) HandleRepositoryListError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.RoleResponse](e.logger, err, method, tracePrefix, span, status, role_errors.ErrFailedFindAll, fields...)
+	return handleErrorRepository[[]*response.RoleResponse](e.logger, err, method, tracePrefix, span, status, role_errors.ErrFailedFindAll, fields...)
 }
 
 func (e *roleQueryError) HandleRepositorySingleError(
@@ -61,5 +61,5 @@ func (e *roleQueryError) HandleRepositorySingleError(
 	defaultErr *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.RoleResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.RoleResponse](e.logger, err, method, tracePrefix, span, status, defaultErr, fields...)
+	return handleErrorRepository[*response.RoleResponse](e.logger, err, method, tracePrefix, span, status, defaultErr, fields...)
 }

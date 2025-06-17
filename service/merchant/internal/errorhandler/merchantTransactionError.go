@@ -25,7 +25,7 @@ func (e *merchantTransactionError) HandleRepositoryAllError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.MerchantTransactionResponse](
+	return handleErrorPagination[[]*response.MerchantTransactionResponse](
 		e.logger,
 		err,
 		method,
@@ -44,7 +44,7 @@ func (e *merchantTransactionError) HandleRepositoryByMerchantError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.MerchantTransactionResponse](
+	return handleErrorPagination[[]*response.MerchantTransactionResponse](
 		e.logger,
 		err,
 		method,
@@ -63,7 +63,7 @@ func (e *merchantTransactionError) HandleRepositoryByApiKeyError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.MerchantTransactionResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.MerchantTransactionResponse](
+	return handleErrorPagination[[]*response.MerchantTransactionResponse](
 		e.logger,
 		err,
 		method,

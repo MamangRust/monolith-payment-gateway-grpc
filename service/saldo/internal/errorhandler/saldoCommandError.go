@@ -22,7 +22,7 @@ func NewSaldoCommandError(logger logger.LoggerInterface) *saldoCommandError {
 func (e *saldoCommandError) HandleFindCardByNumberError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](
+	return handleErrorRepository[*response.SaldoResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		card_errors.ErrCardNotFoundRes,
@@ -33,7 +33,7 @@ func (e *saldoCommandError) HandleFindCardByNumberError(
 func (e *saldoCommandError) HandleCreateSaldoError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](
+	return handleErrorRepository[*response.SaldoResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedCreateSaldo,
@@ -44,7 +44,7 @@ func (e *saldoCommandError) HandleCreateSaldoError(
 func (e *saldoCommandError) HandleUpdateSaldoError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](
+	return handleErrorRepository[*response.SaldoResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedUpdateSaldo,
@@ -55,7 +55,7 @@ func (e *saldoCommandError) HandleUpdateSaldoError(
 func (e *saldoCommandError) HandleTrashSaldoError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](
+	return handleErrorRepository[*response.SaldoResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedTrashSaldo,
@@ -66,7 +66,7 @@ func (e *saldoCommandError) HandleTrashSaldoError(
 func (e *saldoCommandError) HandleRestoreSaldoError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (*response.SaldoResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.SaldoResponse](
+	return handleErrorRepository[*response.SaldoResponse](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedRestoreSaldo,
@@ -77,7 +77,7 @@ func (e *saldoCommandError) HandleRestoreSaldoError(
 func (e *saldoCommandError) HandleDeleteSaldoPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedDeleteSaldoPermanent,
@@ -88,7 +88,7 @@ func (e *saldoCommandError) HandleDeleteSaldoPermanentError(
 func (e *saldoCommandError) HandleRestoreAllSaldoError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedRestoreAllSaldo,
@@ -99,7 +99,7 @@ func (e *saldoCommandError) HandleRestoreAllSaldoError(
 func (e *saldoCommandError) HandleDeleteAllSaldoPermanentError(
 	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](
+	return handleErrorRepository[bool](
 		e.logger,
 		err, method, tracePrefix, span, status,
 		saldo_errors.ErrFailedDeleteAllSaldoPermanent,

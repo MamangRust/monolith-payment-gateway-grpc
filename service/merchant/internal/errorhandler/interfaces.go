@@ -22,13 +22,6 @@ type MerchantQueryErrorHandler interface {
 		errResp *response.ErrorResponse,
 		fields ...zap.Field,
 	) ([]*response.MerchantResponseDeleteAt, *int, *response.ErrorResponse)
-	HandleRepositorySingleError(
-		err error,
-		method, tracePrefix string,
-		span trace.Span,
-		status *string,
-		fields ...zap.Field,
-	) (*response.MerchantResponse, *response.ErrorResponse)
 	HandleRepositoryListError(
 		err error,
 		method, tracePrefix string,
@@ -53,13 +46,6 @@ type MerchantDocumentQueryErrorHandler interface {
 		status *string,
 		fields ...zap.Field,
 	) ([]*response.MerchantDocumentResponseDeleteAt, *int, *response.ErrorResponse)
-	HandleRepositorySingleError(
-		err error,
-		method, tracePrefix string,
-		span trace.Span,
-		status *string,
-		fields ...zap.Field,
-	) (*response.MerchantDocumentResponse, *response.ErrorResponse)
 }
 
 type MerchantTransactionErrorHandler interface {

@@ -13,7 +13,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors"
 	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/errorhandler"
@@ -22,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -90,34 +90,22 @@ func NewTopupCommandService(
 }
 
 func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) (*response.TopupResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "CreateTopup"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("CreateTopup", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "CreateTopup")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("card_number", request.CardNumber),
-		attribute.Float64("topup_amount", float64(request.TopupAmount)),
-	)
-
-	s.logger.Debug("Starting CreateTopup process",
-		zap.String("cardNumber", request.CardNumber),
-		zap.Float64("topupAmount", float64(request.TopupAmount)),
-	)
 
 	card, err := s.cardRepository.FindUserCardByCardNumber(request.CardNumber)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrCardNotFoundRes)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrCardNotFoundRes, zap.Error(err))
 	}
 
 	topup, err := s.topupCommandRepository.CreateTopup(request)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_CREATE_TOPUP", span, &status, topup_errors.ErrFailedCreateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_CREATE_TOPUP", span, &status, topup_errors.ErrFailedCreateTopup, zap.Error(err))
 	}
 
 	saldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
@@ -128,7 +116,7 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 		}
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedCreateTopup, zap.Error(err))
 	}
 
 	newBalance := saldo.TotalBalance + request.TopupAmount
@@ -144,7 +132,7 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 		}
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_UPDATE_SALDO_BALANCE", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, topup_errors.ErrFailedCreateTopup, zap.Error(err))
 	}
 
 	expireDate, err := time.Parse("2006-01-02", card.ExpireDate)
@@ -155,7 +143,7 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 		}
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleInvalidParseTimeError(err, "CreateTopup", "FAILED_PARSE_EXPIRE_DATE", span, &status, card.ExpireDate, zap.String("expire_date", card.ExpireDate))
+		return s.errorhandler.HandleInvalidParseTimeError(err, "CreateTopup", "FAILED_PARSE_EXPIRE_DATE", span, &status, card.ExpireDate, zap.Error(err))
 	}
 
 	_, err = s.cardRepository.UpdateCard(&requests.UpdateCardRequest{
@@ -173,7 +161,7 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 		}
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_UPDATE_CARD", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_CARD", span, &status, topup_errors.ErrFailedCreateTopup, zap.Error(err))
 	}
 
 	req := requests.UpdateTopupStatus{
@@ -183,7 +171,7 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 
 	res, err := s.topupCommandRepository.UpdateTopupStatus(&req)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateTopup", "FAILED_UPDATE_TOPUP_STATUS", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_TOPUP_STATUS", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -211,31 +199,23 @@ func (s *topupCommandService) CreateTopup(request *requests.CreateTopupRequest) 
 
 	so := s.mapping.ToTopupResponse(topup)
 
-	s.logger.Debug("CreateTopup process completed",
+	logSuccess("Topup created successfully",
 		zap.String("cardNumber", request.CardNumber),
+		zap.Int("topupID", topup.ID),
 		zap.Float64("topupAmount", float64(request.TopupAmount)),
-		zap.Float64("newBalance", float64(newBalance)),
 	)
 
 	return so, nil
 }
 
 func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) (*response.TopupResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "UpdateTopup"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("update_topup", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "UpdateTopup")
-	defer span.End()
-
-	s.logger.Debug("Starting UpdateTopup process",
-		zap.String("cardNumber", request.CardNumber),
-		zap.Int("topupID", *request.TopupID),
-		zap.Float64("newTopupAmount", float64(request.TopupAmount)),
-	)
 
 	_, err := s.cardRepository.FindCardByCardNumber(request.CardNumber)
 	if err != nil {
@@ -246,7 +226,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	existingTopup, err := s.topupQueryRepository.FindById(*request.TopupID)
@@ -258,7 +238,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_FIND_TOPUP_BY_ID", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_TOPUP_BY_ID", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	topupDifference := request.TopupAmount - existingTopup.TopupAmount
@@ -272,7 +252,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_UPDATE_TOPUP", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_TOPUP", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	currentSaldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
@@ -284,7 +264,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	if currentSaldo == nil {
@@ -295,7 +275,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	newBalance := currentSaldo.TotalBalance + topupDifference
@@ -309,7 +289,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 			TopupAmount: existingTopup.TopupAmount,
 		})
 		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "UpdateTopup", "FAILED_ROLLBACK_TOPUP_AMOUNT", span, &status, topup_errors.ErrFailedUpdateTopup)
+			return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_ROLLBACK_TOPUP_AMOUNT", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 		}
 
 		req := requests.UpdateTopupStatus{
@@ -319,7 +299,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_UPDATE_SALDO_BALANCE", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	updatedTopup, err := s.topupQueryRepository.FindById(*request.TopupID)
@@ -331,7 +311,7 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 		s.topupCommandRepository.UpdateTopupStatus(&req)
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_FIND_TOPUP_BY_ID", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_TOPUP_BY_ID", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	req := requests.UpdateTopupStatus{
@@ -341,169 +321,159 @@ func (s *topupCommandService) UpdateTopup(request *requests.UpdateTopupRequest) 
 
 	_, err = s.topupCommandRepository.UpdateTopupStatus(&req)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTopup", "FAILED_UPDATE_TOPUP_STATUS", span, &status, topup_errors.ErrFailedUpdateTopup)
+		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_UPDATE_TOPUP_STATUS", span, &status, topup_errors.ErrFailedUpdateTopup, zap.Error(err))
 	}
 
 	so := s.mapping.ToTopupResponse(updatedTopup)
 
 	s.mencache.DeleteCachedTopupCache(*request.TopupID)
 
-	s.logger.Debug("UpdateTopup process completed",
-		zap.String("cardNumber", request.CardNumber),
-		zap.Int("topupID", *request.TopupID),
-		zap.Float64("newTopupAmount", float64(request.TopupAmount)),
-		zap.Float64("newBalance", float64(newBalance)),
-	)
+	logSuccess("UpdateTopup process completed", zap.Bool("success", true))
 
 	return so, nil
 }
 
 func (s *topupCommandService) TrashedTopup(topup_id int) (*response.TopupResponseDeleteAt, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "TrashedTopup"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("TrashedTopup", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "TrashedTopup")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("topup_id", topup_id),
-	)
-
-	s.logger.Debug("Starting TrashedTopup process",
-		zap.Int("topup_id", topup_id),
-	)
 
 	res, err := s.topupCommandRepository.TrashedTopup(topup_id)
 
 	if err != nil {
-		return s.errorhandler.HandleTrashedTopupError(err, "TrashedTopup", "FAILED_TRASH_TOPUP", span, &status, zap.Error(err))
+		return s.errorhandler.HandleTrashedTopupError(err, method, "FAILED_TRASH_TOPUP", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToTopupResponseDeleteAt(res)
 
 	s.mencache.DeleteCachedTopupCache(topup_id)
 
-	s.logger.Debug("TrashedTopup process completed",
-		zap.Int("topup_id", topup_id),
-	)
+	logSuccess("TrashedTopup process completed", zap.Bool("success", true))
 
 	return so, nil
 }
 
 func (s *topupCommandService) RestoreTopup(topup_id int) (*response.TopupResponseDeleteAt, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreTopup"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreTopup", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreTopup")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("topup_id", topup_id),
-	)
-
-	s.logger.Debug("Starting RestoreTopup process",
-		zap.Int("topupID", topup_id),
-	)
 
 	res, err := s.topupCommandRepository.RestoreTopup(topup_id)
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreTopupError(err, "RestoreTopup", "FAILED_RESTORE_TOPUP", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRestoreTopupError(err, method, "FAILED_RESTORE_TOPUP", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToTopupResponseDeleteAt(res)
 
-	s.logger.Debug("RestoreTopup process completed",
-		zap.Int("topupID", topup_id),
-	)
+	logSuccess("RestoreTopup process completed", zap.Bool("success", true))
 
 	return so, nil
 }
 
 func (s *topupCommandService) DeleteTopupPermanent(topup_id int) (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteTopupPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteTopupPermanent", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteTopupPermanent")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("topup_id", topup_id),
-	)
-
-	s.logger.Debug("Starting DeleteTopupPermanent process",
-		zap.Int("topupID", topup_id),
-	)
 
 	_, err := s.topupCommandRepository.DeleteTopupPermanent(topup_id)
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteTopupPermanentError(err, "DeleteTopupPermanent", "FAILED_DELETE_TOPUP_PERMANENT", span, &status, zap.Error(err))
+		return s.errorhandler.HandleDeleteTopupPermanentError(err, method, "FAILED_DELETE_TOPUP_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("DeleteTopupPermanent process completed",
-		zap.Int("topupID", topup_id),
-	)
+	logSuccess("DeleteTopupPermanent process completed", zap.Bool("success", true))
 
 	return true, nil
 }
 
 func (s *topupCommandService) RestoreAllTopup() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreAllTopup"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreAllTopup", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreAllTopup")
-	defer span.End()
-
-	s.logger.Debug("Restoring all topups")
 
 	_, err := s.topupCommandRepository.RestoreAllTopup()
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllTopupError(err, "RestoreAllTopup", "FAILED_RESTORE_ALL_TOPUP", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRestoreAllTopupError(err, method, "FAILED_RESTORE_ALL_TOPUP", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully restored all topups")
+	logSuccess("RestoreAllTopup process completed", zap.Bool("success", true))
+
 	return true, nil
 }
 
 func (s *topupCommandService) DeleteAllTopupPermanent() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteAllTopupPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteAllTopupPermanent", status, start)
+		end(status)
 	}()
-	_, span := s.trace.Start(s.ctx, "DeleteAllTopupPermanent")
-
-	defer span.End()
-
-	s.logger.Debug("Permanently deleting all topups")
 
 	_, err := s.topupCommandRepository.DeleteAllTopupPermanent()
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllTopupPermanentError(err, "DeleteAllTopupPermanent", "FAILED_DELETE_ALL_TOPUP_PERMANENT", span, &status, zap.Error(err))
+		return s.errorhandler.HandleDeleteAllTopupPermanentError(err, method, "FAILED_DELETE_ALL_TOPUP_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted all topups permanently")
+	logSuccess("DeleteAllTopupPermanent process completed", zap.Bool("success", true))
+
 	return true, nil
+}
+
+func (s *topupCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *topupCommandService) recordMetrics(method string, status string, start time.Time) {
