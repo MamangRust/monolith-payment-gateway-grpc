@@ -99,8 +99,6 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 
 	res, err := s.user.FindByEmail(email)
 	if err != nil {
-		status = "error"
-
 		return s.errorhandler.HandleFindEmailError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
 	}
 
@@ -108,8 +106,6 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		status = "error"
-
 		return s.errorRandomString.HandleRandomStringErrorForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
 	}
 
@@ -119,8 +115,6 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 		ExpiredAt:  time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05"),
 	})
 	if err != nil {
-		status = "error"
-
 		return s.errorhandler.HandleCreateResetTokenError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
 	}
 
@@ -141,15 +135,11 @@ func (s *passwordResetService) ForgotPassword(email string) (bool, *response.Err
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		status = "error"
-
 		return s.errorMarshal.HandleMarsalForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-forgot-password", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		status = "error"
-
 		return s.errorKafka.HandleSendEmailForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
@@ -174,8 +164,6 @@ func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRe
 	if !found {
 		res, err := s.resetToken.FindByToken(req.ResetToken)
 		if err != nil {
-			status = "error"
-
 			return s.errorhandler.HandleFindTokenError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 		}
 		userID = int(res.UserID)
@@ -184,16 +172,12 @@ func (s *passwordResetService) ResetPassword(req *requests.CreateResetPasswordRe
 	}
 
 	if req.Password != req.ConfirmPassword {
-		status = "error"
-
 		err := errors.New("password and confirm password do not match")
 		return s.errorPassword.HandlePasswordNotMatchError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
 	_, err := s.user.UpdateUserPassword(userID, req.Password)
 	if err != nil {
-		status = "error"
-
 		return s.errorhandler.HandleUpdatePasswordError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
 	}
 
@@ -216,14 +200,11 @@ func (s *passwordResetService) VerifyCode(code string) (bool, *response.ErrorRes
 
 	res, err := s.user.FindByVerificationCode(code)
 	if err != nil {
-		status = "error"
 		return s.errorhandler.HandleVerifyCodeError(err, method, "VERIFY_CODE_ERR", span, &status, zap.String("code", code))
 	}
 
 	_, err = s.user.UpdateUserIsVerified(res.ID, true)
 	if err != nil {
-		status = "error"
-
 		return s.errorhandler.HandleUpdateVerifiedError(err, method, "VERIFY_CODE_ERR", span, &status, zap.Int("user.id", res.ID))
 	}
 
@@ -251,7 +232,7 @@ func (s *passwordResetService) startTracingAndLogging(method string, attrs ...at
 
 	span.AddEvent("Start: " + method)
 
-	s.logger.Debug("Start: " + method)
+	s.logger.Info("Start: " + method)
 
 	end := func(status string) {
 		s.recordMetrics(method, status, start)
@@ -265,7 +246,7 @@ func (s *passwordResetService) startTracingAndLogging(method string, attrs ...at
 
 	logSuccess := func(msg string, fields ...zap.Field) {
 		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
+		s.logger.Info(msg, fields...)
 	}
 
 	return span, end, status, logSuccess

@@ -33,7 +33,7 @@ type loginService struct {
 	refreshToken    repository.RefreshTokenRepository
 	token           auth.TokenManager
 	trace           trace.Tracer
-	tokenService    tokenService
+	tokenService    *tokenService
 	requestCounter  *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 }
@@ -49,7 +49,7 @@ func NewLoginService(
 	userRepository repository.UserRepository,
 	refreshToken repository.RefreshTokenRepository,
 	token auth.TokenManager,
-	tokenService tokenService,
+	tokenService *tokenService,
 ) *loginService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -87,6 +87,8 @@ func NewLoginService(
 	}
 }
 
+// Login itu harus is_verified = true jika ga maka suruh verifikasi
+
 func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResponse, *response.ErrorResponse) {
 	const method = "Login"
 
@@ -103,29 +105,21 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 
 	res, err := s.user.FindByEmail(request.Email)
 	if err != nil {
-		status = "error"
-
 		return s.errorHandler.HandleFindEmailError(err, method, "LOGIN_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.hash.ComparePassword(res.Password, request.Password)
 	if err != nil {
-		status = "error"
-
 		return s.errorPassword.HandleComparePasswordError(err, method, "COMPARE_PASSWORD_ERR", span, &status, zap.Error(err))
 	}
 
-	token, err := s.tokenService.createAccessToken(s.ctx, res.ID)
+	token, err := s.tokenService.createAccessToken(res.ID)
 	if err != nil {
-		status = "error"
-
 		return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_ERR", span, &status, zap.Error(err))
 	}
 
-	refreshToken, err := s.tokenService.createRefreshToken(s.ctx, res.ID)
+	refreshToken, err := s.tokenService.createRefreshToken(res.ID)
 	if err != nil {
-		status = "error"
-
 		return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_ERR", span, &status, zap.Error(err))
 	}
 
@@ -158,7 +152,7 @@ func (s *loginService) startTracingAndLogging(method string, attrs ...attribute.
 
 	span.AddEvent("Start: " + method)
 
-	s.logger.Debug("Start: " + method)
+	s.logger.Info("Start: " + method)
 
 	end := func(status string) {
 		s.recordMetrics(method, status, start)
@@ -172,7 +166,7 @@ func (s *loginService) startTracingAndLogging(method string, attrs ...attribute.
 
 	logSuccess := func(msg string, fields ...zap.Field) {
 		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
+		s.logger.Info(msg, fields...)
 	}
 
 	return span, end, status, logSuccess

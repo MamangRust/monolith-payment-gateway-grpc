@@ -59,21 +59,6 @@ func handleErrorRepository[T any](
 	)
 }
 
-func handleErrorPagination[T any](
-	logger logger.LoggerInterface,
-	err error,
-	method, tracePrefix string,
-	span trace.Span,
-	status *string,
-	errorResp *response.ErrorResponse,
-	fields ...zap.Field,
-) (T, *int, *response.ErrorResponse) {
-	result, errResp := handleErrorRepository[T](
-		logger, err, method, tracePrefix, span, status, errorResp, fields...,
-	)
-	return result, nil, errResp
-}
-
 func handleErrorTokenTemplate[T any](
 	logger logger.LoggerInterface,
 	err error,

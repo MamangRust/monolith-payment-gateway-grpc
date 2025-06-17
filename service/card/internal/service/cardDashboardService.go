@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -63,22 +64,18 @@ func NewCardDashboardService(
 }
 
 func (s *cardDashboardService) DashboardCard() (*response.DashboardCard, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "DashboardCard"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DashboardCard", status, startTime)
+		end(status)
 	}()
 
 	if data, found := s.mencache.GetDashboardCardCache(); found {
 		s.logger.Debug("DashboardCard cache hit")
 		return data, nil
 	}
-	s.logger.Debug("DashboardCard cache miss")
-
-	_, span := s.trace.Start(s.ctx, "DashboardCard")
-
-	s.logger.Debug("Starting DashboardCard service")
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalances()
 	if err != nil {
@@ -115,23 +112,18 @@ func (s *cardDashboardService) DashboardCard() (*response.DashboardCard, *respon
 
 	s.mencache.SetDashboardCardCache(result)
 
-	s.logger.Debug("Completed DashboardCard service",
-		zap.Int("total_balance", int(*totalBalance)),
-		zap.Int("total_topup", int(*totalTopup)),
-		zap.Int("total_withdraw", int(*totalWithdraw)),
-		zap.Int("total_transaction", int(*totalTransaction)),
-		zap.Int("total_transfer", int(*totalTransfer)),
-	)
+	logSuccess("Success find dashboard card", zap.Bool("success", true))
 
 	return result, nil
 }
 
 func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "DashboardCardCardNumber"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DashboardCardCardNumber", status, startTime)
+		end(status)
 	}()
 
 	if data, found := s.mencache.GetDashboardCardCardNumberCache(cardNumber); found {
@@ -139,13 +131,6 @@ func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*resp
 		return data, nil
 	}
 	s.logger.Debug("DashboardCardCardNumber cache miss", zap.String("card_number", cardNumber))
-
-	_, span := s.trace.Start(s.ctx, "DashboardCardCardNumber")
-	span.SetAttributes(attribute.String("card_number", cardNumber))
-
-	s.logger.Debug("Starting DashboardCardCardNumber service",
-		zap.String("card_number", cardNumber),
-	)
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalanceByCardNumber(cardNumber)
 	if err != nil {
@@ -188,17 +173,46 @@ func (s *cardDashboardService) DashboardCardCardNumber(cardNumber string) (*resp
 
 	s.mencache.SetDashboardCardCardNumberCache(cardNumber, result)
 
-	s.logger.Debug("Completed DashboardCardCardNumber service",
-		zap.String("card_number", cardNumber),
-		zap.Int("total_balance", int(*totalBalance)),
-		zap.Int("total_topup", int(*totalTopup)),
-		zap.Int("total_withdraw", int(*totalWithdraw)),
-		zap.Int("total_transaction", int(*totalTransaction)),
-		zap.Int("total_transfer_sent", int(*totalTransferSent)),
-		zap.Int("total_transfer_received", int(*totalTransferReceived)),
-	)
+	logSuccess("Success find dashboard card card number", zap.Bool("success", true))
 
 	return result, nil
+}
+
+func (s *cardDashboardService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Debug("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *cardDashboardService) recordMetrics(method string, status string, start time.Time) {

@@ -90,17 +90,13 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 			s.mencache.DeleteRefreshToken(token)
 			s.logger.Debug("Invalidated old refresh token from cache", zap.String("token", token))
 
-			accessToken, err := s.tokenService.createAccessToken(s.ctx, userId)
+			accessToken, err := s.tokenService.createAccessToken(userId)
 			if err != nil {
-				status = "error"
-
 				return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 			}
 
-			refreshToken, err := s.tokenService.createRefreshToken(s.ctx, userId)
+			refreshToken, err := s.tokenService.createRefreshToken(userId)
 			if err != nil {
-				status = "error"
-
 				return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 			}
 
@@ -127,11 +123,9 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 		if errors.Is(err, auth.ErrTokenExpired) {
 			s.mencache.DeleteRefreshToken(token)
 			if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
-				status = "error"
 
 				return s.errorhandler.HandleDeleteRefreshTokenError(err, method, "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 			}
-			status = "error"
 
 			return s.errorhandler.HandleExpiredRefreshTokenError(err, method, "TOKEN_EXPIRED", span, &status, zap.String("token", token))
 		}
@@ -141,7 +135,6 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 
 	userId, err := strconv.Atoi(userIdStr)
 	if err != nil {
-		status = "error"
 
 		return errorhandler.HandleInvalidFormatUserIDError[*response.TokenResponse](s.logger, err, method, "INVALID_USER_ID", span, &status, zap.Int("user.id", userId))
 	}
@@ -152,21 +145,17 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 	if err := s.refreshToken.DeleteRefreshToken(token); err != nil {
 		s.logger.Debug("Failed to delete old refresh token", zap.Error(err))
 
-		status = "error"
-
 		return s.errorhandler.HandleDeleteRefreshTokenError(err, method, "DELETE_REFRESH_TOKEN", span, &status, zap.String("token", token))
 	}
 
-	accessToken, err := s.tokenService.createAccessToken(s.ctx, userId)
+	accessToken, err := s.tokenService.createAccessToken(userId)
 	if err != nil {
-		status = "error"
 
 		return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
 
-	refreshToken, err := s.tokenService.createRefreshToken(s.ctx, userId)
+	refreshToken, err := s.tokenService.createRefreshToken(userId)
 	if err != nil {
-		status = "error"
 
 		return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
@@ -180,8 +169,6 @@ func (s *identityService) RefreshToken(token string) (*response.TokenResponse, *
 
 	if _, err = s.refreshToken.UpdateRefreshToken(updateRequest); err != nil {
 		s.mencache.DeleteRefreshToken(refreshToken)
-
-		status = "error"
 
 		return s.errorhandler.HandleUpdateRefreshTokenError(err, method, "UPDATE_REFRESH_TOKEN_FAILED", span, &status, zap.Int("user.id", userId))
 	}
@@ -262,7 +249,7 @@ func (s *identityService) startTracingAndLogging(method string, attrs ...attribu
 
 	span.AddEvent("Start: " + method)
 
-	s.logger.Debug("Start: " + method)
+	s.logger.Info("Start: " + method)
 
 	end := func(status string) {
 		s.recordMetrics(method, status, start)
@@ -276,7 +263,7 @@ func (s *identityService) startTracingAndLogging(method string, attrs ...attribu
 
 	logSuccess := func(msg string, fields ...zap.Field) {
 		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
+		s.logger.Info(msg, fields...)
 	}
 
 	return span, end, status, logSuccess

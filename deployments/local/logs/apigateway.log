@@ -270,3 +270,57 @@
 {"level":"info","ts":"2025-06-16T22:41:29.621Z","caller":"app/client.go:211","msg":"Connecting to Withdraw service at withdraw:50060"}
 {"level":"info","ts":"2025-06-16T22:41:29.639Z","caller":"app/client.go:118","msg":"Starting API Gateway server on :5000"}
 {"level":"info","ts":"2025-06-16T22:41:29.639Z","caller":"app/client.go:126","msg":"Starting Prometheus metrics server on :8091"}
+{"level":"debug","ts":"2025-06-17T05:30:24.858Z","caller":"app/client.go:74","msg":"Loading environment variables"}
+{"level":"debug","ts":"2025-06-17T05:30:24.859Z","caller":"app/client.go:79","msg":"Creating gRPC connections..."}
+{"level":"info","ts":"2025-06-17T05:30:24.859Z","caller":"app/client.go:211","msg":"Connecting to Auth service at auth:50051"}
+{"level":"info","ts":"2025-06-17T05:30:24.859Z","caller":"app/client.go:211","msg":"Connecting to Role service at role:50052"}
+{"level":"info","ts":"2025-06-17T05:30:24.859Z","caller":"app/client.go:211","msg":"Connecting to Card service at card:50053"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Merchant service at merchant:50054"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to User service at user:50055"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Saldo service at saldo:50056"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Topup service at topup:50057"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Transaction service at transaction:50058"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Transfer service at transfer:50059"}
+{"level":"info","ts":"2025-06-17T05:30:24.860Z","caller":"app/client.go:211","msg":"Connecting to Withdraw service at withdraw:50060"}
+{"level":"info","ts":"2025-06-17T05:30:24.870Z","caller":"app/client.go:126","msg":"Starting Prometheus metrics server on :8091"}
+{"level":"info","ts":"2025-06-17T05:30:24.870Z","caller":"app/client.go:118","msg":"Starting API Gateway server on :5000"}
+{"level":"debug","ts":"2025-06-17T08:39:36.436Z","caller":"app/client.go:74","msg":"Loading environment variables"}
+{"level":"debug","ts":"2025-06-17T08:39:36.437Z","caller":"app/client.go:79","msg":"Creating gRPC connections..."}
+{"level":"info","ts":"2025-06-17T08:39:36.437Z","caller":"app/client.go:211","msg":"Connecting to Auth service at auth:50051"}
+{"level":"info","ts":"2025-06-17T08:39:36.437Z","caller":"app/client.go:211","msg":"Connecting to Role service at role:50052"}
+{"level":"info","ts":"2025-06-17T08:39:36.437Z","caller":"app/client.go:211","msg":"Connecting to Card service at card:50053"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Merchant service at merchant:50054"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to User service at user:50055"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Saldo service at saldo:50056"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Topup service at topup:50057"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Transaction service at transaction:50058"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Transfer service at transfer:50059"}
+{"level":"info","ts":"2025-06-17T08:39:36.438Z","caller":"app/client.go:211","msg":"Connecting to Withdraw service at withdraw:50060"}
+{"level":"info","ts":"2025-06-17T08:39:36.453Z","caller":"app/client.go:118","msg":"Starting API Gateway server on :5000"}
+{"level":"info","ts":"2025-06-17T08:39:36.453Z","caller":"app/client.go:126","msg":"Starting Prometheus metrics server on :8091"}
+{"level":"debug","ts":"2025-06-17T08:39:41.846Z","caller":"handler/auth.go:498","msg":"Start: Login"}
+{"level":"error","ts":"2025-06-17T08:39:42.589Z","caller":"handler/auth.go:520","msg":"Failed to login user","error":"rpc error: code = Code(404) desc = {\"status\":\"error\",\"message\":\"User not found\",\"code\":404}","error":"rpc error: code = Code(404) desc = {\"status\":\"error\",\"message\":\"User not found\",\"code\":404}"}
+{"level":"debug","ts":"2025-06-17T09:16:41.772Z","caller":"handler/auth.go:498","msg":"Start: Login"}
+{"level":"error","ts":"2025-06-17T09:16:41.865Z","caller":"handler/auth.go:520","msg":"Failed to login user","error":"rpc error: code = Code(404) desc = {\"status\":\"error\",\"message\":\"User not found\",\"code\":404}","error":"rpc error: code = Code(404) desc = {\"status\":\"error\",\"message\":\"User not found\",\"code\":404}"}
+{"level":"debug","ts":"2025-06-17T09:18:34.914Z","caller":"handler/auth.go:498","msg":"Start: Register"}
+{"level":"debug","ts":"2025-06-17T09:18:35.091Z","caller":"handler/auth.go:512","msg":"Register success","success":true}
+{"level":"debug","ts":"2025-06-17T09:18:41.488Z","caller":"handler/auth.go:498","msg":"Start: Login"}
+{"level":"error","ts":"2025-06-17T09:18:41.634Z","caller":"handler/auth.go:520","msg":"Failed to login user","error":"rpc error: code = Unavailable desc = error reading from server: EOF","error":"rpc error: code = Unavailable desc = error reading from server: EOF"}
+{"level":"debug","ts":"2025-06-17T09:27:35.424Z","caller":"app/client.go:74","msg":"Loading environment variables"}
+{"level":"debug","ts":"2025-06-17T09:27:35.425Z","caller":"app/client.go:79","msg":"Creating gRPC connections..."}
+{"level":"info","ts":"2025-06-17T09:27:35.425Z","caller":"app/client.go:211","msg":"Connecting to Auth service at auth:50051"}
+{"level":"info","ts":"2025-06-17T09:27:35.425Z","caller":"app/client.go:211","msg":"Connecting to Role service at role:50052"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Card service at card:50053"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Merchant service at merchant:50054"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to User service at user:50055"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Saldo service at saldo:50056"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Topup service at topup:50057"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Transaction service at transaction:50058"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Transfer service at transfer:50059"}
+{"level":"info","ts":"2025-06-17T09:27:35.426Z","caller":"app/client.go:211","msg":"Connecting to Withdraw service at withdraw:50060"}
+{"level":"info","ts":"2025-06-17T09:27:35.436Z","caller":"app/client.go:118","msg":"Starting API Gateway server on :5000"}
+{"level":"info","ts":"2025-06-17T09:27:35.438Z","caller":"app/client.go:126","msg":"Starting Prometheus metrics server on :8091"}
+{"level":"debug","ts":"2025-06-17T09:28:16.156Z","caller":"handler/auth.go:498","msg":"Start: Login"}
+{"level":"debug","ts":"2025-06-17T09:28:17.197Z","caller":"handler/auth.go:512","msg":"Login success","success":true}
+{"level":"debug","ts":"2025-06-17T09:32:48.257Z","caller":"handler/auth.go:498","msg":"Start: Login"}
+{"level":"debug","ts":"2025-06-17T09:32:48.402Z","caller":"handler/auth.go:512","msg":"Login success","success":true}

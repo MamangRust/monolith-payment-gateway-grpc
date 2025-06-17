@@ -90,3 +90,15 @@
 {"level":"info","ts":"2025-06-16T22:41:28.410Z","caller":"apps/server.go:155","msg":"Server running on port 50052"}
 {"level":"info","ts":"2025-06-16T22:41:28.411Z","caller":"apps/server.go:170","msg":"gRPC server listening on :50052"}
 {"level":"info","ts":"2025-06-16T22:41:28.411Z","caller":"apps/server.go:162","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-17T05:30:23.626Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T05:30:23.631Z","caller":"apps/server.go:155","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-17T05:30:23.631Z","caller":"apps/server.go:170","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-17T05:30:23.632Z","caller":"apps/server.go:162","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-17T08:39:35.149Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T08:39:35.169Z","caller":"apps/server.go:155","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-17T08:39:35.171Z","caller":"apps/server.go:170","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-17T08:39:35.171Z","caller":"apps/server.go:162","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-17T09:27:34.588Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T09:27:34.590Z","caller":"apps/server.go:155","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-17T09:27:34.590Z","caller":"apps/server.go:162","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-17T09:27:34.591Z","caller":"apps/server.go:170","msg":"gRPC server listening on :50052"}

@@ -2,6 +2,8 @@ package errorhandler
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	traceunic "github.com/MamangRust/monolith-payment-gateway-pkg/trace_unic"
@@ -12,30 +14,37 @@ import (
 	"go.uber.org/zap"
 )
 
-func handleErrorPaginationTemplate[T any](
+func handleErrorTemplate[T any](
 	logger logger.LoggerInterface,
 	err error,
-	method, tracePrefix string,
+	method, tracePrefix, errorMessage string,
 	span trace.Span,
 	status *string,
 	errorResp *response.ErrorResponse,
 	fields ...zap.Field,
-) (T, *int, *response.ErrorResponse) {
+) (T, *response.ErrorResponse) {
 	traceID := traceunic.GenerateTraceID(tracePrefix)
-	allFields := append(fields, zap.Error(err), zap.String("trace.id", traceID))
+	logMsg := fmt.Sprintf("%s in %s", errorMessage, method)
 
-	logger.Error(fmt.Sprintf("Repository error in %s", method), allFields...)
+	allFields := append(fields,
+		zap.Error(err),
+		zap.String("trace.id", traceID),
+	)
+
+	logger.Error(logMsg, allFields...)
+
 	span.SetAttributes(attribute.String("trace.id", traceID))
 	span.RecordError(err)
-	span.SetStatus(codes.Error, fmt.Sprintf("Repository error in %s", method))
+	span.AddEvent(logMsg)
+	span.SetStatus(codes.Error, logMsg)
 
-	*status = fmt.Sprintf("repository_error_%s", method)
+	*status = fmt.Sprintf("%s_error_%s", toSnakeCase(method), toSnakeCase(errorMessage))
 
 	var zero T
-	return zero, nil, errorResp
+	return zero, errorResp
 }
 
-func handleErrorTemplate[T any](
+func handleErrorRepository[T any](
 	logger logger.LoggerInterface,
 	err error,
 	method, tracePrefix string,
@@ -44,22 +53,26 @@ func handleErrorTemplate[T any](
 	errorResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (T, *response.ErrorResponse) {
-	traceID := traceunic.GenerateTraceID(tracePrefix)
-	allFields := append(fields, zap.Error(err), zap.String("trace.id", traceID))
-
-	logger.Error(fmt.Sprintf("Repository error in %s", method), allFields...)
-	span.SetAttributes(attribute.String("trace.id", traceID))
-	span.RecordError(err)
-	span.SetStatus(codes.Error, fmt.Sprintf("Repository error in %s", method))
-
-	if status != nil {
-		*status = fmt.Sprintf("repository_error_%s", method)
-	}
-
-	var zero T
-	return zero, errorResp
+	return handleErrorTemplate[T](
+		logger, err, method, tracePrefix,
+		"Repository error", span, status, errorResp, fields...,
+	)
 }
 
+func handleErrorPagination[T any](
+	logger logger.LoggerInterface,
+	err error,
+	method, tracePrefix string,
+	span trace.Span,
+	status *string,
+	errorResp *response.ErrorResponse,
+	fields ...zap.Field,
+) (T, *int, *response.ErrorResponse) {
+	result, errResp := handleErrorRepository[T](
+		logger, err, method, tracePrefix, span, status, errorResp, fields...,
+	)
+	return result, nil, errResp
+}
 func handleErrorMarshal[T any](
 	logger logger.LoggerInterface,
 	err error,
@@ -69,20 +82,10 @@ func handleErrorMarshal[T any](
 	errorResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (T, *response.ErrorResponse) {
-	traceID := traceunic.GenerateTraceID(tracePrefix)
-	allFields := append(fields, zap.Error(err), zap.String("trace.id", traceID))
-
-	logger.Error(fmt.Sprintf("Failed marshal error in %s", method), allFields...)
-	span.SetAttributes(attribute.String("trace.id", traceID))
-	span.RecordError(err)
-	span.SetStatus(codes.Error, fmt.Sprintf("Failed marshal error in %s", method))
-
-	if status != nil {
-		*status = fmt.Sprintf("json_marshal_error_%s", method)
-	}
-
-	var zero T
-	return zero, errorResp
+	return handleErrorTemplate[T](
+		logger, err, method, tracePrefix,
+		"Marshal error", span, status, errorResp, fields...,
+	)
 }
 
 func HandleMarshalError[T any](
@@ -118,17 +121,11 @@ func handleErrorKafkaSend[T any](
 	defaultErr *response.ErrorResponse,
 	fields ...zap.Field,
 ) (T, *response.ErrorResponse) {
-	traceID := traceunic.GenerateTraceID(tracePrefix)
+	return handleErrorTemplate[T](logger, err, method, tracePrefix, "kafka send", span, status, defaultErr, fields...)
+}
 
-	allFields := append(fields, zap.Error(err), zap.String("trace.id", traceID))
-
-	logger.Error(fmt.Sprintf("Kafka send error in %s", method), allFields...)
-	span.SetAttributes(attribute.String("trace.id", traceID))
-	span.RecordError(err)
-	span.SetStatus(codes.Error, fmt.Sprintf("Kafka send error in %s", method))
-
-	*status = fmt.Sprintf("kafka_send_failed_%s", method)
-
-	var zero T
-	return zero, defaultErr
+func toSnakeCase(s string) string {
+	re := regexp.MustCompile("([a-z])([A-Z])")
+	snake := re.ReplaceAllString(s, "${1}_${2}")
+	return strings.ToLower(snake)
 }

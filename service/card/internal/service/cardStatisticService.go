@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -61,37 +62,28 @@ func NewCardStatisticService(
 }
 
 func (s *cardStatisticService) FindMonthlyBalance(year int) ([]*response.CardResponseMonthBalance, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlyBalance"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyBalance", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlyBalance")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindMonthlyBalance called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetMonthlyBalanceCache(year); found {
-		s.logger.Debug("Monthly balance cache hit", zap.Int("year", year))
+		logSuccess("Monthly balance cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyBalance(year)
 	if err != nil {
-		return s.errorhandler.HandleMonthlyBalanceError(err, "FindMonthlyBalance", "FAILED_MONTHLY_BALANCE", span, &status)
+		return s.errorhandler.HandleMonthlyBalanceError(err, method, "FAILED_MONTHLY_BALANCE", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyBalances(res)
 
 	s.mencache.SetMonthlyBalanceCache(year, so)
 
-	s.logger.Debug("Monthly balance retrieved successfully",
+	logSuccess("Monthly balance retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -100,37 +92,28 @@ func (s *cardStatisticService) FindMonthlyBalance(year int) ([]*response.CardRes
 }
 
 func (s *cardStatisticService) FindYearlyBalance(year int) ([]*response.CardResponseYearlyBalance, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlyBalance"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyBalance", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlyBalance")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindYearlyBalance called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetYearlyBalanceCache(year); found {
-		s.logger.Debug("Yearly balance cache hit", zap.Int("year", year))
+		logSuccess("Yearly balance cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetYearlyBalance(year)
 	if err != nil {
-		return s.errorhandler.HandleYearlyBalanceError(err, "FindYearlyBalance", "FAILED_YEARLY_BALANCE", span, &status)
+		return s.errorhandler.HandleYearlyBalanceError(err, method, "FAILED_YEARLY_BALANCE", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyBalances(res)
 
 	s.mencache.SetYearlyBalanceCache(year, so)
 
-	s.logger.Debug("Yearly balance retrieved successfully",
+	logSuccess("Yearly balance retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -139,34 +122,31 @@ func (s *cardStatisticService) FindYearlyBalance(year int) ([]*response.CardResp
 }
 
 func (s *cardStatisticService) FindMonthlyTopupAmount(year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlyTopupAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyTopupAmount", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTopupAmount")
-	defer span.End()
 
 	s.logger.Debug("FindMonthlyTopupAmount called", zap.Int("year", year))
 
 	if data, found := s.mencache.GetMonthlyTopupAmountCache(year); found {
-		s.logger.Debug("Monthly topup amount cache hit", zap.Int("year", year))
+		logSuccess("Monthly topup amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyTopupAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleMonthlyTopupAmountError(err, "FindMonthlyTopupAmount", "FAILED_MONTHLY_TOPUP_AMOUNT", span, &status)
+		return s.errorhandler.HandleMonthlyTopupAmountError(err, method, "FAILED_MONTHLY_TOPUP_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyAmounts(res)
 
 	s.mencache.SetMonthlyTopupAmountCache(year, so)
 
-	s.logger.Debug("Monthly topup amount retrieved successfully",
+	logSuccess("Monthly topup amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -175,38 +155,29 @@ func (s *cardStatisticService) FindMonthlyTopupAmount(year int) ([]*response.Car
 }
 
 func (s *cardStatisticService) FindYearlyTopupAmount(year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlyTopupAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyTopupAmount", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlyTopupAmount")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindYearlyTopupAmount called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetYearlyTopupAmountCache(year); found {
-		s.logger.Debug("Yearly topup amount cache hit", zap.Int("year", year))
+		logSuccess("Yearly topup amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetYearlyTopupAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyTopupAmountError(err, "FindYearlyTopupAmount", "FAILED_YEARLY_TOPUP_AMOUNT", span, &status)
+		return s.errorhandler.HandleYearlyTopupAmountError(err, method, "FAILED_YEARLY_TOPUP_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyAmounts(res)
 
 	s.mencache.SetYearlyTopupAmountCache(year, so)
 
-	s.logger.Debug("Yearly topup amount retrieved successfully",
+	logSuccess("Yearly topup amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -215,38 +186,29 @@ func (s *cardStatisticService) FindYearlyTopupAmount(year int) ([]*response.Card
 }
 
 func (s *cardStatisticService) FindMonthlyWithdrawAmount(year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlyWithdrawAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyWithdrawAmount", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlyWithdrawAmount")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindMonthlyWithdrawAmount called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetMonthlyWithdrawAmountCache(year); found {
-		s.logger.Debug("Monthly withdraw amount cache hit", zap.Int("year", year))
+		logSuccess("Monthly withdraw amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyWithdrawAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleMonthlyWithdrawAmountError(err, "FindMonthlyWithdrawAmount", "FAILED_MONTHLY_WITHDRAW_AMOUNT", span, &status)
+		return s.errorhandler.HandleMonthlyWithdrawAmountError(err, method, "FAILED_MONTHLY_WITHDRAW_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyAmounts(res)
 
 	s.mencache.SetMonthlyWithdrawAmountCache(year, so)
 
-	s.logger.Debug("Monthly withdraw amount retrieved successfully",
+	logSuccess("Monthly withdraw amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -255,34 +217,24 @@ func (s *cardStatisticService) FindMonthlyWithdrawAmount(year int) ([]*response.
 }
 
 func (s *cardStatisticService) FindYearlyWithdrawAmount(year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlyWithdrawAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyWithdrawAmount", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "FindYearlyWithdrawAmount")
-
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindYearlyWithdrawAmount called", zap.Int("year", year))
 
 	res, err := s.cardStatisticRepository.GetYearlyWithdrawAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyWithdrawAmountError(err, "FindYearlyWithdrawAmount", "FAILED_YEARLY_WITHDRAW_AMOUNT", span, &status)
+		return s.errorhandler.HandleYearlyWithdrawAmountError(err, method, "FAILED_YEARLY_WITHDRAW_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyAmounts(res)
 
 	s.mencache.SetYearlyWithdrawAmountCache(year, so)
 
-	s.logger.Debug("Yearly withdraw amount retrieved successfully",
+	logSuccess("Yearly withdraw amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -291,38 +243,29 @@ func (s *cardStatisticService) FindYearlyWithdrawAmount(year int) ([]*response.C
 }
 
 func (s *cardStatisticService) FindMonthlyTransactionAmount(year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlyTransactionAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyTransactionAmount", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTransactionAmount")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindMonthlyTransactionAmount called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetMonthlyTransactionAmountCache(year); found {
-		s.logger.Debug("Monthly transaction amount cache hit", zap.Int("year", year))
+		logSuccess("Monthly transaction amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyTransactionAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleMonthlyTransactionAmountError(err, "FindMonthlyTransactionAmount", "FAILED_MONTHLY_TRANSACTION_AMOUNT", span, &status)
+		return s.errorhandler.HandleMonthlyTransactionAmountError(err, method, "FAILED_MONTHLY_TRANSACTION_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyAmounts(res)
 
 	s.mencache.SetMonthlyTransactionAmountCache(year, so)
 
-	s.logger.Debug("Monthly transaction amount retrieved successfully",
+	logSuccess("Monthly transaction amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -331,38 +274,29 @@ func (s *cardStatisticService) FindMonthlyTransactionAmount(year int) ([]*respon
 }
 
 func (s *cardStatisticService) FindYearlyTransactionAmount(year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	s.logger.Debug("FindYearlyTransactionAmount called", zap.Int("year", year))
-
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlyTransactionAmount"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyTransactionAmount", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlyTransactionAmount")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
 	if data, found := s.mencache.GetYearlyTransactionAmountCache(year); found {
-		s.logger.Debug("Yearly transaction amount cache hit", zap.Int("year", year))
+		logSuccess("Yearly transaction amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetYearlyTransactionAmount(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyTransactionAmountError(err, "FindYearlyTransactionAmount", "FAILED_YEARLY_TRANSACTION_AMOUNT", span, &status)
+		return s.errorhandler.HandleYearlyTransactionAmountError(err, method, "FAILED_YEARLY_TRANSACTION_AMOUNT", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyAmounts(res)
 
 	s.mencache.SetYearlyTransactionAmountCache(year, so)
 
-	s.logger.Debug("Yearly transaction amount retrieved successfully",
+	logSuccess("Yearly transaction amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -371,37 +305,28 @@ func (s *cardStatisticService) FindYearlyTransactionAmount(year int) ([]*respons
 }
 
 func (s *cardStatisticService) FindMonthlyTransferAmountSender(year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindMonthlyTransferAmountSender"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyTransferAmountSender", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTransferAmountSender")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindMonthlyTransferAmountSender called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetMonthlyTransferAmountSenderCache(year); found {
-		s.logger.Debug("Monthly transfer sender amount cache hit", zap.Int("year", year))
+		logSuccess("Monthly transfer sender amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyTransferAmountSender(year)
 	if err != nil {
-		return s.errorhandler.HandleMonthlyTransferAmountSenderError(err, "FindMonthlyTransferAmountSender", "FAILED_MONTHLY_TRANSFER_AMOUNT_SENDER", span, &status)
+		return s.errorhandler.HandleMonthlyTransferAmountSenderError(err, method, "FAILED_MONTHLY_TRANSFER_AMOUNT_SENDER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyAmounts(res)
 
 	s.mencache.SetMonthlyTransferAmountSenderCache(year, so)
 
-	s.logger.Debug("Monthly transfer sender amount retrieved successfully",
+	logSuccess("Monthly transfer sender amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -410,34 +335,29 @@ func (s *cardStatisticService) FindMonthlyTransferAmountSender(year int) ([]*res
 }
 
 func (s *cardStatisticService) FindYearlyTransferAmountSender(year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindYearlyTransferAmountSender"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyTransferAmountSender", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlyTransferAmountSender")
-	defer span.End()
-
-	s.logger.Debug("FindYearlyTransferAmountSender called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetYearlyTransferAmountSenderCache(year); found {
-		s.logger.Debug("Yearly transfer sender amount cache hit", zap.Int("year", year))
+		logSuccess("Yearly transfer sender amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetYearlyTransferAmountSender(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyTransferAmountSenderError(err, "FindYearlyTransferAmountSender", "FAILED_YEARLY_TRANSFER_AMOUNT_SENDER", span, &status)
+		return s.errorhandler.HandleYearlyTransferAmountSenderError(err, method, "FAILED_YEARLY_TRANSFER_AMOUNT_SENDER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyAmounts(res)
 
 	s.mencache.SetYearlyTransferAmountSenderCache(year, so)
 
-	s.logger.Debug("Yearly transfer sender amount retrieved successfully",
+	logSuccess("Yearly transfer sender amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -446,34 +366,29 @@ func (s *cardStatisticService) FindYearlyTransferAmountSender(year int) ([]*resp
 }
 
 func (s *cardStatisticService) FindMonthlyTransferAmountReceiver(year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "FindMonthlyTransferAmountReceiver"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindMonthlyTransferAmountReceiver", status, start)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindMonthlyTransferAmountReceiver")
-	defer span.End()
-
-	s.logger.Debug("FindMonthlyTransferAmountReceiver called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetMonthlyTransferAmountReceiverCache(year); found {
-		s.logger.Debug("Monthly transfer receiver amount cache hit", zap.Int("year", year))
+		logSuccess("Monthly transfer receiver amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetMonthlyTransferAmountReceiver(year)
 
 	if err != nil {
-		return s.errorhandler.HandleMonthlyTransferAmountReceiverError(err, "FindMonthlyTransferAmountReceiver", "FAILED_MONTHLY_TRANSFER_AMOUNT_RECEIVER", span, &status)
+		return s.errorhandler.HandleMonthlyTransferAmountReceiverError(err, method, "FAILED_MONTHLY_TRANSFER_AMOUNT_RECEIVER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetMonthlyAmounts(res)
 
 	s.mencache.SetMonthlyTransferAmountReceiverCache(year, so)
 
-	s.logger.Debug("Monthly transfer receiver amount retrieved successfully",
+	logSuccess("Monthly transfer receiver amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
@@ -482,43 +397,71 @@ func (s *cardStatisticService) FindMonthlyTransferAmountReceiver(year int) ([]*r
 }
 
 func (s *cardStatisticService) FindYearlyTransferAmountReceiver(year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "FindYearlyTransferAmountReceiver"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
 
 	defer func() {
-		s.recordMetrics("FindYearlyTransferAmountReceiver", status, start)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindYearlyTransferAmountReceiver")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("year", year),
-	)
-
-	s.logger.Debug("FindYearlyTransferAmountReceiver called", zap.Int("year", year))
-
 	if data, found := s.mencache.GetYearlyTransferAmountReceiverCache(year); found {
-		s.logger.Debug("Yearly transfer receiver amount cache hit", zap.Int("year", year))
+		logSuccess("Yearly transfer receiver amount cache hit", zap.Int("year", year))
 		return data, nil
 	}
 
 	res, err := s.cardStatisticRepository.GetYearlyTransferAmountReceiver(year)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyTransferAmountReceiverError(err, "FindYearlyTransferAmountReceiver", "FAILED_YEARLY_TRANSFER_AMOUNT_RECEIVER", span, &status)
+		return s.errorhandler.HandleYearlyTransferAmountReceiverError(err, method, "FAILED_YEARLY_TRANSFER_AMOUNT_RECEIVER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToGetYearlyAmounts(res)
 
 	s.mencache.SetYearlyTransferAmountReceiverCache(year, so)
 
-	s.logger.Debug("Yearly transfer receiver amount retrieved successfully",
+	logSuccess("Yearly transfer receiver amount retrieved successfully",
 		zap.Int("year", year),
 		zap.Int("result_count", len(so)),
 	)
 
 	return so, nil
+}
+
+func (s *cardStatisticService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *cardStatisticService) recordMetrics(method string, status string, start time.Time) {

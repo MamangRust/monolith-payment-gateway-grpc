@@ -8,7 +8,7 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 - 📡 **Kafka** — Used to publish balance-related events (e.g., after card creation).
 - 📈 **Prometheus** — Collects metrics like request count and latency for each RPC method.
 - 🛰️ **OpenTelemetry (OTel)** — Enables distributed tracing for observability.
-- 🧠 **Go (Golang)** — Implementation language.
+- 🦫 **Go (Golang)** — Implementation language.
 - 🌐 **Echo** — HTTP framework for Go.
 - 🪵 **Zap Logger** — Structured logging for debugging and operations.
 - 📦 **Sqlc** — SQL code generator for Go.
@@ -27,6 +27,7 @@ The **Digital Payment Platform** is a reliable, scalable, and secure integrated 
 - 📥 **Loki** — Log aggregation system for collecting and querying logs.
 - 📤 **Promtail** — Log shipping agent that sends logs to Loki.
 - 🔧 **OTel Collector** — Vendor-agnostic collector for receiving, processing, and exporting telemetry data (metrics, traces, logs).
+- 🖥️ **Node Exporter** — Exposes system-level (host) metrics such as CPU, memory, disk, and network stats for Prometheus.
 
 
 ----

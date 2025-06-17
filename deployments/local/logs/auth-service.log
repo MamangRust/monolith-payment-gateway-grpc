@@ -98,3 +98,50 @@
 {"level":"info","ts":"2025-06-16T22:41:28.895Z","caller":"apps/server.go:194","msg":"Server running on port 50051"}
 {"level":"debug","ts":"2025-06-16T22:41:28.895Z","caller":"apps/server.go:209","msg":"gRPC server listening on port","port":50051}
 {"level":"info","ts":"2025-06-16T22:41:28.895Z","caller":"apps/server.go:201","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-06-17T05:30:23.706Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T05:30:23.717Z","caller":"apps/server.go:194","msg":"Server running on port 50051"}
+{"level":"debug","ts":"2025-06-17T05:30:23.717Z","caller":"apps/server.go:209","msg":"gRPC server listening on port","port":50051}
+{"level":"info","ts":"2025-06-17T05:30:23.717Z","caller":"apps/server.go:201","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-06-17T08:39:35.445Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T08:39:35.470Z","caller":"apps/server.go:194","msg":"Server running on port 50051"}
+{"level":"info","ts":"2025-06-17T08:39:35.471Z","caller":"apps/server.go:201","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-06-17T08:39:35.471Z","caller":"apps/server.go:209","msg":"gRPC server listening on port","port":50051}
+{"level":"debug","ts":"2025-06-17T08:39:42.574Z","caller":"handler/auth.go:81","msg":"LoginUser called","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T08:39:42.574Z","caller":"service/loginService.go:161","msg":"Start: Login"}
+{"level":"error","ts":"2025-06-17T08:39:42.588Z","caller":"errorhandler/errorHandler_helpers.go:34","msg":"Repository error in Login","error":"user not found","error":"user not found","trace.id":"LOGIN_ERR_20250617_eb9168cf"}
+{"level":"error","ts":"2025-06-17T08:39:42.588Z","caller":"handler/auth.go:90","msg":"LoginUser failed","error":{"status":"error","message":"User not found","code":404}}
+{"level":"debug","ts":"2025-06-17T09:16:41.838Z","caller":"handler/auth.go:81","msg":"LoginUser called","email":"user_74f33ec0-242a-4026-abaa-1b7a200b0eb3@example.com"}
+{"level":"debug","ts":"2025-06-17T09:16:41.838Z","caller":"service/loginService.go:161","msg":"Start: Login"}
+{"level":"error","ts":"2025-06-17T09:16:41.864Z","caller":"errorhandler/errorHandler_helpers.go:34","msg":"Repository error in Login","error":"user not found","error":"user not found","trace.id":"LOGIN_ERR_20250617_1f3ff87c"}
+{"level":"error","ts":"2025-06-17T09:16:41.865Z","caller":"handler/auth.go:90","msg":"LoginUser failed","error":{"status":"error","message":"User not found","code":404}}
+{"level":"debug","ts":"2025-06-17T09:18:34.915Z","caller":"handler/auth.go:125","msg":"RegisterUser called","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:18:34.915Z","caller":"service/registerService.go:217","msg":"Start: Register"}
+{"level":"debug","ts":"2025-06-17T09:18:35.090Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"register:verify_code:john.doe@example.com","expiration":"15m0s"}
+{"level":"debug","ts":"2025-06-17T09:18:35.090Z","caller":"service/registerService.go:231","msg":"User registered successfully","email":"john.doe@example.com","first_name":"John","last_name":"Doe"}
+{"level":"debug","ts":"2025-06-17T09:18:35.090Z","caller":"handler/auth.go:141","msg":"RegisterUser successful"}
+{"level":"debug","ts":"2025-06-17T09:18:41.488Z","caller":"handler/auth.go:81","msg":"LoginUser called","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:18:41.489Z","caller":"service/loginService.go:161","msg":"Start: Login"}
+{"level":"debug","ts":"2025-06-17T09:18:41.626Z","caller":"service/tokenService.go:154","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2025-06-17T09:18:41.626Z","caller":"service/tokenService.go:170","msg":"Created access token","userID":41}
+{"level":"debug","ts":"2025-06-17T09:27:34.044Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-17T09:27:34.071Z","caller":"apps/server.go:194","msg":"Server running on port 50051"}
+{"level":"debug","ts":"2025-06-17T09:27:34.071Z","caller":"apps/server.go:209","msg":"gRPC server listening on port","port":50051}
+{"level":"info","ts":"2025-06-17T09:27:34.071Z","caller":"apps/server.go:201","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-06-17T09:28:17.034Z","caller":"handler/auth.go:81","msg":"LoginUser called","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:28:17.034Z","caller":"service/loginService.go:161","msg":"Start: Login"}
+{"level":"debug","ts":"2025-06-17T09:28:17.186Z","caller":"service/tokenService.go:161","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2025-06-17T09:28:17.186Z","caller":"service/tokenService.go:177","msg":"Created access token","userID":41}
+{"level":"debug","ts":"2025-06-17T09:28:17.186Z","caller":"service/tokenService.go:161","msg":"Start: createRefreshToken"}
+{"level":"debug","ts":"2025-06-17T09:28:17.195Z","caller":"service/tokenService.go:177","msg":"Created refresh token","userID":41}
+{"level":"debug","ts":"2025-06-17T09:28:17.196Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"auth:login:john.doe@example.com","expiration":"1m0s"}
+{"level":"debug","ts":"2025-06-17T09:28:17.196Z","caller":"service/loginService.go:175","msg":"Successfully logged in","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:28:17.196Z","caller":"handler/auth.go:94","msg":"LoginUser successful"}
+{"level":"debug","ts":"2025-06-17T09:32:48.258Z","caller":"handler/auth.go:81","msg":"LoginUser called","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:32:48.258Z","caller":"service/loginService.go:161","msg":"Start: Login"}
+{"level":"debug","ts":"2025-06-17T09:32:48.396Z","caller":"service/tokenService.go:161","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2025-06-17T09:32:48.396Z","caller":"service/tokenService.go:177","msg":"Created access token","userID":41}
+{"level":"debug","ts":"2025-06-17T09:32:48.396Z","caller":"service/tokenService.go:161","msg":"Start: createRefreshToken"}
+{"level":"debug","ts":"2025-06-17T09:32:48.401Z","caller":"service/tokenService.go:177","msg":"Created refresh token","userID":41}
+{"level":"debug","ts":"2025-06-17T09:32:48.402Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"auth:login:john.doe@example.com","expiration":"1m0s"}
+{"level":"debug","ts":"2025-06-17T09:32:48.402Z","caller":"service/loginService.go:175","msg":"Successfully logged in","email":"john.doe@example.com"}
+{"level":"debug","ts":"2025-06-17T09:32:48.402Z","caller":"handler/auth.go:94","msg":"LoginUser successful"}

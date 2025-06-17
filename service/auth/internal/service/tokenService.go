@@ -33,27 +33,34 @@ type tokenService struct {
 func NewTokenService(
 	ctx context.Context,
 	refreshToken repository.RefreshTokenRepository, token auth.TokenManager, logger logger.LoggerInterface) *tokenService {
-	prometheus.MustRegister(prometheus.NewCounterVec(
+
+	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "token_service_requests_total",
 			Help: "Total number of auth requests",
 		},
 		[]string{"method", "status"},
-	))
-
-	prometheus.MustRegister(prometheus.NewHistogramVec(
+	)
+	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "token_service_request_duration_seconds",
 			Help:    "Duration of auth requests",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method", "status"},
-	))
+	)
 
-	return &tokenService{trace: otel.Tracer("token-service"), refreshToken: refreshToken, token: token, logger: logger}
+	return &tokenService{
+		trace:           otel.Tracer("token-service"),
+		requestCounter:  requestCounter,
+		requestDuration: requestDuration,
+		refreshToken:    refreshToken,
+		token:           token,
+		logger:          logger,
+	}
 }
 
-func (s *tokenService) createAccessToken(ctx context.Context, id int) (string, error) {
+func (s *tokenService) createAccessToken(id int) (string, error) {
 	const method = "createAccessToken"
 
 	end, logSuccess, status, logError := s.startTracingAndLogging(method, attribute.Int("user.id", id))
@@ -82,7 +89,7 @@ func (s *tokenService) createAccessToken(ctx context.Context, id int) (string, e
 	return res, nil
 }
 
-func (s *tokenService) createRefreshToken(ctx context.Context, id int) (string, error) {
+func (s *tokenService) createRefreshToken(id int) (string, error) {
 	const method = "createRefreshToken"
 
 	end, logSuccess, status, logError := s.startTracingAndLogging(method, attribute.Int("user.id", id))

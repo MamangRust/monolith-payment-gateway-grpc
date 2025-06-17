@@ -105,16 +105,12 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	existingUser, err := s.user.FindByEmail(request.Email)
 	if err == nil && existingUser != nil {
-		status = "error"
-
 		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
 			zap.String("email", request.Email), zap.Error(err))
 	}
 
 	passwordHash, err := s.hash.HashPassword(request.Password)
 	if err != nil {
-		status = "error"
-
 		return s.errorPassword.HandleHashPasswordError(err, "Register", "REGISTER_ERR", span, &status)
 	}
 	request.Password = passwordHash
@@ -124,16 +120,12 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	role, err := s.role.FindByName(defaultRoleName)
 
 	if err != nil || role == nil {
-		status = "error"
-
 		return s.errohandler.HandleFindRoleError(err, "Register", "REGISTER_ERR", span, &status,
 			zap.String("role_name", defaultRoleName), zap.Error(err))
 	}
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		status = "error"
-
 		return s.errorRandomString.HandleRandomStringErrorRegister(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
@@ -142,8 +134,6 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	newUser, err := s.user.CreateUser(request)
 	if err != nil {
-		status = "error"
-
 		return s.errohandler.HandleCreateUserError(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 
@@ -162,15 +152,11 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		status = "error"
-
 		return s.errorMarshal.HandleMarshalRegisterError(err, "Register", "MARSHAL_ERR", span, &status, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-auth-register", strconv.Itoa(newUser.ID), payloadBytes)
 	if err != nil {
-		status = "error"
-
 		return s.errorKafka.HandleSendEmailRegister(err, "Register", "SEND_EMAIL_ERR", span, &status, zap.Error(err))
 	}
 
@@ -179,8 +165,6 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 		RoleId: role.ID,
 	})
 	if err != nil {
-		status = "error"
-
 		return s.errohandler.HandleAssignRoleError(err, "Register", "ASSIGN_ROLE_ERR", span, &status, zap.Error(err))
 	}
 
@@ -214,7 +198,7 @@ func (s *registerService) startTracingAndLogging(method string, attrs ...attribu
 
 	span.AddEvent("Start: " + method)
 
-	s.logger.Debug("Start: " + method)
+	s.logger.Info("Start: " + method)
 
 	end := func(status string) {
 		s.recordMetrics(method, status, start)
@@ -228,7 +212,7 @@ func (s *registerService) startTracingAndLogging(method string, attrs ...attribu
 
 	logSuccess := func(msg string, fields ...zap.Field) {
 		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
+		s.logger.Info(msg, fields...)
 	}
 
 	return span, end, status, logSuccess

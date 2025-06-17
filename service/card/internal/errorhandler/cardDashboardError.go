@@ -25,7 +25,7 @@ func (c *cardDasboardError) HandleTotalBalanceError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCard, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalBalances, fields...)
+	return handleErrorRepository[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalBalances, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTopupAmountError(
@@ -35,7 +35,7 @@ func (c *cardDasboardError) HandleTotalTopupAmountError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCard, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTopAmount, fields...)
+	return handleErrorRepository[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTopAmount, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalWithdrawAmountError(
@@ -45,7 +45,7 @@ func (c *cardDasboardError) HandleTotalWithdrawAmountError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCard, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalWithdrawAmount, fields...)
+	return handleErrorRepository[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalWithdrawAmount, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTransactionAmountError(
@@ -55,7 +55,7 @@ func (c *cardDasboardError) HandleTotalTransactionAmountError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCard, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransactionAmount, fields...)
+	return handleErrorRepository[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransactionAmount, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTransferAmountError(
@@ -65,7 +65,7 @@ func (c *cardDasboardError) HandleTotalTransferAmountError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCard, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmount, fields...)
+	return handleErrorRepository[*response.DashboardCard](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmount, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalBalanceCardNumberError(
@@ -75,7 +75,7 @@ func (c *cardDasboardError) HandleTotalBalanceCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalBalanceByCard, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalBalanceByCard, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTopupAmountCardNumberError(
@@ -85,7 +85,7 @@ func (c *cardDasboardError) HandleTotalTopupAmountCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTopupAmountByCard, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTopupAmountByCard, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalWithdrawAmountCardNumberError(
@@ -95,7 +95,7 @@ func (c *cardDasboardError) HandleTotalWithdrawAmountCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalWithdrawAmountByCard, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalWithdrawAmountByCard, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTransactionAmountCardNumberError(
@@ -105,7 +105,7 @@ func (c *cardDasboardError) HandleTotalTransactionAmountCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransactionAmountByCard, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransactionAmountByCard, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTransferAmountBySender(
@@ -115,7 +115,7 @@ func (c *cardDasboardError) HandleTotalTransferAmountBySender(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmountBySender, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmountBySender, fields...)
 }
 
 func (c *cardDasboardError) HandleTotalTransferAmountByReceiver(
@@ -125,5 +125,5 @@ func (c *cardDasboardError) HandleTotalTransferAmountByReceiver(
 	status *string,
 	fields ...zap.Field,
 ) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmountByReceiver, fields...)
+	return handleErrorRepository[*response.DashboardCardCardNumber](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTotalTransferAmountByReceiver, fields...)
 }

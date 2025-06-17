@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -72,21 +73,13 @@ func NewCardCommandService(ctx context.Context, errorHandler errorhandler.CardCo
 }
 
 func (s *cardCommandService) CreateCard(request *requests.CreateCardRequest) (*response.CardResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "CreateCard"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("CreateCard", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "CreateCard")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("user_id", request.UserID),
-	)
-
-	s.logger.Debug("Creating new card", zap.Any("request", request))
 
 	_, err := s.userRepository.FindById(request.UserID)
 
@@ -119,31 +112,25 @@ func (s *cardCommandService) CreateCard(request *requests.CreateCardRequest) (*r
 
 	so := s.mapping.ToCardResponse(res)
 
-	s.logger.Debug("Successfully created new card", zap.Int("card_id", so.ID))
+	logSuccess("Successfully created card", zap.Int("card.id", so.ID), zap.String("card.card_number", so.CardNumber))
 
 	return so, nil
 }
 
 func (s *cardCommandService) UpdateCard(request *requests.UpdateCardRequest) (*response.CardResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "UpdateCard"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("UpdateCard", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "UpdateCard")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("card_id", request.CardID),
-	)
-
-	s.logger.Debug("Updating card", zap.Int("card_id", request.CardID), zap.Any("request", request))
 
 	_, err := s.userRepository.FindById(request.UserID)
 
 	if err != nil {
+		status = "error"
+
 		return s.errorhandler.HandleFindByIdUserError(err, "UpdateCard", "FAILED_USER_NOT_FOUND", span, &status, zap.Error(err))
 	}
 
@@ -157,27 +144,19 @@ func (s *cardCommandService) UpdateCard(request *requests.UpdateCardRequest) (*r
 
 	s.mencache.DeleteCardCommandCache(request.CardID)
 
-	s.logger.Debug("Successfully updated card", zap.Int("cardID", so.ID))
+	logSuccess("Successfully updated card", zap.Int("card.id", so.ID))
 
 	return so, nil
 }
 
 func (s *cardCommandService) TrashedCard(card_id int) (*response.CardResponse, *response.ErrorResponse) {
-	s.logger.Debug("Trashing card", zap.Int("card_id", card_id))
+	const method = "Login"
 
-	startTime := time.Now()
-	status := "success"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("card.id", card_id))
 
 	defer func() {
-		s.recordMetrics("TrashedCard", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "TrashedCard")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("card_id", card_id),
-	)
 
 	res, err := s.cardCommentRepository.TrashedCard(card_id)
 
@@ -189,27 +168,19 @@ func (s *cardCommandService) TrashedCard(card_id int) (*response.CardResponse, *
 
 	s.mencache.DeleteCardCommandCache(card_id)
 
-	s.logger.Debug("Successfully trashed card", zap.Int("card_id", so.ID))
+	logSuccess("Successfully trashed card", zap.Int("card.id", so.ID))
 
 	return so, nil
 }
 
 func (s *cardCommandService) RestoreCard(card_id int) (*response.CardResponse, *response.ErrorResponse) {
-	s.logger.Debug("Restoring card", zap.Int("card_id", card_id))
+	const method = "RestoreCard"
 
-	startTime := time.Now()
-	status := "success"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("card.id", card_id))
 
 	defer func() {
-		s.recordMetrics("RestoreCard", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreCard")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("card_id", card_id),
-	)
 
 	res, err := s.cardCommentRepository.RestoreCard(card_id)
 
@@ -219,27 +190,19 @@ func (s *cardCommandService) RestoreCard(card_id int) (*response.CardResponse, *
 
 	so := s.mapping.ToCardResponse(res)
 
-	s.logger.Debug("Successfully restored card", zap.Int("card_id", so.ID))
+	logSuccess("Successfully restored card", zap.Int("card.id", so.ID))
 
 	return so, nil
 }
 
 func (s *cardCommandService) DeleteCardPermanent(card_id int) (bool, *response.ErrorResponse) {
-	s.logger.Debug("Permanently deleting card", zap.Int("card_id", card_id))
+	const method = "DeleteCardPermanent"
 
-	startTime := time.Now()
-	status := "success"
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("card.id", card_id))
 
 	defer func() {
-		s.recordMetrics("DeleteCardPermanent", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteCardPermanent")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("card_id", card_id),
-	)
 
 	_, err := s.cardCommentRepository.DeleteCardPermanent(card_id)
 
@@ -247,23 +210,19 @@ func (s *cardCommandService) DeleteCardPermanent(card_id int) (bool, *response.E
 		return s.errorhandler.HandleDeleteCardPermanentError(err, "DeleteCardPermanent", "FAILED_TO_DELETE_CARD_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted card permanently", zap.Int("card_id", card_id))
+	logSuccess("Successfully deleted card permanently", zap.Int("card.id", card_id))
 
 	return true, nil
 }
 
 func (s *cardCommandService) RestoreAllCard() (bool, *response.ErrorResponse) {
-	s.logger.Debug("Restoring all cards")
+	const method = "RestoreAllCard"
 
-	startTime := time.Now()
-	status := "success"
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreAllCard", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreAllCard")
-	defer span.End()
 
 	_, err := s.cardCommentRepository.RestoreAllCard()
 
@@ -271,22 +230,19 @@ func (s *cardCommandService) RestoreAllCard() (bool, *response.ErrorResponse) {
 		return s.errorhandler.HandleRestoreAllCardError(err, "RestoreAllCard", "FAILED_TO_RESTORE_ALL_CARDS", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully restored all cards")
+	logSuccess("Successfully restored all cards", zap.Bool("success", true))
+
 	return true, nil
 }
 
 func (s *cardCommandService) DeleteAllCardPermanent() (bool, *response.ErrorResponse) {
-	s.logger.Debug("Permanently deleting all cards")
+	const method = "DeleteAllCardPermanent"
 
-	startTime := time.Now()
-	status := "success"
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteAllCardPermanent", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteAllCardPermanent")
-	defer span.End()
 
 	_, err := s.cardCommentRepository.DeleteAllCardPermanent()
 
@@ -294,9 +250,46 @@ func (s *cardCommandService) DeleteAllCardPermanent() (bool, *response.ErrorResp
 		return s.errorhandler.HandleDeleteAllCardPermanentError(err, "DeleteAllCardPermanent", "FAILED_TO_DELETE_ALL_CARDS_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted all cards permanently")
+	logSuccess("Successfully deleted all cards permanently", zap.Bool("success", true))
 
 	return true, nil
+}
+
+func (s *cardCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *cardCommandService) recordMetrics(method string, status string, start time.Time) {

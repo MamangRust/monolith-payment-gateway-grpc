@@ -25,7 +25,7 @@ func (c *cardQueryError) HandleFindAllError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindAllCards, fields...)
+	return handleErrorPagination[[]*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindAllCards, fields...)
 }
 
 func (c *cardQueryError) HandleFindByActiveError(
@@ -35,7 +35,7 @@ func (c *cardQueryError) HandleFindByActiveError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.CardResponseDeleteAt](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindActiveCards, fields...)
+	return handleErrorPagination[[]*response.CardResponseDeleteAt](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindActiveCards, fields...)
 }
 
 func (c *cardQueryError) HandleFindByTrashedError(
@@ -45,7 +45,7 @@ func (c *cardQueryError) HandleFindByTrashedError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.CardResponseDeleteAt](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTrashedCards, fields...)
+	return handleErrorPagination[[]*response.CardResponseDeleteAt](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindTrashedCards, fields...)
 }
 
 func (c *cardQueryError) HandleFindByIdError(
@@ -55,7 +55,7 @@ func (c *cardQueryError) HandleFindByIdError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindById, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindById, fields...)
 }
 
 func (c *cardQueryError) HandleFindByUserIdError(
@@ -65,7 +65,7 @@ func (c *cardQueryError) HandleFindByUserIdError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindByUserID, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindByUserID, fields...)
 }
 
 func (c *cardQueryError) HandleFindByCardNumberError(
@@ -75,5 +75,5 @@ func (c *cardQueryError) HandleFindByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindByCardNumber, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindByCardNumber, fields...)
 }

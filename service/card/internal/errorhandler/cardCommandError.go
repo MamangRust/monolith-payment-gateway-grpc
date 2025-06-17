@@ -26,7 +26,7 @@ func (c *cardCommandError) HandleFindByIdUserError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (c *cardCommandError) HandleCreateCardError(
@@ -36,7 +36,7 @@ func (c *cardCommandError) HandleCreateCardError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedCreateCard, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedCreateCard, fields...)
 }
 
 func (c *cardCommandError) HandleUpdateCardError(
@@ -46,7 +46,7 @@ func (c *cardCommandError) HandleUpdateCardError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedUpdateCard, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedUpdateCard, fields...)
 }
 
 func (c *cardCommandError) HandleTrashedCardError(
@@ -56,7 +56,7 @@ func (c *cardCommandError) HandleTrashedCardError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedTrashCard, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedTrashCard, fields...)
 }
 
 func (c *cardCommandError) HandleRestoreCardError(
@@ -66,7 +66,7 @@ func (c *cardCommandError) HandleRestoreCardError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.CardResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedRestoreCard, fields...)
+	return handleErrorRepository[*response.CardResponse](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedRestoreCard, fields...)
 }
 
 func (c *cardCommandError) HandleDeleteCardPermanentError(
@@ -76,7 +76,7 @@ func (c *cardCommandError) HandleDeleteCardPermanentError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedDeleteCard, fields...)
+	return handleErrorRepository[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedDeleteCard, fields...)
 }
 
 func (c *cardCommandError) HandleRestoreAllCardError(
@@ -86,7 +86,7 @@ func (c *cardCommandError) HandleRestoreAllCardError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedRestoreAllCards, fields...)
+	return handleErrorRepository[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedRestoreAllCards, fields...)
 }
 
 func (c *cardCommandError) HandleDeleteAllCardPermanentError(
@@ -96,5 +96,5 @@ func (c *cardCommandError) HandleDeleteAllCardPermanentError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedDeleteAllCards, fields...)
+	return handleErrorRepository[bool](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedDeleteAllCards, fields...)
 }

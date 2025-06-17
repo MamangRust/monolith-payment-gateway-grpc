@@ -25,7 +25,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyBalanceByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthBalance, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthBalance](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyBalanceByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthBalance](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyBalanceByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyBalanceByCardNumberError(
@@ -35,7 +35,7 @@ func (c *cardStatisticByNumberError) HandleYearlyBalanceByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearlyBalance, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearlyBalance](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyBalanceByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearlyBalance](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyBalanceByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleMonthlyTopupAmountByCardNumberError(
@@ -45,7 +45,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyTopupAmountByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTopupAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTopupAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyTopupAmountByCardNumberError(
@@ -55,7 +55,7 @@ func (c *cardStatisticByNumberError) HandleYearlyTopupAmountByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTopupAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTopupAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleMonthlyWithdrawAmountByCardNumberError(
@@ -65,7 +65,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyWithdrawAmountByCardNumberErro
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyWithdrawAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyWithdrawAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyWithdrawAmountByCardNumberError(
@@ -75,7 +75,7 @@ func (c *cardStatisticByNumberError) HandleYearlyWithdrawAmountByCardNumberError
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyWithdrawAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyWithdrawAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleMonthlyTransactionAmountByCardNumberError(
@@ -85,7 +85,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyTransactionAmountByCardNumberE
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransactionAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransactionAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyTransactionAmountByCardNumberError(
@@ -95,7 +95,7 @@ func (c *cardStatisticByNumberError) HandleYearlyTransactionAmountByCardNumberEr
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransactionAmountByCard, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransactionAmountByCard, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleMonthlyTransferAmountBySenderError(
@@ -105,7 +105,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyTransferAmountBySenderError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransferAmountBySender, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransferAmountBySender, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyTransferAmountBySenderError(
@@ -115,7 +115,7 @@ func (c *cardStatisticByNumberError) HandleYearlyTransferAmountBySenderError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransferAmountBySender, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransferAmountBySender, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleMonthlyTransferAmountByReceiverError(
@@ -125,7 +125,7 @@ func (c *cardStatisticByNumberError) HandleMonthlyTransferAmountByReceiverError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransferAmountByReceiver, fields...)
+	return handleErrorRepository[[]*response.CardResponseMonthAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindMonthlyTransferAmountByReceiver, fields...)
 }
 
 func (c *cardStatisticByNumberError) HandleYearlyTransferAmountByReceiverError(
@@ -135,5 +135,5 @@ func (c *cardStatisticByNumberError) HandleYearlyTransferAmountByReceiverError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransferAmountByReceiver, fields...)
+	return handleErrorRepository[[]*response.CardResponseYearAmount](c.logger, err, method, tracePrefix, span, status, card_errors.ErrFailedFindYearlyTransferAmountByReceiver, fields...)
 }
