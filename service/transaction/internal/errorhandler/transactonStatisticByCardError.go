@@ -23,7 +23,7 @@ func (e *transactionStatisticByCardError) HandleMonthTransactionStatusSuccessByC
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponseMonthStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseMonthStatusSuccess](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionSuccessByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseMonthStatusSuccess](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionSuccessByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleYearlyTransactionStatusSuccessByCardNumberError(
@@ -33,7 +33,7 @@ func (e *transactionStatisticByCardError) HandleYearlyTransactionStatusSuccessBy
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponseYearStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseYearStatusSuccess](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionSuccessByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseYearStatusSuccess](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionSuccessByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleMonthTransactionStatusFailedByCardNumberError(
@@ -43,7 +43,7 @@ func (e *transactionStatisticByCardError) HandleMonthTransactionStatusFailedByCa
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponseMonthStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseMonthStatusFailed](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionFailedByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseMonthStatusFailed](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionFailedByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleYearlyTransactionStatusFailedByCardNumberError(
@@ -53,7 +53,7 @@ func (e *transactionStatisticByCardError) HandleYearlyTransactionStatusFailedByC
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponseYearStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseYearStatusFailed](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionFailedByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseYearStatusFailed](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionFailedByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleMonthlyPaymentMethodsByCardNumberError(
@@ -63,7 +63,7 @@ func (e *transactionStatisticByCardError) HandleMonthlyPaymentMethodsByCardNumbe
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionMonthMethodResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionMonthMethodResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyPaymentMethodsByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionMonthMethodResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyPaymentMethodsByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleYearlyPaymentMethodsByCardNumberError(
@@ -73,7 +73,7 @@ func (e *transactionStatisticByCardError) HandleYearlyPaymentMethodsByCardNumber
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionYearMethodResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionYearMethodResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyPaymentMethodsByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionYearMethodResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyPaymentMethodsByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleMonthlyAmountsByCardNumberError(
@@ -83,7 +83,7 @@ func (e *transactionStatisticByCardError) HandleMonthlyAmountsByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionMonthAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionMonthAmountResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyAmountsByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionMonthAmountResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyAmountsByCard, fields...)
 }
 
 func (e *transactionStatisticByCardError) HandleYearlyAmountsByCardNumberError(
@@ -93,5 +93,5 @@ func (e *transactionStatisticByCardError) HandleYearlyAmountsByCardNumberError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionYearlyAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionYearlyAmountResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyAmountsByCard, fields...)
+	return handleErrorRepository[[]*response.TransactionYearlyAmountResponse](e.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyAmountsByCard, fields...)
 }

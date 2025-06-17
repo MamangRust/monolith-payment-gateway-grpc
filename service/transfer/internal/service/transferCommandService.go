@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -91,48 +92,36 @@ func NewTransferCommandService(
 }
 
 func (s *transferCommandService) CreateTransaction(request *requests.CreateTransferRequest) (*response.TransferResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "CreateTransacton"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("CreateTransaction", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "CreateTransaction")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("transfer_from", request.TransferFrom),
-		attribute.String("transfer_to", request.TransferTo),
-		attribute.Float64("transfer_amount", float64(request.TransferAmount)),
-	)
-
-	s.logger.Debug("Starting create transaction process",
-		zap.Any("request", request),
-	)
 
 	card, err := s.cardRepository.FindUserCardByCardNumber(request.TransferFrom)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindUserCardByCardNumber", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.String("card_number", request.TransferFrom))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
 	_, err = s.cardRepository.FindCardByCardNumber(request.TransferTo)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindCardByCardNumber", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.String("card_number", request.TransferTo))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
 	senderSaldo, err := s.saldoRepository.FindByCardNumber(request.TransferFrom)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindByCardNumber", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.String("card_number", request.TransferFrom))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	receiverSaldo, err := s.saldoRepository.FindByCardNumber(request.TransferTo)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindByCardNumber", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.String("card_number", request.TransferTo))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	if senderSaldo.TotalBalance < request.TransferAmount {
-		return s.errorhandler.HandleSenderInsufficientBalanceError(err, "FindByCardNumber", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, request.TransferFrom, zap.String("card_number", request.TransferFrom))
+		return s.errorhandler.HandleSenderInsufficientBalanceError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, request.TransferFrom, zap.Error(err))
 	}
 
 	senderSaldo.TotalBalance -= request.TransferAmount
@@ -141,7 +130,7 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 		TotalBalance: senderSaldo.TotalBalance,
 	})
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.TransferFrom))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	receiverSaldo.TotalBalance += request.TransferAmount
@@ -156,10 +145,10 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 			TotalBalance: senderSaldo.TotalBalance,
 		})
 		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "UpdateSaldoBalance", "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.TransferFrom))
+			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.TransferTo))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	transfer, err := s.transferCommandRepository.CreateTransfer(request)
@@ -172,7 +161,7 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 			TotalBalance: senderSaldo.TotalBalance,
 		})
 		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "UpdateSaldoBalance", "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.TransferFrom))
+			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		_, rollbackErr = s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
@@ -180,17 +169,17 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 			TotalBalance: receiverSaldo.TotalBalance,
 		})
 		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "UpdateSaldoBalance", "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.TransferTo))
+			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		if _, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
 			TransferID: transfer.ID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(transfer.ID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleCreateTransferError(err, "CreateTransfer", "FAILED_CREATE_TRANSFER", span, &status, zap.Int32("transfer_id", int32(transfer.ID)))
+		return s.errorhandler.HandleCreateTransferError(err, method, "FAILED_CREATE_TRANSFER", span, &status, zap.Error(err))
 	}
 
 	res, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
@@ -199,7 +188,7 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 	})
 
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(transfer.ID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -217,45 +206,33 @@ func (s *transferCommandService) CreateTransaction(request *requests.CreateTrans
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		return errorhandler.HandleErrorJSONMarshal[*response.TransferResponse](s.logger, err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(transfer.ID)))
+		return errorhandler.HandleErrorMarshal[*response.TransferResponse](s.logger, err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-transfer-create", strconv.Itoa(res.ID), payloadBytes)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "SendMessage", "FAILED_SEND_EMAIL", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(transfer.ID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_SEND_EMAIL", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransferResponse(transfer)
 
-	s.logger.Debug("successfully create transaction",
-		zap.Int("transfer_id", transfer.ID),
-	)
+	logSuccess("Transfer created successfully", zap.Bool("success", true))
 
 	return so, nil
 }
 
 func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTransferRequest) (*response.TransferResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "UpdateTransaction"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("UpdateTransaction", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "UpdateTransaction")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("transfer_id", *request.TransferID),
-	)
-
-	s.logger.Debug("Starting update transaction process",
-		zap.Int("transfer_id", *request.TransferID),
-	)
 
 	transfer, err := s.transferQueryRepository.FindById(*request.TransferID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_TRANSFER", span, &status, transfer_errors.ErrTransferNotFound, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_TRANSFER", span, &status, transfer_errors.ErrTransferNotFound, zap.Error(err))
 	}
 
 	amountDifference := request.TransferAmount - transfer.TransferAmount
@@ -266,7 +243,7 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
 		return nil, saldo_errors.ErrFailedSaldoNotFound
@@ -279,10 +256,10 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleSenderInsufficientBalanceError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, senderSaldo.CardNumber, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleSenderInsufficientBalanceError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, senderSaldo.CardNumber, zap.Error(err))
 	}
 
 	senderSaldo.TotalBalance = newSenderBalance
@@ -295,10 +272,10 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	receiverSaldo, err := s.saldoRepository.FindByCardNumber(transfer.TransferTo)
@@ -309,17 +286,17 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 		}
 		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(rollbackSenderBalance)
 		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		if _, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	newReceiverBalance := receiverSaldo.TotalBalance + amountDifference
@@ -339,17 +316,17 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 		}
 
 		if _, err := s.saldoRepository.UpdateSaldoBalance(rollbackSenderBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 		if _, err := s.saldoRepository.UpdateSaldoBalance(rollbackReceiverBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		if _, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
 		return nil, saldo_errors.ErrFailedUpdateSaldo
@@ -367,187 +344,181 @@ func (s *transferCommandService) UpdateTransaction(request *requests.UpdateTrans
 		}
 
 		if _, err := s.saldoRepository.UpdateSaldoBalance(rollbackSenderBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 		if _, err := s.saldoRepository.UpdateSaldoBalance(rollbackReceiverBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateSaldoBalance", "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		if _, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
 			TransferID: *request.TransferID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransfer", "FAILED_UPDATE_TRANSFER", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 	}
 
 	if _, err := s.transferCommandRepository.UpdateTransferStatus(&requests.UpdateTransferStatus{
 		TransferID: *request.TransferID,
 		Status:     "success",
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "UpdateTransferStatus", "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Int32("transfer_id", int32(*request.TransferID)))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransferResponse(updatedTransfer)
 
 	s.mencache.DeleteTransferCache(*request.TransferID)
 
-	s.logger.Debug("successfully update transaction",
-		zap.Int("transfer_id", *request.TransferID),
-	)
+	logSuccess("Successfully update transfer", zap.Int("transfer.id", *request.TransferID))
 
 	return so, nil
 }
 
 func (s *transferCommandService) TrashedTransfer(transfer_id int) (*response.TransferResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "TrashedTransfer"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("TrashedTransfer", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "TrashedTransfer")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("transfer_id", transfer_id),
-	)
-
-	s.logger.Debug("Starting trashed transfer process",
-		zap.Int("transfer_id", transfer_id),
-	)
 
 	res, err := s.transferCommandRepository.TrashedTransfer(transfer_id)
 
 	if err != nil {
-		return s.errorhandler.HandleTrashedTransferError(err, "TrashedTransfer", "FAILED_TRASHED_TRANSFER", span, &status, zap.Int("transfer_id", transfer_id))
+		return s.errorhandler.HandleTrashedTransferError(err, method, "FAILED_TRASHED_TRANSFER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransferResponse(res)
 
 	s.mencache.DeleteTransferCache(transfer_id)
 
-	s.logger.Debug("successfully trashed transfer",
-		zap.Int("transfer_id", transfer_id),
+	logSuccess("Successfully trashed transfer",
+		zap.Int("transfer.id", transfer_id),
 	)
 
 	return so, nil
 }
 
 func (s *transferCommandService) RestoreTransfer(transfer_id int) (*response.TransferResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreTransfer"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreTransfer", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreTransfer")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("transfer_id", transfer_id),
-	)
-
-	s.logger.Debug("Starting restore transfer process",
-		zap.Int("transfer_id", transfer_id),
-	)
 
 	res, err := s.transferCommandRepository.RestoreTransfer(transfer_id)
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreTransferError(err, "RestoreTransfer", "FAILED_RESTORE_TRANSFER", span, &status, zap.Int("transfer_id", transfer_id))
+		return s.errorhandler.HandleRestoreTransferError(err, method, "FAILED_RESTORE_TRANSFER", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToTransferResponse(res)
 
-	s.logger.Debug("successfully restore transfer",
-		zap.Int("transfer_id", transfer_id),
-	)
+	logSuccess("RestoreTransfer process completed", zap.Int("transfer.id", transfer_id))
 
 	return so, nil
 }
 
 func (s *transferCommandService) DeleteTransferPermanent(transfer_id int) (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteTransferPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteTransferPermanent", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteTransferPermanent")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("transfer_id", transfer_id),
-	)
-
-	s.logger.Debug("Starting delete transfer permanent process",
-		zap.Int("transfer_id", transfer_id),
-	)
 
 	_, err := s.transferCommandRepository.DeleteTransferPermanent(transfer_id)
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteTransferPermanentError(err, "DeleteTransferPermanent", "FAILED_DELETE_TRANSFER_PERMANENT", span, &status, zap.Int("transfer_id", transfer_id))
+		return s.errorhandler.HandleDeleteTransferPermanentError(err, method, "FAILED_DELETE_TRANSFER_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("successfully delete permanent transfer",
-		zap.Int("transfer_id", transfer_id),
-	)
+	logSuccess("DeleteTransferPermanent process completed", zap.Int("transfer.id", transfer_id))
 
 	return true, nil
 }
 
 func (s *transferCommandService) RestoreAllTransfer() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreAllTransfer"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreAllTransfer", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreAllTransfer")
-	defer span.End()
-
-	s.logger.Debug("Restoring all transfers")
 
 	_, err := s.transferCommandRepository.RestoreAllTransfer()
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllTransferError(err, "RestoreAllTransfer", "FAILED_RESTORE_ALL_TRANSFERS", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRestoreAllTransferError(err, method, "FAILED_RESTORE_ALL_TRANSFERS", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully restored all transfers")
+	logSuccess("RestoreAllTransfer process completed", zap.Bool("success", true))
 
 	return true, nil
 }
 
 func (s *transferCommandService) DeleteAllTransferPermanent() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteAllTransferPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteAllTransferPermanent", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteAllTransferPermanent")
-	defer span.End()
-
-	s.logger.Debug("Permanently deleting all transfers")
 
 	_, err := s.transferCommandRepository.DeleteAllTransferPermanent()
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllTransferPermanentError(err, "DeleteAllTransferPermanent", "FAILED_DELETE_ALL_TRANSFER_PERMANENT", span, &status, zap.Error(err))
+		return s.errorhandler.HandleDeleteAllTransferPermanentError(err, method, "FAILED_DELETE_ALL_TRANSFER_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted all transfers permanently")
+	logSuccess("DeleteAllTransferPermanent process completed", zap.Bool("success", true))
+
 	return true, nil
+}
+
+func (s *transferCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *transferCommandService) recordMetrics(method string, status string, start time.Time) {

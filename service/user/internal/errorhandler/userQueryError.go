@@ -23,7 +23,7 @@ func (u *userQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.UserResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorPagination[[]*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -33,7 +33,7 @@ func (u *userQueryError) HandleRepositoryPaginationDeleteAtError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorPagination[[]*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userQueryError) HandleRepositorySingleError(
@@ -44,5 +44,5 @@ func (u *userQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }

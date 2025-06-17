@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -85,37 +86,28 @@ func NewWithdrawCommandService(ctx context.Context, errorhandler errorhandler.Wi
 }
 
 func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest) (*response.WithdrawResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "CreateWithdraw"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("CreateWithdraw", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "CreateWithdraw")
-
-	defer span.End()
-
-	s.logger.Debug("Creating new withdraw", zap.Any("request", request))
-
-	span.SetAttributes(
-		attribute.String("card_number", request.CardNumber),
-	)
 
 	card, err := s.cardRepository.FindUserCardByCardNumber(request.CardNumber)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
 	saldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedFindSaldoByCardNumber, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedFindSaldoByCardNumber, zap.Error(err))
 	}
 
 	if saldo.TotalBalance < request.WithdrawAmount {
-		return s.errorhandler.HandleInsufficientBalanceError(err, "CreateWithdraw", "INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleInsufficientBalanceError(err, method, "INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.Error(err))
 	}
 	newTotalBalance := saldo.TotalBalance - request.WithdrawAmount
 	updateData := &requests.UpdateSaldoWithdraw{
@@ -126,7 +118,7 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 	}
 	_, err = s.saldoRepository.UpdateSaldoWithdraw(updateData)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 	withdrawRecord, err := s.withdrawCommandRepository.CreateWithdraw(request)
 	if err != nil {
@@ -137,22 +129,22 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 			WithdrawTime:   &request.WithdrawTime,
 		}
 		if _, rollbackErr := s.saldoRepository.UpdateSaldoWithdraw(rollbackData); rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, "CreateWithdraw", "FAILED_ROLLBACK_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.String("card_number", request.CardNumber))
+			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 		if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 			WithdrawID: withdrawRecord.ID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw)
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleCreateWithdrawError(err, "CreateWithdraw", "FAILED_CREATE_WITHDRAW", span, &status, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleCreateWithdrawError(err, method, "FAILED_CREATE_WITHDRAW", span, &status, zap.Error(err))
 	}
 	if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 		WithdrawID: withdrawRecord.ID,
 		Status:     "success",
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "CreateWithdraw", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw)
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, withdraw_errors.ErrFailedUpdateWithdraw, zap.Error(err))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{
@@ -170,44 +162,42 @@ func (s *withdrawCommandService) Create(request *requests.CreateWithdrawRequest)
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		return errorhandler.HandleErrorMarshal[*response.WithdrawResponse](s.logger, err, "CreateWithdraw", "FAILED_MARSHAL_EMAIL_PAYLOAD", span, &status, withdraw_errors.ErrFailedSendEmail)
+		return errorhandler.HandleErrorMarshal[*response.WithdrawResponse](s.logger, err, method, "FAILED_MARSHAL_EMAIL_PAYLOAD", span, &status, withdraw_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
 	err = s.kafka.SendMessage("email-service-topic-withdraw-create", strconv.Itoa(withdrawRecord.ID), payloadBytes)
 	if err != nil {
-		return errorhandler.HandleErrorKafkaSend[*response.WithdrawResponse](s.logger, err, "CreateWithdraw", "FAILED_SEND_EMAIL", span, &status, withdraw_errors.ErrFailedSendEmail)
+		return errorhandler.HandleErrorKafkaSend[*response.WithdrawResponse](s.logger, err, method, "FAILED_SEND_EMAIL", span, &status, withdraw_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
 	so := s.mapping.ToWithdrawResponse(withdrawRecord)
-	s.logger.Debug("Successfully created withdraw", zap.Int("withdraw_id", withdrawRecord.ID))
+
+	logSuccess("Successfully created withdraw", zap.Int("withdraw.id", withdrawRecord.ID))
+
 	return so, nil
 }
 
 func (s *withdrawCommandService) Update(request *requests.UpdateWithdrawRequest) (*response.WithdrawResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "UpdateWithdraw"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("Update", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "Update")
-	defer span.End()
-
-	s.logger.Debug("Updating withdraw", zap.Int("withdraw_id", *request.WithdrawID), zap.Any("request", request))
 
 	_, err := s.withdrawQueryRepository.FindById(*request.WithdrawID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_FIND_WITHDRAW", span, &status, withdraw_errors.ErrWithdrawNotFound)
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_WITHDRAW", span, &status, withdraw_errors.ErrWithdrawNotFound)
 	}
 
 	saldo, err := s.saldoRepository.FindByCardNumber(request.CardNumber)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound)
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
 	}
 
 	if saldo.TotalBalance < request.WithdrawAmount {
-		return s.errorhandler.HandleInsufficientBalanceError(err, "Update", "FAILED_INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.Int("withdraw_amount", request.WithdrawAmount))
+		return s.errorhandler.HandleInsufficientBalanceError(err, method, "FAILED_INSUFFICIENT_BALANCE", span, &status, request.CardNumber, zap.Error(err))
 	}
 
 	newTotalBalance := saldo.TotalBalance - request.WithdrawAmount
@@ -224,10 +214,10 @@ func (s *withdrawCommandService) Update(request *requests.UpdateWithdrawRequest)
 			WithdrawID: *request.WithdrawID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
+			return s.errorhandler.HandleUpdateWithdrawError(err, method, "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleRepositorySingleError(err, "Update", "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo)
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	updatedWithdraw, err := s.withdrawCommandRepository.UpdateWithdraw(request)
@@ -238,168 +228,175 @@ func (s *withdrawCommandService) Update(request *requests.UpdateWithdrawRequest)
 		}
 		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(rollbackData)
 		if rollbackErr != nil {
-			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_ROLLBACK_SALDO", span, &status, zap.String("card_number", request.CardNumber))
+			return s.errorhandler.HandleUpdateWithdrawError(err, method, "FAILED_ROLLBACK_SALDO", span, &status, zap.Error(err))
 		}
 		if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 			WithdrawID: *request.WithdrawID,
 			Status:     "failed",
 		}); err != nil {
-			return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
+			return s.errorhandler.HandleUpdateWithdrawError(err, method, "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.Error(err))
 		}
 
-		return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW", span, &status, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleUpdateWithdrawError(err, method, "FAILED_UPDATE_WITHDRAW", span, &status, zap.Error(err))
 	}
 
 	if _, err := s.withdrawCommandRepository.UpdateWithdrawStatus(&requests.UpdateWithdrawStatus{
 		WithdrawID: updatedWithdraw.ID,
 		Status:     "success",
 	}); err != nil {
-		return s.errorhandler.HandleUpdateWithdrawError(err, "Update", "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.String("card_number", request.CardNumber))
+		return s.errorhandler.HandleUpdateWithdrawError(err, method, "FAILED_UPDATE_WITHDRAW_STATUS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToWithdrawResponse(updatedWithdraw)
 
 	s.mencache.DeleteCachedWithdrawCache(*request.WithdrawID)
 
-	s.logger.Debug("Successfully updated withdraw", zap.Int("withdraw_id", so.ID))
+	logSuccess("Successfully updated withdraw", zap.Int("withdraw.id", updatedWithdraw.ID))
 
 	return so, nil
 }
 
 func (s *withdrawCommandService) TrashedWithdraw(withdraw_id int) (*response.WithdrawResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "TrashedWithdraw"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("TrashedWithdraw", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "TrashedWithdraw")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("withdraw_id", withdraw_id),
-	)
-
-	s.logger.Debug("Trashing withdraw", zap.Int("withdraw_id", withdraw_id))
 
 	res, err := s.withdrawCommandRepository.TrashedWithdraw(withdraw_id)
 
 	if err != nil {
-		return s.errorhandler.HandleTrashedWithdrawError(err, "TrashedWithdraw", "FAILED_TRASHED_WITHDRAW", span, &status, zap.Int("withdraw_id", withdraw_id))
+		return s.errorhandler.HandleTrashedWithdrawError(err, method, "FAILED_TRASHED_WITHDRAW", span, &status, zap.Error(err))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawResponse(res)
 
 	s.mencache.DeleteCachedWithdrawCache(withdraw_id)
 
-	s.logger.Debug("Successfully trashed withdraw", zap.Int("withdraw_id", withdraw_id))
+	logSuccess("Successfully trashed withdraw", zap.Int("withdraw.id", withdraw_id))
 
 	return withdrawResponse, nil
 }
 
 func (s *withdrawCommandService) RestoreWithdraw(withdraw_id int) (*response.WithdrawResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreWithdraw"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreWithdraw", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreWithdraw")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("withdraw_id", withdraw_id),
-	)
-
-	s.logger.Debug("Restoring withdraw", zap.Int("withdraw_id", withdraw_id))
 
 	res, err := s.withdrawCommandRepository.RestoreWithdraw(withdraw_id)
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreWithdrawError(err, "RestoreWithdraw", "FAILED_RESTORE_WITHDRAW", span, &status, zap.Int("withdraw_id", withdraw_id))
+		return s.errorhandler.HandleRestoreWithdrawError(err, method, "FAILED_RESTORE_WITHDRAW", span, &status, zap.Error(err))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawResponse(res)
 
-	s.logger.Debug("Successfully restored withdraw", zap.Int("withdraw_id", withdraw_id))
+	logSuccess("Successfully restored withdraw", zap.Int("withdraw.id", withdraw_id))
 
 	return withdrawResponse, nil
 }
 
 func (s *withdrawCommandService) DeleteWithdrawPermanent(withdraw_id int) (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteWithdrawPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteWithdrawPermanent", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteWithdrawPermanent")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("withdraw_id", withdraw_id),
-	)
-
-	s.logger.Debug("Deleting withdraw permanently", zap.Int("withdraw_id", withdraw_id))
 
 	_, err := s.withdrawCommandRepository.DeleteWithdrawPermanent(withdraw_id)
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteWithdrawPermanentError(err, "DeleteWithdrawPermanent", "FAILED_DELETE_WITHDRAW_PERMANENT", span, &status, zap.Int("withdraw_id", withdraw_id))
+		return s.errorhandler.HandleDeleteWithdrawPermanentError(err, method, "FAILED_DELETE_WITHDRAW_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted withdraw permanently", zap.Int("withdraw_id", withdraw_id))
+	logSuccess("Successfully deleted withdraw permanent", zap.Int("withdraw.id", withdraw_id))
 
 	return true, nil
 }
 
 func (s *withdrawCommandService) RestoreAllWithdraw() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "RestoreAllWithdraw"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("RestoreAllWithdraw", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "RestoreAllWithdraw")
-	defer span.End()
-
-	s.logger.Debug("Restoring all withdraws")
 
 	_, err := s.withdrawCommandRepository.RestoreAllWithdraw()
 
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllWithdrawError(err, "RestoreAllWithdraw", "FAILED_RESTORE_ALL_WITHDRAW", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRestoreAllWithdrawError(err, method, "FAILED_RESTORE_ALL_WITHDRAW", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully restored all withdraws")
+	logSuccess("Successfully restored all withdraws", zap.Bool("success", true))
+
 	return true, nil
 }
 
 func (s *withdrawCommandService) DeleteAllWithdrawPermanent() (bool, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "DeleteAllWithdrawPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
 
 	defer func() {
-		s.recordMetrics("DeleteAllWithdrawPermanent", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "DeleteAllWithdrawPermanent")
-	defer span.End()
-
-	s.logger.Debug("Permanently deleting all withdraws")
 
 	_, err := s.withdrawCommandRepository.DeleteAllWithdrawPermanent()
 
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllWithdrawPermanentError(err, "DeleteAllWithdrawPermanent", "FAILED_DELETE_ALL_WITHDRAW_PERMANENT", span, &status, zap.Error(err))
+		return s.errorhandler.HandleDeleteAllWithdrawPermanentError(err, method, "FAILED_DELETE_ALL_WITHDRAW_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	s.logger.Debug("Successfully deleted all withdraws permanently")
+	logSuccess("Successfully deleted all withdraw permanent", zap.Bool("success", true))
+
 	return true, nil
+}
+
+func (s *withdrawCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *withdrawCommandService) recordMetrics(method string, status string, start time.Time) {

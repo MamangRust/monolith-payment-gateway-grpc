@@ -25,7 +25,7 @@ func (w *withdrawQueryError) HandleRepositoryPaginationError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.WithdrawResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.WithdrawResponse](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.WithdrawResponse](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (w *withdrawQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -36,7 +36,7 @@ func (w *withdrawQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.WithdrawResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.WithdrawResponseDeleteAt](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.WithdrawResponseDeleteAt](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (w *withdrawQueryError) HandleRepositorySingleError(
@@ -47,5 +47,5 @@ func (w *withdrawQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.WithdrawResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.WithdrawResponse](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.WithdrawResponse](w.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }

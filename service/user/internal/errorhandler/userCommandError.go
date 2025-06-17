@@ -23,7 +23,7 @@ func (u *userCommandError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (u *userCommandError) HandleCreateUserError(
@@ -33,7 +33,7 @@ func (u *userCommandError) HandleCreateUserError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleUpdateUserError(
@@ -43,7 +43,7 @@ func (u *userCommandError) HandleUpdateUserError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.UserResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[*response.UserResponse](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleTrashedUserError(
@@ -53,7 +53,7 @@ func (u *userCommandError) HandleTrashedUserError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.UserResponseDeleteAt, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleRestoreUserError(
@@ -63,7 +63,7 @@ func (u *userCommandError) HandleRestoreUserError(
 	status *string,
 	fields ...zap.Field,
 ) (*response.UserResponseDeleteAt, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[*response.UserResponseDeleteAt](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleDeleteUserError(
@@ -73,7 +73,7 @@ func (u *userCommandError) HandleDeleteUserError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleRestoreAllUserError(
@@ -83,7 +83,7 @@ func (u *userCommandError) HandleRestoreAllUserError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }
 
 func (u *userCommandError) HandleDeleteAllUserError(
@@ -93,5 +93,5 @@ func (u *userCommandError) HandleDeleteAllUserError(
 	status *string,
 	fields ...zap.Field,
 ) (bool, *response.ErrorResponse) {
-	return handleErrorTemplate[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
+	return handleErrorRepository[bool](u.logger, err, method, tracePrefix, span, status, user_errors.ErrUserNotFoundRes, fields...)
 }

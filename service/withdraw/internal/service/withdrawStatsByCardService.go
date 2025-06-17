@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -70,236 +71,230 @@ func NewWithdrawStatisticByCardService(
 }
 
 func (s *withdrawStatisticByCardService) FindMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusSuccess, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindMonthWithdrawStatusSuccessByCardNumber", status, start)
-	}()
-	_, span := s.trace.Start(s.ctx, "FindMonthWithdrawStatusSuccessByCardNumber")
-	defer span.End()
-
 	year := req.Year
 	month := req.Month
 	cardNumber := req.CardNumber
 
-	span.SetAttributes(
-		attribute.Int("year", year),
-		attribute.Int("month", month),
-		attribute.String("card_number", cardNumber),
-	)
+	const method = "FindMonthWithdrawStatusSuccessByCardNumber"
 
-	s.logger.Debug("Fetching monthly Withdraw status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("month", month), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data := s.mencache.GetCachedMonthWithdrawStatusSuccessByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched monthly withdraw status success from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
+		logSuccess("Cache hit for monthly withdraw status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return data, nil
 	}
 
 	records, err := s.withdrawStatisticByCardRepository.GetMonthWithdrawStatusSuccessByCardNumber(req)
 	if err != nil {
-		return s.errorhandler.HandleMonthWithdrawStatusSuccessByCardNumberError(err, "FindMonthWithdrawStatusSuccessByCardNumber", "FAILED_GET_MONTH_WITHDRAW_STATUS_SUCCESS_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleMonthWithdrawStatusSuccessByCardNumberError(err, method, "FAILED_GET_MONTH_WITHDRAW_STATUS_SUCCESS_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToWithdrawResponsesMonthStatusSuccess(records)
 
 	s.mencache.SetCachedMonthWithdrawStatusSuccessByCardNumber(req, responseData)
 
-	s.logger.Debug("Successfully fetched monthly withdraw status success",
-		zap.Int("year", year),
-		zap.Int("month", month),
-		zap.String("card_number", cardNumber),
-		zap.Int("total_records", len(responseData)))
+	logSuccess("Successfully fetched monthly withdraw status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 
 	return responseData, nil
 }
 
 func (s *withdrawStatisticByCardService) FindYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusSuccess, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindYearlyWithdrawStatusSuccessByCardNumber", status, start)
-	}()
-	_, span := s.trace.Start(s.ctx, "FindYearlyWithdrawStatusSuccessByCardNumber")
-	defer span.End()
 
 	year := req.Year
 	cardNumber := req.CardNumber
 
+	const method = "FindYearlyWithdrawStatusSuccessByCardNumber"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
+
 	if data := s.mencache.GetCachedYearlyWithdrawStatusSuccessByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched yearly withdraw status success from cache", zap.Int("year", year), zap.String("card_number", cardNumber))
+		logSuccess("Cache hit for yearly withdraw status success", zap.Int("year", year), zap.String("card_number", cardNumber))
 		return data, nil
 	}
 
 	records, err := s.withdrawStatisticByCardRepository.GetYearlyWithdrawStatusSuccessByCardNumber(req)
 	if err != nil {
-		return s.errorhandler.HandleYearWithdrawStatusSuccessByCardNumberError(err, "FindYearlyWithdrawStatusSuccessByCardNumber", "FAILED_GET_YEARLY_WITHDRAW_STATUS_SUCCESS_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleYearWithdrawStatusSuccessByCardNumberError(err, method, "FAILED_GET_YEARLY_WITHDRAW_STATUS_SUCCESS_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToWithdrawResponsesYearStatusSuccess(records)
 
 	s.mencache.SetCachedYearlyWithdrawStatusSuccessByCardNumber(req, responseData)
 
-	s.logger.Debug("Successfully fetched yearly withdraw status success",
-		zap.Int("year", year),
-		zap.String("card_number", cardNumber),
-		zap.Int("total_records", len(responseData)))
+	logSuccess("Successfully fetched yearly withdraw status success", zap.Int("year", year), zap.String("card_number", cardNumber))
 
 	return responseData, nil
 }
 
 func (s *withdrawStatisticByCardService) FindMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusFailed, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindMonthWithdrawStatusFailedByCardNumber", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthWithdrawStatusFailedByCardNumber")
-	defer span.End()
-
 	year := req.Year
 	month := req.Month
 	cardNumber := req.CardNumber
 
-	span.SetAttributes(
-		attribute.Int("year", year),
-		attribute.Int("month", month),
-		attribute.String("card_number", cardNumber),
-	)
+	const method = "FindMonthWithdrawStatusFailedByCardNumber"
 
-	s.logger.Debug("Fetching monthly Withdraw status failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("month", month), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data := s.mencache.GetCachedMonthWithdrawStatusFailedByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched monthly withdraw status failed from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
+		logSuccess("Cache hit for monthly withdraw status failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return data, nil
 	}
 
 	records, err := s.withdrawStatisticByCardRepository.GetMonthWithdrawStatusFailedByCardNumber(req)
 	if err != nil {
-		return s.errorhandler.HandleMonthWithdrawStatusFailedByCardNumberError(err, "FindMonthWithdrawStatusFailedByCardNumber", "FAILED_GET_MONTH_WITHDRAW_STATUS_FAILED_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleMonthWithdrawStatusFailedByCardNumberError(err, method, "FAILED_GET_MONTH_WITHDRAW_STATUS_FAILED_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToWithdrawResponsesMonthStatusFailed(records)
 
 	s.mencache.SetCachedMonthWithdrawStatusFailedByCardNumber(req, responseData)
 
+	logSuccess("Successfully fetched monthly withdraw status failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
+
 	return responseData, nil
 }
 
 func (s *withdrawStatisticByCardService) FindYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusFailed, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindYearlyWithdrawStatusFailedByCardNumber", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindYearlyWithdrawStatusFailedByCardNumber")
-	defer span.End()
-
 	year := req.Year
 	cardNumber := req.CardNumber
 
-	span.SetAttributes(
-		attribute.Int("year", year),
-		attribute.String("card_number", cardNumber),
-	)
+	const method = "FindYearlyWithdrawStatusFailedByCardNumber"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data := s.mencache.GetCachedYearlyWithdrawStatusFailedByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched yearly withdraw status failed from cache", zap.Int("year", year), zap.String("card_number", cardNumber))
+		logSuccess("Cache hit for yearly withdraw status failed", zap.Int("year", year), zap.String("card_number", cardNumber))
 		return data, nil
 	}
 
-	s.logger.Debug("Fetching yearly Withdraw status failed", zap.Int("year", year), zap.String("card_number", cardNumber))
-
 	records, err := s.withdrawStatisticByCardRepository.GetYearlyWithdrawStatusFailedByCardNumber(req)
 	if err != nil {
-		return s.errorhandler.HandleYearWithdrawStatusFailedByCardNumberError(err, "FindYearlyWithdrawStatusFailedByCardNumber", "FAILED_GET_YEARLY_WITHDRAW_STATUS_FAILED_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleYearWithdrawStatusFailedByCardNumberError(err, method, "FAILED_GET_YEARLY_WITHDRAW_STATUS_FAILED_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseData := s.mapping.ToWithdrawResponsesYearStatusFailed(records)
 
 	s.mencache.SetCachedYearlyWithdrawStatusFailedByCardNumber(req, responseData)
 
+	logSuccess("Successfully fetched yearly withdraw status failed", zap.Int("year", year), zap.String("card_number", cardNumber))
+
 	return responseData, nil
 }
 
 func (s *withdrawStatisticByCardService) FindMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawMonthlyAmountResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindMonthlyWithdrawsByCardNumber", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindMonthlyWithdrawsByCardNumber")
-	defer span.End()
-
 	cardNumber := req.CardNumber
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("card_number", cardNumber),
-		attribute.Int("year", year),
-	)
+	const method = "FindMonthlyWithdrawsByCardNumber"
 
-	s.logger.Debug("Fetching monthly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data := s.mencache.GetCachedMonthlyWithdrawsByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched monthly withdraws by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		logSuccess("Cache hit for monthly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
 
 	withdraws, err := s.withdrawStatisticByCardRepository.GetMonthlyWithdrawsByCardNumber(req)
 	if err != nil {
-		return s.errorhandler.HandleMonthlyWithdrawsAmountByCardNumberError(err, "FindMonthlyWithdrawsByCardNumber", "FAILED_GET_MONTHLY_WITHDRAW_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleMonthlyWithdrawsAmountByCardNumberError(err, method, "FAILED_GET_MONTHLY_WITHDRAW_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseWithdraws := s.mapping.ToWithdrawsAmountMonthlyResponses(withdraws)
 
 	s.mencache.SetCachedMonthlyWithdrawsByCardNumber(req, responseWithdraws)
 
-	s.logger.Debug("Successfully fetched monthly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+	logSuccess("Successfully fetched monthly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 
 	return responseWithdraws, nil
 }
 
 func (s *withdrawStatisticByCardService) FindYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawYearlyAmountResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindYearlyWithdrawsByCardNumber", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindYearlyWithdrawsByCardNumber")
-	defer span.End()
-
 	cardNumber := req.CardNumber
 	year := req.Year
 
-	span.SetAttributes(
-		attribute.String("card_number", cardNumber),
-		attribute.Int("year", year),
-	)
+	const method = "FindYearlyWithdrawsByCardNumber"
 
-	s.logger.Debug("Fetching yearly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.String("card_number", cardNumber))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data := s.mencache.GetCachedYearlyWithdrawsByCardNumber(req); data != nil {
-		s.logger.Debug("Successfully fetched yearly withdraws by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
+		logSuccess("Cache hit for yearly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
 
 	withdraws, err := s.withdrawStatisticByCardRepository.GetYearlyWithdrawsByCardNumber(req)
 
 	if err != nil {
-		return s.errorhandler.HandleYearlyWithdrawsAmountByCardNumberError(err, "FindYearlyWithdrawsByCardNumber", "FAILED_GET_YEARLY_WITHDRAW_BY_CARD_NUMBER", span, &status, zap.Error(err))
+		return s.errorhandler.HandleYearlyWithdrawsAmountByCardNumberError(err, method, "FAILED_GET_YEARLY_WITHDRAW_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
 	responseWithdraws := s.mapping.ToWithdrawsAmountYearlyResponses(withdraws)
 
 	s.mencache.SetCachedYearlyWithdrawsByCardNumber(req, responseWithdraws)
 
+	logSuccess("Successfully fetched yearly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
+
 	return responseWithdraws, nil
+}
+
+func (s *withdrawStatisticByCardService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *withdrawStatisticByCardService) recordMetrics(method string, status string, start time.Time) {

@@ -25,7 +25,7 @@ func (t *transferQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransferResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, transfer_errors.ErrFailedFindAllTransfers, fields...)
+	return handleErrorPagination[[]*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, transfer_errors.ErrFailedFindAllTransfers, fields...)
 }
 
 func (t *transferQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -36,7 +36,7 @@ func (t *transferQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TransferResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TransferResponseDeleteAt](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.TransferResponseDeleteAt](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (t *transferQueryError) HandleRepositorySingleError(
@@ -47,7 +47,7 @@ func (t *transferQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.TransferResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (t *transferQueryError) HanldeRepositoryListError(
@@ -58,5 +58,5 @@ func (t *transferQueryError) HanldeRepositoryListError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TransferResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[[]*response.TransferResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }

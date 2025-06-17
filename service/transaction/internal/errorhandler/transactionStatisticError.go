@@ -17,33 +17,33 @@ func NewTransactionStatisticError(logger logger.LoggerInterface) *transactionSta
 }
 
 func (t *transactionStatisticError) HandleMonthTransactionStatusSuccessError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionResponseMonthStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseMonthStatusSuccess](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionSuccess, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseMonthStatusSuccess](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionSuccess, fields...)
 }
 
 func (t *transactionStatisticError) HandleYearlyTransactionStatusSuccessError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionResponseYearStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseYearStatusSuccess](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionSuccess, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseYearStatusSuccess](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionSuccess, fields...)
 }
 
 func (t *transactionStatisticError) HandleMonthTransactionStatusFailedError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionResponseMonthStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseMonthStatusFailed](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionFailed, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseMonthStatusFailed](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthTransactionFailed, fields...)
 }
 
 func (t *transactionStatisticError) HandleYearlyTransactionStatusFailedError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionResponseYearStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponseYearStatusFailed](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionFailed, fields...)
+	return handleErrorRepository[[]*response.TransactionResponseYearStatusFailed](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearTransactionFailed, fields...)
 }
 
 func (t *transactionStatisticError) HandleMonthlyPaymentMethodsError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionMonthMethodResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionMonthMethodResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyPaymentMethods, fields...)
+	return handleErrorRepository[[]*response.TransactionMonthMethodResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyPaymentMethods, fields...)
 }
 
 func (t *transactionStatisticError) HandleYearlyPaymentMethodsError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionYearMethodResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionYearMethodResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyPaymentMethods, fields...)
+	return handleErrorRepository[[]*response.TransactionYearMethodResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyPaymentMethods, fields...)
 }
 
 func (t *transactionStatisticError) HandleMonthlyAmountsError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionMonthAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionMonthAmountResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyAmounts, fields...)
+	return handleErrorRepository[[]*response.TransactionMonthAmountResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindMonthlyAmounts, fields...)
 }
 
 func (t *transactionStatisticError) HandleYearlyAmountsError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransactionYearlyAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionYearlyAmountResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyAmounts, fields...)
+	return handleErrorRepository[[]*response.TransactionYearlyAmountResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindYearlyAmounts, fields...)
 }

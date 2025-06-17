@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -66,216 +67,179 @@ func NewWithdrawQueryService(ctx context.Context, errorhandler errorhandler.With
 }
 
 func (s *withdrawQueryService) FindAll(req *requests.FindAllWithdraws) ([]*response.WithdrawResponse, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindAll", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAll")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindAll"
 
-	s.logger.Debug("Attempting to fetch withdraw list",
-		zap.Int("page", page),
-		zap.Int("page_size", pageSize),
-		zap.String("search", search),
-	)
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedWithdrawsCache(req); found {
-		s.logger.Debug("Successfully fetched withdraws from cache",
-			zap.Int("page", page),
-			zap.Int("page_size", pageSize),
-		)
+		logSuccess("Successfully retrieved all withdraw records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
 	withdraws, totalRecords, err := s.withdrawQueryRepository.FindAll(req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_ALL_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawsResponse(withdraws)
 
 	s.mencache.SetCachedWithdrawsCache(req, withdrawResponse, totalRecords)
 
-	s.logger.Debug("Withdraw list fetched successfully",
-		zap.Int("page", page),
-		zap.Int("page_size", pageSize),
-		zap.Int("total_records", *totalRecords),
-	)
+	logSuccess("Successfully retrieved all withdraw records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return withdrawResponse, totalRecords, nil
 }
 
 func (s *withdrawQueryService) FindAllByCardNumber(req *requests.FindAllWithdrawCardNumber) ([]*response.WithdrawResponse, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAllByCardNumber", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAllByCardNumber")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
-	cardNumber := req.CardNumber
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-		attribute.String("cardNumber", cardNumber),
-	)
+	const method = "FindAllByCardNumber"
 
-	s.logger.Debug("Fetching withdraw by card number",
-		zap.String("cardNumber", cardNumber),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedWithdrawByCardCache(req); found {
-		s.logger.Debug("Successfully fetched withdraw by card number from cache",
-			zap.String("cardNumber", cardNumber),
-			zap.Int("page", page),
-			zap.Int("pageSize", pageSize),
-		)
+		logSuccess("Successfully retrieved all withdraw records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
-
 	withdraws, totalRecords, err := s.withdrawQueryRepository.FindAllByCardNumber(req)
+
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAllByCardNumber", "FAILED_FIND_WITHDRAW_BY_CARD", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_WITHDRAW_BY_CARD", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawsResponse(withdraws)
 
 	s.mencache.SetCachedWithdrawByCardCache(req, withdrawResponse, totalRecords)
 
+	logSuccess("Successfully retrieved all withdraw records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
 	return withdrawResponse, totalRecords, nil
 }
 
 func (s *withdrawQueryService) FindById(withdrawID int) (*response.WithdrawResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "FindById"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("withdraw.id", withdrawID))
+
 	defer func() {
-		s.recordMetrics("FindById", status, start)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindById")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("withdraw_id", withdrawID))
-
-	s.logger.Debug("Initiating retrieval of withdraw data by ID", zap.Int("withdraw_id", withdrawID))
-
 	if data := s.mencache.GetCachedWithdrawCache(withdrawID); data != nil {
-		s.logger.Debug("Successfully retrieved withdraw data from cache", zap.Int("withdraw_id", withdrawID))
+		logSuccess("Successfully retrieved withdraw from cache", zap.Int("withdraw_id", withdrawID))
 		return data, nil
 	}
 
 	withdraw, err := s.withdrawQueryRepository.FindById(withdrawID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindById", "FAILED_FIND_WITHDRAW", span, &status, withdraw_errors.ErrWithdrawNotFound, zap.Int("withdraw_id", withdrawID))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_WITHDRAW", span, &status, withdraw_errors.ErrWithdrawNotFound, zap.Error(err))
 	}
 
 	withdrawResponse := s.mapping.ToWithdrawResponse(withdraw)
 
 	s.mencache.SetCachedWithdrawCache(withdrawResponse)
 
-	s.logger.Debug("Withdraw data retrieval completed successfully", zap.Int("withdraw_id", withdrawID))
+	logSuccess("Successfully retrieved withdraw", zap.Int("withdraw.id", withdrawID))
 
 	return withdrawResponse, nil
 }
 
 func (s *withdrawQueryService) FindByActive(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindByActive", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByActive")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByActive"
 
-	s.logger.Debug("Fetching active withdraw",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	withdraws, totalRecords, err := s.withdrawQueryRepository.FindByActive(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_ACTIVE_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
 	}
 
 	withdrawResponses := s.mapping.ToWithdrawsResponseDeleteAt(withdraws)
 
-	s.logger.Debug("Successfully fetched active withdraw",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved all withdraw records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return withdrawResponses, totalRecords, nil
 }
 
 func (s *withdrawQueryService) FindByTrashed(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindByTrashed", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByTrashed")
-	defer span.End()
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByTrashed"
 
-	s.logger.Debug("Fetching trashed withdraw",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
 
 	withdraws, totalRecords, err := s.withdrawQueryRepository.FindByTrashed(req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_WITHDRAW", span, &status, withdraw_errors.ErrFailedFindAllWithdraws, zap.Error(err))
 	}
 
 	withdrawResponses := s.mapping.ToWithdrawsResponseDeleteAt(withdraws)
 
-	s.logger.Debug("Successfully fetched trashed withdraw",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved all withdraw records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return withdrawResponses, totalRecords, nil
+}
+
+func (s *withdrawQueryService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *withdrawQueryService) normalizePagination(page, pageSize int) (int, int) {

@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -66,61 +67,44 @@ func NewUserQueryService(ctx context.Context, errorhandler errorhandler.UserQuer
 }
 
 func (s *userQueryService) FindAll(req *requests.FindAllUsers) ([]*response.UserResponse, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindAll", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindAll")
-	defer span.End()
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+	const method = "FindAll"
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
+	defer func() {
+		end(status)
+	}()
 	if data, total, found := s.mencache.GetCachedUsersCache(req); found {
+		logSuccess("Successfully retrieved all user records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
 		return data, total, nil
 	}
 
 	users, totalRecords, err := s.userQueryRepository.FindAllUsers(req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, "FindAll", "FAILED_FIND_ALL_USERS", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_USERS", span, &status, zap.Error(err))
 	}
 
 	userResponses := s.mapping.ToUsersResponse(users)
 
 	s.mencache.SetCachedUsersCache(req, userResponses, totalRecords)
 
-	s.logger.Debug("Successfully fetched users", zap.Int("total_records", *totalRecords))
+	logSuccess("Successfully retrieved all user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
 	return userResponses, totalRecords, nil
 }
 
 func (s *userQueryService) FindByID(id int) (*response.UserResponse, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
+	const method = "FindByID"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("user.id", id))
 
 	defer func() {
-		s.recordMetrics("FindByID", status, start)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByID")
-	defer span.End()
-	span.SetAttributes(attribute.Int("user_id", id))
 
 	if data := s.mencache.GetCachedUserCache(id); data != nil {
 		return data, nil
@@ -128,106 +112,61 @@ func (s *userQueryService) FindByID(id int) (*response.UserResponse, *response.E
 
 	user, err := s.userQueryRepository.FindById(id)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, "FindByID", "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Int("user_id", id))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
 	}
 
 	userRes := s.mapping.ToUserResponse(user)
 
 	s.mencache.SetCachedUserCache(userRes)
 
-	s.logger.Debug("Successfully fetched user", zap.Int("user_id", id))
+	logSuccess("Successfully retrieved user record", zap.Int("user.id", id))
+
 	return userRes, nil
 }
 
 func (s *userQueryService) FindByActive(req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindByActive", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByActive")
-	defer span.End()
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByActive"
 
-	s.logger.Debug("Fetching active user",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedUserActiveCache(req); found {
+		logSuccess("Successfully retrieved active user records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
 	users, totalRecords, err := s.userQueryRepository.FindByActive(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_USERS", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_ACTIVE_USERS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToUsersResponseDeleteAt(users)
 
 	s.mencache.SetCachedUserActiveCache(req, so, totalRecords)
 
-	s.logger.Debug("Successfully fetched active user",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved active user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
 func (s *userQueryService) FindByTrashed(req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
-	start := time.Now()
-	status := "success"
-
-	defer func() {
-		s.recordMetrics("FindByTrashed", status, start)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindByTrashed")
-	defer span.End()
-
-	page := req.Page
-	pageSize := req.PageSize
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span.SetAttributes(
-		attribute.Int("page", page),
-		attribute.Int("pageSize", pageSize),
-		attribute.String("search", search),
-	)
+	const method = "FindByTrashed"
 
-	s.logger.Debug("Fetching trashed user",
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize),
-		zap.String("search", search))
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+	defer func() {
+		end(status)
+	}()
 
 	if data, total, found := s.mencache.GetCachedUserTrashedCache(req); found {
 		return data, total, nil
@@ -236,17 +175,61 @@ func (s *userQueryService) FindByTrashed(req *requests.FindAllUsers) ([]*respons
 	users, totalRecords, err := s.userQueryRepository.FindByTrashed(req)
 
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_USERS", span, &status, zap.Error(err))
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_USERS", span, &status, zap.Error(err))
 	}
 
 	so := s.mapping.ToUsersResponseDeleteAt(users)
 
-	s.logger.Debug("Successfully fetched trashed user",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", page),
-		zap.Int("pageSize", pageSize))
+	logSuccess("Successfully retrieved trashed user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
+}
+
+func (s *userQueryService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Info(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
+}
+
+func (s *userQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
 }
 
 func (s *userQueryService) recordMetrics(method string, status string, start time.Time) {

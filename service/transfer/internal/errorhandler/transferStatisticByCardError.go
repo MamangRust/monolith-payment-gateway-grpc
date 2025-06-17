@@ -19,7 +19,7 @@ func NewTransferStatisticByCardError(logger logger.LoggerInterface) *transferSta
 }
 
 func (t *transferStatisticByCardError) HandleMonthTransferStatusSuccessByCardNumberError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferResponseMonthStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferResponseMonthStatusSuccess](
+	return handleErrorRepository[[]*response.TransferResponseMonthStatusSuccess](
 		t.logger,
 		err,
 		method,
@@ -32,7 +32,7 @@ func (t *transferStatisticByCardError) HandleMonthTransferStatusSuccessByCardNum
 }
 
 func (t *transferStatisticByCardError) HandleYearTransferStatusSuccessByCardNumberError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferResponseYearStatusSuccess, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferResponseYearStatusSuccess](
+	return handleErrorRepository[[]*response.TransferResponseYearStatusSuccess](
 		t.logger,
 		err,
 		method,
@@ -45,7 +45,7 @@ func (t *transferStatisticByCardError) HandleYearTransferStatusSuccessByCardNumb
 }
 
 func (t *transferStatisticByCardError) HandleMonthTransferStatusFailedByCardNumberError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferResponseMonthStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferResponseMonthStatusFailed](
+	return handleErrorRepository[[]*response.TransferResponseMonthStatusFailed](
 		t.logger,
 		err,
 		method,
@@ -58,7 +58,7 @@ func (t *transferStatisticByCardError) HandleMonthTransferStatusFailedByCardNumb
 }
 
 func (t *transferStatisticByCardError) HandleYearTransferStatusFailedByCardNumberError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferResponseYearStatusFailed, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferResponseYearStatusFailed](
+	return handleErrorRepository[[]*response.TransferResponseYearStatusFailed](
 		t.logger,
 		err,
 		method,
@@ -71,7 +71,7 @@ func (t *transferStatisticByCardError) HandleYearTransferStatusFailedByCardNumbe
 }
 
 func (t *transferStatisticByCardError) HandleMonthlyTransferAmountsBySenderError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferMonthAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferMonthAmountResponse](
+	return handleErrorRepository[[]*response.TransferMonthAmountResponse](
 		t.logger,
 		err,
 		method,
@@ -84,7 +84,7 @@ func (t *transferStatisticByCardError) HandleMonthlyTransferAmountsBySenderError
 }
 
 func (t *transferStatisticByCardError) HandleYearlyTransferAmountsBySenderError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferYearAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferYearAmountResponse](
+	return handleErrorRepository[[]*response.TransferYearAmountResponse](
 		t.logger,
 		err,
 		method,
@@ -97,7 +97,7 @@ func (t *transferStatisticByCardError) HandleYearlyTransferAmountsBySenderError(
 }
 
 func (t *transferStatisticByCardError) HandleMonthlyTransferAmountsByReceiverError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferMonthAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferMonthAmountResponse](
+	return handleErrorRepository[[]*response.TransferMonthAmountResponse](
 		t.logger,
 		err,
 		method,
@@ -110,7 +110,7 @@ func (t *transferStatisticByCardError) HandleMonthlyTransferAmountsByReceiverErr
 }
 
 func (t *transferStatisticByCardError) HandleYearlyTransferAmountsByReceiverError(err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field) ([]*response.TransferYearAmountResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransferYearAmountResponse](
+	return handleErrorRepository[[]*response.TransferYearAmountResponse](
 		t.logger,
 		err,
 		method,

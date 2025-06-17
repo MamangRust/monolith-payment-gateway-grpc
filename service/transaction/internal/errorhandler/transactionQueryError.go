@@ -23,7 +23,7 @@ func (t *transactionQueryError) HandleRepositoryPaginationError(
 	status *string,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponse, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindAllTransactions, fields...)
+	return handleErrorPagination[[]*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, transaction_errors.ErrFailedFindAllTransactions, fields...)
 }
 
 func (t *transactionQueryError) HandleRepositoryPaginationDeleteAtError(
@@ -34,7 +34,7 @@ func (t *transactionQueryError) HandleRepositoryPaginationDeleteAtError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponseDeleteAt, *int, *response.ErrorResponse) {
-	return handleErrorPaginationTemplate[[]*response.TransactionResponseDeleteAt](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorPagination[[]*response.TransactionResponseDeleteAt](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (t *transactionQueryError) HandleRepositorySingleError(
@@ -45,7 +45,7 @@ func (t *transactionQueryError) HandleRepositorySingleError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) (*response.TransactionResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
 
 func (t *transactionQueryError) HanldeRepositoryListError(
@@ -56,5 +56,5 @@ func (t *transactionQueryError) HanldeRepositoryListError(
 	errResp *response.ErrorResponse,
 	fields ...zap.Field,
 ) ([]*response.TransactionResponse, *response.ErrorResponse) {
-	return handleErrorTemplate[[]*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
+	return handleErrorRepository[[]*response.TransactionResponse](t.logger, err, method, tracePrefix, span, status, errResp, fields...)
 }
