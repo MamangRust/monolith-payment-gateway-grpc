@@ -78,7 +78,7 @@ func (s *topupStatisticByCardService) FindMonthTopupStatusSuccessByCardNumber(re
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTopupStatusSuccessByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTopupStatusSuccessByCardNumberCache(req); found {
 		logSuccess("Successfully fetched monthly topup status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -109,7 +109,7 @@ func (s *topupStatisticByCardService) FindYearlyTopupStatusSuccessByCardNumber(r
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupStatusSuccessByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyTopupStatusSuccessByCardNumberCache(req); found {
 		logSuccess("Successfully fetched yearly topup status success", zap.Int("year", year), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -140,7 +140,7 @@ func (s *topupStatisticByCardService) FindMonthTopupStatusFailedByCardNumber(req
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTopupStatusFailedByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTopupStatusFailedByCardNumberCache(req); found {
 		logSuccess("Successfully fetched monthly topup status Failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -171,7 +171,7 @@ func (s *topupStatisticByCardService) FindYearlyTopupStatusFailedByCardNumber(re
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupStatusFailedByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyTopupStatusFailedByCardNumberCache(req); found {
 		logSuccess("Successfully fetched yearly topup status Failed", zap.Int("year", year), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -203,7 +203,7 @@ func (s *topupStatisticByCardService) FindMonthlyTopupMethodsByCardNumber(req *r
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyTopupMethodsByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetMonthlyTopupMethodsByCardNumberCache(req); found {
 		logSuccess("Successfully fetched monthly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -235,7 +235,7 @@ func (s *topupStatisticByCardService) FindYearlyTopupMethodsByCardNumber(req *re
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupMethodsByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyTopupMethodsByCardNumberCache(req); found {
 		logSuccess("Successfully fetched yearly topup methods by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -266,7 +266,7 @@ func (s *topupStatisticByCardService) FindMonthlyTopupAmountsByCardNumber(req *r
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyTopupAmountsByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetMonthlyTopupAmountsByCardNumberCache(req); found {
 		logSuccess("Successfully fetched monthly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -297,7 +297,7 @@ func (s *topupStatisticByCardService) FindYearlyTopupAmountsByCardNumber(req *re
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupAmountsByCardNumberCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyTopupAmountsByCardNumberCache(req); found {
 		logSuccess("Successfully fetched yearly topup amounts by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}

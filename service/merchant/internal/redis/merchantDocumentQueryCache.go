@@ -104,15 +104,15 @@ func (s *merchantDocumentQueryCache) SetCachedMerchantDocumentsTrashed(req *requ
 	SetToCache(s.store, key, payload, ttlDefault)
 }
 
-func (s *merchantDocumentQueryCache) GetCachedMerchantDocument(id int) *response.MerchantDocumentResponse {
+func (s *merchantDocumentQueryCache) GetCachedMerchantDocument(id int) (*response.MerchantDocumentResponse, bool) {
 	key := fmt.Sprintf(merchantDocumentByIdCacheKey, id)
 
-	result, found := GetFromCache[response.MerchantDocumentResponse](s.store, key)
+	result, found := GetFromCache[*response.MerchantDocumentResponse](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
 
-	return result
+	return *result, true
 }
 
 func (s *merchantDocumentQueryCache) SetCachedMerchantDocument(id int, data *response.MerchantDocumentResponse) {

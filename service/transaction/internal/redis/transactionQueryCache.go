@@ -122,15 +122,15 @@ func (t *transactionQueryCache) SetCachedTransactionTrashedCache(req *requests.F
 	SetToCache(t.store, key, payload, ttlDefault)
 }
 
-func (t *transactionQueryCache) GetCachedTransactionCache(transactionId int) *response.TransactionResponse {
+func (t *transactionQueryCache) GetCachedTransactionCache(transactionId int) (*response.TransactionResponse, bool) {
 	key := fmt.Sprintf(transactionByIdCacheKey, transactionId)
-	result, found := GetFromCache[response.TransactionResponse](t.store, key)
+	result, found := GetFromCache[*response.TransactionResponse](t.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
 
-	return result
+	return *result, true
 }
 
 func (t *transactionQueryCache) SetCachedTransactionCache(transaction *response.TransactionResponse) {
@@ -138,15 +138,15 @@ func (t *transactionQueryCache) SetCachedTransactionCache(transaction *response.
 	SetToCache(t.store, key, transaction, ttlDefault)
 }
 
-func (t *transactionQueryCache) GetCachedTransactionByMerchantIdCache(merchantId int) []*response.TransactionResponse {
+func (t *transactionQueryCache) GetCachedTransactionByMerchantIdCache(merchantId int) ([]*response.TransactionResponse, bool) {
 	key := fmt.Sprintf(transactionByMerchantIdCacheKey, merchantId)
 	result, found := GetFromCache[[]*response.TransactionResponse](t.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
 
-	return *result
+	return *result, true
 }
 
 func (t *transactionQueryCache) SetCachedTransactionByMerchantIdCache(id int, transaction []*response.TransactionResponse) {

@@ -18,7 +18,7 @@ type WithdrawQueryCache interface {
 	GetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool)
 	SetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int)
 
-	GetCachedWithdrawCache(id int) *response.WithdrawResponse
+	GetCachedWithdrawCache(id int) (*response.WithdrawResponse, bool)
 	SetCachedWithdrawCache(data *response.WithdrawResponse)
 }
 
@@ -27,37 +27,41 @@ type WithdrawCommandCache interface {
 }
 
 type WithdrawStatisticCache interface {
-	GetCachedMonthWithdrawStatusSuccessCache(req *requests.MonthStatusWithdraw) []*response.WithdrawResponseMonthStatusSuccess
+	GetCachedMonthWithdrawStatusSuccessCache(req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusSuccess, bool)
 	SetCachedMonthWithdrawStatusSuccessCache(req *requests.MonthStatusWithdraw, data []*response.WithdrawResponseMonthStatusSuccess)
 
-	GetCachedYearlyWithdrawStatusSuccessCache(year int) []*response.WithdrawResponseYearStatusSuccess
+	GetCachedYearlyWithdrawStatusSuccessCache(year int) ([]*response.WithdrawResponseYearStatusSuccess, bool)
 	SetCachedYearlyWithdrawStatusSuccessCache(year int, data []*response.WithdrawResponseYearStatusSuccess)
 
-	GetCachedMonthWithdrawStatusFailedCache(req *requests.MonthStatusWithdraw) []*response.WithdrawResponseMonthStatusFailed
+	GetCachedMonthWithdrawStatusFailedCache(req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusFailed, bool)
 	SetCachedMonthWithdrawStatusFailedCache(req *requests.MonthStatusWithdraw, data []*response.WithdrawResponseMonthStatusFailed)
 
-	GetCachedYearlyWithdrawStatusFailedCache(year int) []*response.WithdrawResponseYearStatusFailed
+	GetCachedYearlyWithdrawStatusFailedCache(year int) ([]*response.WithdrawResponseYearStatusFailed, bool)
 	SetCachedYearlyWithdrawStatusFailedCache(year int, data []*response.WithdrawResponseYearStatusFailed)
 
-	GetCachedMonthlyWithdraws(year int) []*response.WithdrawMonthlyAmountResponse
+	GetCachedMonthlyWithdraws(year int) ([]*response.WithdrawMonthlyAmountResponse, bool)
 	SetCachedMonthlyWithdraws(year int, data []*response.WithdrawMonthlyAmountResponse)
-	GetCachedYearlyWithdraws(year int) []*response.WithdrawYearlyAmountResponse
+
+	GetCachedYearlyWithdraws(year int) ([]*response.WithdrawYearlyAmountResponse, bool)
 	SetCachedYearlyWithdraws(year int, data []*response.WithdrawYearlyAmountResponse)
 }
 
 type WithdrawStasticByCardCache interface {
-	GetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber) []*response.WithdrawResponseMonthStatusSuccess
+	GetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusSuccess, bool)
 	SetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusSuccess)
-	GetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber) []*response.WithdrawResponseYearStatusSuccess
+
+	GetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusSuccess, bool)
 	SetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusSuccess)
 
-	GetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber) []*response.WithdrawResponseMonthStatusFailed
+	GetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusFailed, bool)
 	SetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusFailed)
-	GetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber) []*response.WithdrawResponseYearStatusFailed
+
+	GetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusFailed, bool)
 	SetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusFailed)
 
-	GetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) []*response.WithdrawMonthlyAmountResponse
+	GetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawMonthlyAmountResponse, bool)
 	SetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawMonthlyAmountResponse)
-	GetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) []*response.WithdrawYearlyAmountResponse
+
+	GetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawYearlyAmountResponse, bool)
 	SetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawYearlyAmountResponse)
 }

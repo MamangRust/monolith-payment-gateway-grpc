@@ -78,7 +78,7 @@ func (s *transferStatisticService) FindMonthTransferStatusSuccess(req *requests.
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthTransferStatusSuccess(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthTransferStatusSuccess(req); found {
 		logSuccess("Successfully fetched monthly Transfer status success from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -107,7 +107,7 @@ func (s *transferStatisticService) FindYearlyTransferStatusSuccess(year int) ([]
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyTransferStatusSuccess(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyTransferStatusSuccess(year); found {
 		logSuccess("Successfully fetched yearly Transfer status success from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -140,7 +140,7 @@ func (s *transferStatisticService) FindMonthTransferStatusFailed(req *requests.M
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthTransferStatusFailed(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthTransferStatusFailed(req); found {
 		logSuccess("Successfully fetched monthly Transfer status Failed from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -168,7 +168,7 @@ func (s *transferStatisticService) FindYearlyTransferStatusFailed(year int) ([]*
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyTransferStatusFailed(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyTransferStatusFailed(year); found {
 		logSuccess("Successfully fetched yearly Transfer status Failed from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -195,7 +195,7 @@ func (s *transferStatisticService) FindMonthlyTransferAmounts(year int) ([]*resp
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthTransferAmounts(year); data != nil {
+	if data, found := s.mencache.GetCachedMonthTransferAmounts(year); found {
 		logSuccess("Successfully fetched monthly transfer amounts from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -223,7 +223,7 @@ func (s *transferStatisticService) FindYearlyTransferAmounts(year int) ([]*respo
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyTransferAmounts(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyTransferAmounts(year); found {
 		logSuccess("Successfully fetched yearly transfer amounts from cache", zap.Int("year", year))
 		return data, nil
 	}

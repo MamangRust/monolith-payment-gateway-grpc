@@ -15,7 +15,7 @@ type UserQueryCache interface {
 	GetCachedUserTrashedCache(req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, bool)
 	SetCachedUserTrashedCache(req *requests.FindAllUsers, data []*response.UserResponseDeleteAt, total *int)
 
-	GetCachedUserCache(id int) *response.UserResponse
+	GetCachedUserCache(id int) (*response.UserResponse, bool)
 	SetCachedUserCache(data *response.UserResponse)
 }
 

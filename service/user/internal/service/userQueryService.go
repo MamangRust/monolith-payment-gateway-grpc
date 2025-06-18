@@ -106,7 +106,8 @@ func (s *userQueryService) FindByID(id int) (*response.UserResponse, *response.E
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedUserCache(id); data != nil {
+	if data, found := s.mencache.GetCachedUserCache(id); found {
+		logSuccess("Successfully retrieved user record from cache", zap.Int("user.id", id))
 		return data, nil
 	}
 

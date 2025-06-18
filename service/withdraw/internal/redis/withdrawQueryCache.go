@@ -101,13 +101,13 @@ func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(req *requests.FindAll
 	SetToCache(w.store, key, payload, ttlDefault)
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawCache(id int) *response.WithdrawResponse {
+func (w *withdrawQueryCache) GetCachedWithdrawCache(id int) (*response.WithdrawResponse, bool) {
 	key := fmt.Sprintf(withdrawByIdCacheKey, id)
 	result, found := GetFromCache[*response.WithdrawResponse](w.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 
 }
 

@@ -23,16 +23,16 @@ type SaldoQueryCache interface {
 }
 
 type SaldoStatisticCache interface {
-	GetMonthlyTotalSaldoBalanceCache(req *requests.MonthTotalSaldoBalance) []*response.SaldoMonthTotalBalanceResponse
+	GetMonthlyTotalSaldoBalanceCache(req *requests.MonthTotalSaldoBalance) ([]*response.SaldoMonthTotalBalanceResponse, bool)
 	SetMonthlyTotalSaldoCache(req *requests.MonthTotalSaldoBalance, data []*response.SaldoMonthTotalBalanceResponse)
 
-	GetYearTotalSaldoBalanceCache(year int) []*response.SaldoYearTotalBalanceResponse
+	GetYearTotalSaldoBalanceCache(year int) ([]*response.SaldoYearTotalBalanceResponse, bool)
 	SetYearTotalSaldoBalanceCache(year int, data []*response.SaldoYearTotalBalanceResponse)
 
-	GetMonthlySaldoBalanceCache(year int) []*response.SaldoMonthBalanceResponse
+	GetMonthlySaldoBalanceCache(year int) ([]*response.SaldoMonthBalanceResponse, bool)
 	SetMonthlySaldoBalanceCache(year int, data []*response.SaldoMonthBalanceResponse)
 
-	GetYearlySaldoBalanceCache(year int) []*response.SaldoYearBalanceResponse
+	GetYearlySaldoBalanceCache(year int) ([]*response.SaldoYearBalanceResponse, bool)
 	SetYearlySaldoBalanceCache(year int, data []*response.SaldoYearBalanceResponse)
 }
 

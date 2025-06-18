@@ -103,14 +103,14 @@ func (m *merchantQueryCache) SetCachedMerchantTrashed(req *requests.FindAllMerch
 	SetToCache(m.store, key, payload, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchant(id int) *response.MerchantResponse {
+func (m *merchantQueryCache) GetCachedMerchant(id int) (*response.MerchantResponse, bool) {
 	key := fmt.Sprintf(merchantByIdCacheKey, id)
 
-	result, found := GetFromCache[response.MerchantResponse](m.store, key)
+	result, found := GetFromCache[*response.MerchantResponse](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return result
+	return *result, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchant(data *response.MerchantResponse) {
@@ -119,14 +119,14 @@ func (m *merchantQueryCache) SetCachedMerchant(data *response.MerchantResponse) 
 	SetToCache(m.store, key, data, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchantsByUserId(id int) []*response.MerchantResponse {
+func (m *merchantQueryCache) GetCachedMerchantsByUserId(id int) ([]*response.MerchantResponse, bool) {
 	key := fmt.Sprintf(merchantByUserIdCacheKey, id)
 
 	result, found := GetFromCache[[]*response.MerchantResponse](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchantsByUserId(userId int, data []*response.MerchantResponse) {

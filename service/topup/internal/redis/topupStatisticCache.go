@@ -28,15 +28,15 @@ func NewTopupStatisticCache(store *CacheStore) *topupStatisticCache {
 	return &topupStatisticCache{store: store}
 }
 
-func (c *topupStatisticCache) GetMonthTopupStatusSuccessCache(req *requests.MonthTopupStatus) []*response.TopupResponseMonthStatusSuccess {
+func (c *topupStatisticCache) GetMonthTopupStatusSuccessCache(req *requests.MonthTopupStatus) ([]*response.TopupResponseMonthStatusSuccess, bool) {
 	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusSuccess](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthTopupStatusSuccessCache(req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusSuccess) {
@@ -44,15 +44,15 @@ func (c *topupStatisticCache) SetMonthTopupStatusSuccessCache(req *requests.Mont
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetYearlyTopupStatusSuccessCache(year int) []*response.TopupResponseYearStatusSuccess {
+func (c *topupStatisticCache) GetYearlyTopupStatusSuccessCache(year int) ([]*response.TopupResponseYearStatusSuccess, bool) {
 	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusSuccess](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupStatusSuccessCache(year int, data []*response.TopupResponseYearStatusSuccess) {
@@ -60,15 +60,15 @@ func (c *topupStatisticCache) SetYearlyTopupStatusSuccessCache(year int, data []
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetMonthTopupStatusFailedCache(req *requests.MonthTopupStatus) []*response.TopupResponseMonthStatusFailed {
+func (c *topupStatisticCache) GetMonthTopupStatusFailedCache(req *requests.MonthTopupStatus) ([]*response.TopupResponseMonthStatusFailed, bool) {
 	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusFailed](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthTopupStatusFailedCache(req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusFailed) {
@@ -76,15 +76,15 @@ func (c *topupStatisticCache) SetMonthTopupStatusFailedCache(req *requests.Month
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetYearlyTopupStatusFailedCache(year int) []*response.TopupResponseYearStatusFailed {
+func (c *topupStatisticCache) GetYearlyTopupStatusFailedCache(year int) ([]*response.TopupResponseYearStatusFailed, bool) {
 	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusFailed](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupStatusFailedCache(year int, data []*response.TopupResponseYearStatusFailed) {
@@ -92,15 +92,15 @@ func (c *topupStatisticCache) SetYearlyTopupStatusFailedCache(year int, data []*
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetMonthlyTopupAmountsCache(year int) []*response.TopupMonthAmountResponse {
+func (c *topupStatisticCache) GetMonthlyTopupAmountsCache(year int) ([]*response.TopupMonthAmountResponse, bool) {
 	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.TopupMonthAmountResponse](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthlyTopupAmountsCache(year int, data []*response.TopupMonthAmountResponse) {
@@ -108,15 +108,15 @@ func (c *topupStatisticCache) SetMonthlyTopupAmountsCache(year int, data []*resp
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetYearlyTopupAmountsCache(year int) []*response.TopupYearlyAmountResponse {
+func (c *topupStatisticCache) GetYearlyTopupAmountsCache(year int) ([]*response.TopupYearlyAmountResponse, bool) {
 	key := fmt.Sprintf(yearTopupAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.TopupYearlyAmountResponse](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupAmountsCache(year int, data []*response.TopupYearlyAmountResponse) {
@@ -124,15 +124,15 @@ func (c *topupStatisticCache) SetYearlyTopupAmountsCache(year int, data []*respo
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetMonthlyTopupMethodsCache(month int) []*response.TopupMonthMethodResponse {
+func (c *topupStatisticCache) GetMonthlyTopupMethodsCache(month int) ([]*response.TopupMonthMethodResponse, bool) {
 	key := fmt.Sprintf(monthTopupMethodCacheKey, month)
 
 	result, found := GetFromCache[[]*response.TopupMonthMethodResponse](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthlyTopupMethodsCache(month int, data []*response.TopupMonthMethodResponse) {
@@ -140,15 +140,15 @@ func (c *topupStatisticCache) SetMonthlyTopupMethodsCache(month int, data []*res
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *topupStatisticCache) GetYearlyTopupMethodsCache(year int) []*response.TopupYearlyMethodResponse {
+func (c *topupStatisticCache) GetYearlyTopupMethodsCache(year int) ([]*response.TopupYearlyMethodResponse, bool) {
 	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
 
 	result, found := GetFromCache[[]*response.TopupYearlyMethodResponse](c.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupMethodsCache(year int, data []*response.TopupYearlyMethodResponse) {

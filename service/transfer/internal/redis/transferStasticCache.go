@@ -26,15 +26,15 @@ func NewTransferStatisticCache(store *CacheStore) *transferStatisticCache {
 	return &transferStatisticCache{store: store}
 }
 
-func (t *transferStatisticCache) GetCachedMonthTransferStatusSuccess(req *requests.MonthStatusTransfer) []*response.TransferResponseMonthStatusSuccess {
+func (t *transferStatisticCache) GetCachedMonthTransferStatusSuccess(req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusSuccess, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusSuccessKey, req.Month, req.Year)
 
 	result, found := GetFromCache[[]*response.TransferResponseMonthStatusSuccess](t.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (t *transferStatisticCache) SetCachedMonthTransferStatusSuccess(req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusSuccess) {
@@ -42,66 +42,66 @@ func (t *transferStatisticCache) SetCachedMonthTransferStatusSuccess(req *reques
 	SetToCache(t.store, key, &data, ttlDefault)
 }
 
-func (t *transferStatisticCache) GetCachedYearlyTransferStatusSuccess(year int) []*response.TransferResponseYearStatusSuccess {
+func (t *transferStatisticCache) GetCachedYearlyTransferStatusSuccess(year int) ([]*response.TransferResponseYearStatusSuccess, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusSuccessKey, year)
 
 	result, found := GetFromCache[[]*response.TransferResponseYearStatusSuccess](t.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (t *transferStatisticCache) SetCachedYearlyTransferStatusSuccess(year int, data []*response.TransferResponseYearStatusSuccess) {
 	key := fmt.Sprintf(transferYearTransferStatusSuccessKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
 
-func (t *transferStatisticCache) GetCachedMonthTransferStatusFailed(req *requests.MonthStatusTransfer) []*response.TransferResponseMonthStatusFailed {
+func (t *transferStatisticCache) GetCachedMonthTransferStatusFailed(req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusFailed, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusFailedKey, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.TransferResponseMonthStatusFailed](t.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (t *transferStatisticCache) SetCachedMonthTransferStatusFailed(req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusFailed) {
 	key := fmt.Sprintf(transferMonthTransferStatusFailedKey, req.Month, req.Year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
 
-func (t *transferStatisticCache) GetCachedYearlyTransferStatusFailed(year int) []*response.TransferResponseYearStatusFailed {
+func (t *transferStatisticCache) GetCachedYearlyTransferStatusFailed(year int) ([]*response.TransferResponseYearStatusFailed, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusFailedKey, year)
 	result, found := GetFromCache[[]*response.TransferResponseYearStatusFailed](t.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (t *transferStatisticCache) SetCachedYearlyTransferStatusFailed(year int, data []*response.TransferResponseYearStatusFailed) {
 	key := fmt.Sprintf(transferYearTransferStatusFailedKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
 
-func (t *transferStatisticCache) GetCachedMonthTransferAmounts(year int) []*response.TransferMonthAmountResponse {
+func (t *transferStatisticCache) GetCachedMonthTransferAmounts(year int) ([]*response.TransferMonthAmountResponse, bool) {
 	key := fmt.Sprintf(transferMonthTransferAmountKey, year)
 	result, found := GetFromCache[[]*response.TransferMonthAmountResponse](t.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (t *transferStatisticCache) SetCachedMonthTransferAmounts(year int, data []*response.TransferMonthAmountResponse) {
 	key := fmt.Sprintf(transferMonthTransferAmountKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
 
-func (t *transferStatisticCache) GetCachedYearlyTransferAmounts(year int) []*response.TransferYearAmountResponse {
+func (t *transferStatisticCache) GetCachedYearlyTransferAmounts(year int) ([]*response.TransferYearAmountResponse, bool) {
 	key := fmt.Sprintf(transferYearTransferAmountKey, year)
 	result, found := GetFromCache[[]*response.TransferYearAmountResponse](t.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (t *transferStatisticCache) SetCachedYearlyTransferAmounts(year int, data []*response.TransferYearAmountResponse) {

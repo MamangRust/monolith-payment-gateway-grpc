@@ -77,7 +77,7 @@ func (s *withdrawStatisticService) FindMonthWithdrawStatusSuccess(req *requests.
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthWithdrawStatusSuccessCache(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthWithdrawStatusSuccessCache(req); found {
 		logSuccess("Successfully fetched monthly withdraw status success from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -106,7 +106,7 @@ func (s *withdrawStatisticService) FindYearlyWithdrawStatusSuccess(year int) ([]
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdrawStatusSuccessCache(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdrawStatusSuccessCache(year); found {
 		s.logger.Debug("Successfully fetched yearly withdraw status success from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -138,7 +138,7 @@ func (s *withdrawStatisticService) FindMonthWithdrawStatusFailed(req *requests.M
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthWithdrawStatusFailedCache(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthWithdrawStatusFailedCache(req); found {
 		logSuccess("Successfully fetched monthly Withdraw status Failed from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -165,7 +165,7 @@ func (s *withdrawStatisticService) FindYearlyWithdrawStatusFailed(year int) ([]*
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdrawStatusFailedCache(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdrawStatusFailedCache(year); found {
 		logSuccess("Successfully fetched yearly Withdraw status Failed from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -193,7 +193,7 @@ func (s *withdrawStatisticService) FindMonthlyWithdraws(year int) ([]*response.W
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthlyWithdraws(year); data != nil {
+	if data, found := s.mencache.GetCachedMonthlyWithdraws(year); found {
 		logSuccess("Successfully fetched monthly withdraws from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -222,7 +222,7 @@ func (s *withdrawStatisticService) FindYearlyWithdraws(year int) ([]*response.Wi
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdraws(year); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdraws(year); found {
 		logSuccess("Successfully fetched yearly withdraws from cache", zap.Int("year", year))
 		return data, nil
 	}

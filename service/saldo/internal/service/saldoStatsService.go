@@ -78,7 +78,7 @@ func (s *saldoStatisticsService) FindMonthlyTotalSaldoBalance(req *requests.Mont
 		end(status)
 	}()
 
-	if cache := s.mencache.GetMonthlyTotalSaldoBalanceCache(req); cache != nil {
+	if cache, found := s.mencache.GetMonthlyTotalSaldoBalanceCache(req); found {
 		logSuccess("Successfully fetched monthly total saldo balance from cache", zap.Int("year", year), zap.Int("month", month))
 		return cache, nil
 	}
@@ -106,7 +106,7 @@ func (s *saldoStatisticsService) FindYearTotalSaldoBalance(year int) ([]*respons
 		end(status)
 	}()
 
-	if cache := s.mencache.GetYearTotalSaldoBalanceCache(year); cache != nil {
+	if cache, found := s.mencache.GetYearTotalSaldoBalanceCache(year); found {
 		logSuccess("Successfully fetched yearly total saldo balance from cache", zap.Int("year", year))
 		return cache, nil
 	}
@@ -134,7 +134,7 @@ func (s *saldoStatisticsService) FindMonthlySaldoBalances(year int) ([]*response
 		end(status)
 	}()
 
-	if cache := s.mencache.GetMonthlySaldoBalanceCache(year); cache != nil {
+	if cache, found := s.mencache.GetMonthlySaldoBalanceCache(year); found {
 		logSuccess("Successfully fetched monthly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}
@@ -163,7 +163,7 @@ func (s *saldoStatisticsService) FindYearlySaldoBalances(year int) ([]*response.
 		end(status)
 	}()
 
-	if cache := s.mencache.GetYearlySaldoBalanceCache(year); cache != nil {
+	if cache, found := s.mencache.GetYearlySaldoBalanceCache(year); found {
 		logSuccess("Successfully fetched yearly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}

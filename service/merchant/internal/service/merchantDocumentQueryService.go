@@ -107,7 +107,7 @@ func (s *merchantDocumentQueryService) FindById(merchant_id int) (*response.Merc
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetCachedMerchantDocument(merchant_id); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetCachedMerchantDocument(merchant_id); found {
 		logSuccess("Successfully found merchant document by ID from cache", zap.Int("merchantDocument.id", merchant_id))
 		return cachedMerchant, nil
 	}

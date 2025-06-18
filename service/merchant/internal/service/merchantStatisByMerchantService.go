@@ -83,7 +83,7 @@ func (s *merchantStatisByMerchantService) FindMonthlyPaymentMethodByMerchants(re
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetMonthlyPaymentMethodByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetMonthlyPaymentMethodByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant_id", merchantID))
 		return cachedMerchant, nil
 	}
@@ -118,7 +118,7 @@ func (s *merchantStatisByMerchantService) FindYearlyPaymentMethodByMerchants(req
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetYearlyPaymentMethodByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetYearlyPaymentMethodByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant_id", merchantID))
 		return cachedMerchant, nil
 	}
@@ -153,7 +153,7 @@ func (s *merchantStatisByMerchantService) FindMonthlyAmountByMerchants(req *requ
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetMonthlyAmountByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetMonthlyAmountByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant.id", merchantID))
 
 		return cachedMerchant, nil
@@ -188,7 +188,7 @@ func (s *merchantStatisByMerchantService) FindYearlyAmountByMerchants(req *reque
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetYearlyAmountByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetYearlyAmountByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant.id", merchantID))
 
 		return cachedMerchant, nil
@@ -224,7 +224,7 @@ func (s *merchantStatisByMerchantService) FindMonthlyTotalAmountByMerchants(req 
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetMonthlyTotalAmountByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetMonthlyTotalAmountByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant.id", merchantID), zap.Int("year", year))
 		return cachedMerchant, nil
 	}
@@ -259,7 +259,7 @@ func (s *merchantStatisByMerchantService) FindYearlyTotalAmountByMerchants(req *
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetYearlyTotalAmountByMerchantsCache(req); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetYearlyTotalAmountByMerchantsCache(req); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("merchant.id", merchantID), zap.Int("year", year))
 		return cachedMerchant, nil
 	}

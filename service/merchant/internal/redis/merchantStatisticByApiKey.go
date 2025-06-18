@@ -32,14 +32,14 @@ func (m *merchantStatisticByApiKeyCache) SetMonthlyPaymentMethodByApikeysCache(r
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetMonthlyPaymentMethodByApikeysCache(req *requests.MonthYearPaymentMethodApiKey) []*response.MerchantResponseMonthlyPaymentMethod {
+func (m *merchantStatisticByApiKeyCache) GetMonthlyPaymentMethodByApikeysCache(req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseMonthlyPaymentMethod, bool) {
 	key := fmt.Sprintf(merchantMonthlyPaymentMethodByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyPaymentMethod](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantStatisticByApiKeyCache) SetYearlyPaymentMethodByApikeysCache(req *requests.MonthYearPaymentMethodApiKey, data []*response.MerchantResponseYearlyPaymentMethod) {
@@ -48,14 +48,14 @@ func (m *merchantStatisticByApiKeyCache) SetYearlyPaymentMethodByApikeysCache(re
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetYearlyPaymentMethodByApikeysCache(req *requests.MonthYearPaymentMethodApiKey) []*response.MerchantResponseYearlyPaymentMethod {
+func (m *merchantStatisticByApiKeyCache) GetYearlyPaymentMethodByApikeysCache(req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseYearlyPaymentMethod, bool) {
 	key := fmt.Sprintf(merchantYearlyPaymentMethodByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyPaymentMethod](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantStatisticByApiKeyCache) SetMonthlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey, data []*response.MerchantResponseMonthlyAmount) {
@@ -64,14 +64,14 @@ func (m *merchantStatisticByApiKeyCache) SetMonthlyAmountByApikeysCache(req *req
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetMonthlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey) []*response.MerchantResponseMonthlyAmount {
+func (m *merchantStatisticByApiKeyCache) GetMonthlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey) ([]*response.MerchantResponseMonthlyAmount, bool) {
 	key := fmt.Sprintf(merchantMonthlyAmountByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyAmount](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantStatisticByApiKeyCache) SetYearlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey, data []*response.MerchantResponseYearlyAmount) {
@@ -80,14 +80,14 @@ func (m *merchantStatisticByApiKeyCache) SetYearlyAmountByApikeysCache(req *requ
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetYearlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey) []*response.MerchantResponseYearlyAmount {
+func (m *merchantStatisticByApiKeyCache) GetYearlyAmountByApikeysCache(req *requests.MonthYearAmountApiKey) ([]*response.MerchantResponseYearlyAmount, bool) {
 	key := fmt.Sprintf(merchantYearlyAmountByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyAmount](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantStatisticByApiKeyCache) SetMonthlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey, data []*response.MerchantResponseMonthlyTotalAmount) {
@@ -96,14 +96,14 @@ func (m *merchantStatisticByApiKeyCache) SetMonthlyTotalAmountByApikeysCache(req
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetMonthlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey) []*response.MerchantResponseMonthlyTotalAmount {
+func (m *merchantStatisticByApiKeyCache) GetMonthlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseMonthlyTotalAmount, bool) {
 	key := fmt.Sprintf(merchantMonthlyTotalAmountByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyTotalAmount](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (m *merchantStatisticByApiKeyCache) SetYearlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey, data []*response.MerchantResponseYearlyTotalAmount) {
@@ -112,12 +112,12 @@ func (m *merchantStatisticByApiKeyCache) SetYearlyTotalAmountByApikeysCache(req 
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantStatisticByApiKeyCache) GetYearlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey) []*response.MerchantResponseYearlyTotalAmount {
+func (m *merchantStatisticByApiKeyCache) GetYearlyTotalAmountByApikeysCache(req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseYearlyTotalAmount, bool) {
 	key := fmt.Sprintf(merchantYearlyTotalAmountByApikeyCacheKey, req.Apikey, req.Year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyTotalAmount](m.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }

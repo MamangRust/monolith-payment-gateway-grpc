@@ -102,14 +102,14 @@ func (s *userQueryCache) SetCachedUserTrashedCache(req *requests.FindAllUsers, d
 	SetToCache(s.store, key, payload, ttlDefault)
 }
 
-func (s *userQueryCache) GetCachedUserCache(id int) *response.UserResponse {
+func (s *userQueryCache) GetCachedUserCache(id int) (*response.UserResponse, bool) {
 	key := fmt.Sprintf(userByIdCacheKey, id)
 
-	result, found := GetFromCache[response.UserResponse](s.store, key)
+	result, found := GetFromCache[*response.UserResponse](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return result
+	return *result, true
 
 }
 func (s *userQueryCache) SetCachedUserCache(data *response.UserResponse) {

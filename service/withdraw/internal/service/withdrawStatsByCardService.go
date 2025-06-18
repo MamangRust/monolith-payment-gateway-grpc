@@ -83,7 +83,7 @@ func (s *withdrawStatisticByCardService) FindMonthWithdrawStatusSuccessByCardNum
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthWithdrawStatusSuccessByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthWithdrawStatusSuccessByCardNumber(req); found {
 		logSuccess("Cache hit for monthly withdraw status success", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return data, nil
 	}
@@ -115,7 +115,7 @@ func (s *withdrawStatisticByCardService) FindYearlyWithdrawStatusSuccessByCardNu
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdrawStatusSuccessByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdrawStatusSuccessByCardNumber(req); found {
 		logSuccess("Cache hit for yearly withdraw status success", zap.Int("year", year), zap.String("card_number", cardNumber))
 		return data, nil
 	}
@@ -147,7 +147,7 @@ func (s *withdrawStatisticByCardService) FindMonthWithdrawStatusFailedByCardNumb
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthWithdrawStatusFailedByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthWithdrawStatusFailedByCardNumber(req); found {
 		logSuccess("Cache hit for monthly withdraw status failed", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", cardNumber))
 		return data, nil
 	}
@@ -178,7 +178,7 @@ func (s *withdrawStatisticByCardService) FindYearlyWithdrawStatusFailedByCardNum
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdrawStatusFailedByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdrawStatusFailedByCardNumber(req); found {
 		logSuccess("Cache hit for yearly withdraw status failed", zap.Int("year", year), zap.String("card_number", cardNumber))
 		return data, nil
 	}
@@ -209,7 +209,7 @@ func (s *withdrawStatisticByCardService) FindMonthlyWithdrawsByCardNumber(req *r
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedMonthlyWithdrawsByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedMonthlyWithdrawsByCardNumber(req); found {
 		logSuccess("Cache hit for monthly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -240,7 +240,7 @@ func (s *withdrawStatisticByCardService) FindYearlyWithdrawsByCardNumber(req *re
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedYearlyWithdrawsByCardNumber(req); data != nil {
+	if data, found := s.mencache.GetCachedYearlyWithdrawsByCardNumber(req); found {
 		logSuccess("Cache hit for yearly withdraws by card number", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}

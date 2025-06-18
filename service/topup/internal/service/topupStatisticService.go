@@ -78,7 +78,7 @@ func (s *topupStasticService) FindMonthTopupStatusSuccess(req *requests.MonthTop
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTopupStatusSuccessCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTopupStatusSuccessCache(req); found {
 		logSuccess("Successfully fetched monthly topup status success from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -106,7 +106,7 @@ func (s *topupStasticService) FindYearlyTopupStatusSuccess(year int) ([]*respons
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupStatusSuccessCache(year); data != nil {
+	if data, found := s.mencache.GetYearlyTopupStatusSuccessCache(year); found {
 		logSuccess("Successfully fetched yearly topup status success from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -136,7 +136,7 @@ func (s *topupStasticService) FindMonthTopupStatusFailed(req *requests.MonthTopu
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTopupStatusFailedCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTopupStatusFailedCache(req); found {
 		logSuccess("Successfully fetched monthly topup status Failed from cache", zap.Int("year", year), zap.Int("month", month))
 		return data, nil
 	}
@@ -163,7 +163,7 @@ func (s *topupStasticService) FindYearlyTopupStatusFailed(year int) ([]*response
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupStatusFailedCache(year); data != nil {
+	if data, found := s.mencache.GetYearlyTopupStatusFailedCache(year); found {
 		logSuccess("Successfully fetched yearly topup status Failed from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -190,7 +190,7 @@ func (s *topupStasticService) FindMonthlyTopupMethods(year int) ([]*response.Top
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyTopupMethodsCache(year); data != nil {
+	if data, found := s.mencache.GetMonthlyTopupMethodsCache(year); found {
 		logSuccess("Successfully fetched monthly topup methods from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -218,7 +218,7 @@ func (s *topupStasticService) FindYearlyTopupMethods(year int) ([]*response.Topu
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupMethodsCache(year); data != nil {
+	if data, found := s.mencache.GetYearlyTopupMethodsCache(year); found {
 		logSuccess("Successfully fetched yearly topup methods from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -246,7 +246,7 @@ func (s *topupStasticService) FindMonthlyTopupAmounts(year int) ([]*response.Top
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyTopupAmountsCache(year); data != nil {
+	if data, found := s.mencache.GetMonthlyTopupAmountsCache(year); found {
 		logSuccess("Successfully fetched monthly topup amounts from cache", zap.Int("year", year))
 		return data, nil
 	}
@@ -274,7 +274,7 @@ func (s *topupStasticService) FindYearlyTopupAmounts(year int) ([]*response.Topu
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyTopupAmountsCache(year); data != nil {
+	if data, found := s.mencache.GetYearlyTopupAmountsCache(year); found {
 		logSuccess("Successfully fetched yearly topup amounts from cache", zap.Int("year", year))
 		return data, nil
 	}

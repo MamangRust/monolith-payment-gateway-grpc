@@ -25,14 +25,14 @@ func NewMerchantStatisticCache(store *CacheStore) *merchantStatisticCache {
 	return &merchantStatisticCache{store: store}
 }
 
-func (s *merchantStatisticCache) GetMonthlyPaymentMethodsMerchantCache(year int) []*response.MerchantResponseMonthlyPaymentMethod {
+func (s *merchantStatisticCache) GetMonthlyPaymentMethodsMerchantCache(year int) ([]*response.MerchantResponseMonthlyPaymentMethod, bool) {
 	key := fmt.Sprintf(merchantMonthlyPaymentMethodCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyPaymentMethod](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetMonthlyPaymentMethodsMerchantCache(year int, data []*response.MerchantResponseMonthlyPaymentMethod) {
@@ -41,14 +41,14 @@ func (s *merchantStatisticCache) SetMonthlyPaymentMethodsMerchantCache(year int,
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *merchantStatisticCache) GetYearlyPaymentMethodMerchantCache(year int) []*response.MerchantResponseYearlyPaymentMethod {
+func (s *merchantStatisticCache) GetYearlyPaymentMethodMerchantCache(year int) ([]*response.MerchantResponseYearlyPaymentMethod, bool) {
 	key := fmt.Sprintf(merchantYearlyPaymentMethodCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyPaymentMethod](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetYearlyPaymentMethodMerchantCache(year int, data []*response.MerchantResponseYearlyPaymentMethod) {
@@ -57,14 +57,14 @@ func (s *merchantStatisticCache) SetYearlyPaymentMethodMerchantCache(year int, d
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *merchantStatisticCache) GetMonthlyAmountMerchantCache(year int) []*response.MerchantResponseMonthlyAmount {
+func (s *merchantStatisticCache) GetMonthlyAmountMerchantCache(year int) ([]*response.MerchantResponseMonthlyAmount, bool) {
 	key := fmt.Sprintf(merchantMonthlyAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyAmount](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetMonthlyAmountMerchantCache(year int, data []*response.MerchantResponseMonthlyAmount) {
@@ -73,14 +73,14 @@ func (s *merchantStatisticCache) SetMonthlyAmountMerchantCache(year int, data []
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *merchantStatisticCache) GetYearlyAmountMerchantCache(year int) []*response.MerchantResponseYearlyAmount {
+func (s *merchantStatisticCache) GetYearlyAmountMerchantCache(year int) ([]*response.MerchantResponseYearlyAmount, bool) {
 	key := fmt.Sprintf(MerchantYearlyAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyAmount](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetYearlyAmountMerchantCache(year int, data []*response.MerchantResponseYearlyAmount) {
@@ -89,14 +89,14 @@ func (s *merchantStatisticCache) SetYearlyAmountMerchantCache(year int, data []*
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *merchantStatisticCache) GetMonthlyTotalAmountMerchantCache(year int) []*response.MerchantResponseMonthlyTotalAmount {
+func (s *merchantStatisticCache) GetMonthlyTotalAmountMerchantCache(year int) ([]*response.MerchantResponseMonthlyTotalAmount, bool) {
 	key := fmt.Sprintf(merchantMonthlyTotalAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseMonthlyTotalAmount](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetMonthlyTotalAmountMerchantCache(year int, data []*response.MerchantResponseMonthlyTotalAmount) {
@@ -105,14 +105,14 @@ func (s *merchantStatisticCache) SetMonthlyTotalAmountMerchantCache(year int, da
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *merchantStatisticCache) GetYearlyTotalAmountMerchantCache(year int) []*response.MerchantResponseYearlyTotalAmount {
+func (s *merchantStatisticCache) GetYearlyTotalAmountMerchantCache(year int) ([]*response.MerchantResponseYearlyTotalAmount, bool) {
 	key := fmt.Sprintf(merchantYearlyTotalAmountCacheKey, year)
 
 	result, found := GetFromCache[[]*response.MerchantResponseYearlyTotalAmount](s.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *merchantStatisticCache) SetYearlyTotalAmountMerchantCache(year int, data []*response.MerchantResponseYearlyTotalAmount) {

@@ -22,13 +22,13 @@ func NewSaldoStatisticCache(store *CacheStore) *saldoStatisticCache {
 	return &saldoStatisticCache{store: store}
 }
 
-func (c *saldoStatisticCache) GetMonthlyTotalSaldoBalanceCache(req *requests.MonthTotalSaldoBalance) []*response.SaldoMonthTotalBalanceResponse {
+func (c *saldoStatisticCache) GetMonthlyTotalSaldoBalanceCache(req *requests.MonthTotalSaldoBalance) ([]*response.SaldoMonthTotalBalanceResponse, bool) {
 	key := fmt.Sprintf(saldoMonthTotalBalanceCacheKey, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.SaldoMonthTotalBalanceResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *saldoStatisticCache) SetMonthlyTotalSaldoCache(req *requests.MonthTotalSaldoBalance, data []*response.SaldoMonthTotalBalanceResponse) {
@@ -36,13 +36,13 @@ func (c *saldoStatisticCache) SetMonthlyTotalSaldoCache(req *requests.MonthTotal
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *saldoStatisticCache) GetYearTotalSaldoBalanceCache(year int) []*response.SaldoYearTotalBalanceResponse {
+func (c *saldoStatisticCache) GetYearTotalSaldoBalanceCache(year int) ([]*response.SaldoYearTotalBalanceResponse, bool) {
 	key := fmt.Sprintf(saldoYearTotalBalanceCacheKey, year)
 	result, found := GetFromCache[[]*response.SaldoYearTotalBalanceResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *saldoStatisticCache) SetYearTotalSaldoBalanceCache(year int, data []*response.SaldoYearTotalBalanceResponse) {
@@ -50,13 +50,13 @@ func (c *saldoStatisticCache) SetYearTotalSaldoBalanceCache(year int, data []*re
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *saldoStatisticCache) GetMonthlySaldoBalanceCache(year int) []*response.SaldoMonthBalanceResponse {
+func (c *saldoStatisticCache) GetMonthlySaldoBalanceCache(year int) ([]*response.SaldoMonthBalanceResponse, bool) {
 	key := fmt.Sprintf(saldoMonthBalanceCacheKey, year)
 	result, found := GetFromCache[[]*response.SaldoMonthBalanceResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *saldoStatisticCache) SetMonthlySaldoBalanceCache(year int, data []*response.SaldoMonthBalanceResponse) {
@@ -64,13 +64,13 @@ func (c *saldoStatisticCache) SetMonthlySaldoBalanceCache(year int, data []*resp
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *saldoStatisticCache) GetYearlySaldoBalanceCache(year int) []*response.SaldoYearBalanceResponse {
+func (c *saldoStatisticCache) GetYearlySaldoBalanceCache(year int) ([]*response.SaldoYearBalanceResponse, bool) {
 	key := fmt.Sprintf(saldoYearlyBalanceCacheKey, year)
 	result, found := GetFromCache[[]*response.SaldoYearBalanceResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (c *saldoStatisticCache) SetYearlySaldoBalanceCache(year int, data []*response.SaldoYearBalanceResponse) {

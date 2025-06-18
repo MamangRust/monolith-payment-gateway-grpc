@@ -140,7 +140,7 @@ func (s *topupQueryService) FindById(topupID int) (*response.TopupResponse, *res
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTopupCache(topupID); data != nil {
+	if data, found := s.mencache.GetCachedTopupCache(topupID); found {
 		logSuccess("Successfully retrieved topup from cache", zap.Int("topup.id", topupID))
 		return data, nil
 	}

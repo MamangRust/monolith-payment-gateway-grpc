@@ -137,7 +137,7 @@ func (s *withdrawQueryService) FindById(withdrawID int) (*response.WithdrawRespo
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedWithdrawCache(withdrawID); data != nil {
+	if data, found := s.mencache.GetCachedWithdrawCache(withdrawID); found {
 		logSuccess("Successfully retrieved withdraw from cache", zap.Int("withdraw_id", withdrawID))
 		return data, nil
 	}

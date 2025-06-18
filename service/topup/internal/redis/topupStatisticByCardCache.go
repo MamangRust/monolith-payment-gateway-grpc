@@ -30,15 +30,15 @@ func NewTopupStatisticByCardCache(store *CacheStore) *topupStatisticByCardCache 
 	}
 }
 
-func (s *topupStatisticByCardCache) GetMonthTopupStatusSuccessByCardNumberCache(req *requests.MonthTopupStatusCardNumber) []*response.TopupResponseMonthStatusSuccess {
+func (s *topupStatisticByCardCache) GetMonthTopupStatusSuccessByCardNumberCache(req *requests.MonthTopupStatusCardNumber) ([]*response.TopupResponseMonthStatusSuccess, bool) {
 	key := fmt.Sprintf(monthTopupStatusSuccessByCardCacheKey, req.CardNumber, req.Month, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusSuccess](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetMonthTopupStatusSuccessByCardNumberCache(req *requests.MonthTopupStatusCardNumber, data []*response.TopupResponseMonthStatusSuccess) {
@@ -46,15 +46,15 @@ func (s *topupStatisticByCardCache) SetMonthTopupStatusSuccessByCardNumberCache(
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetYearlyTopupStatusSuccessByCardNumberCache(req *requests.YearTopupStatusCardNumber) []*response.TopupResponseYearStatusSuccess {
+func (s *topupStatisticByCardCache) GetYearlyTopupStatusSuccessByCardNumberCache(req *requests.YearTopupStatusCardNumber) ([]*response.TopupResponseYearStatusSuccess, bool) {
 	key := fmt.Sprintf(yearTopupStatusSuccessByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusSuccess](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetYearlyTopupStatusSuccessByCardNumberCache(req *requests.YearTopupStatusCardNumber, data []*response.TopupResponseYearStatusSuccess) {
@@ -62,15 +62,15 @@ func (s *topupStatisticByCardCache) SetYearlyTopupStatusSuccessByCardNumberCache
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetMonthTopupStatusFailedByCardNumberCache(req *requests.MonthTopupStatusCardNumber) []*response.TopupResponseMonthStatusFailed {
+func (s *topupStatisticByCardCache) GetMonthTopupStatusFailedByCardNumberCache(req *requests.MonthTopupStatusCardNumber) ([]*response.TopupResponseMonthStatusFailed, bool) {
 	key := fmt.Sprintf(monthTopupStatusFailedByCardCacheKey, req.CardNumber, req.Month, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusFailed](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetMonthTopupStatusFailedByCardNumberCache(req *requests.MonthTopupStatusCardNumber, data []*response.TopupResponseMonthStatusFailed) {
@@ -78,15 +78,15 @@ func (s *topupStatisticByCardCache) SetMonthTopupStatusFailedByCardNumberCache(r
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetYearlyTopupStatusFailedByCardNumberCache(req *requests.YearTopupStatusCardNumber) []*response.TopupResponseYearStatusFailed {
+func (s *topupStatisticByCardCache) GetYearlyTopupStatusFailedByCardNumberCache(req *requests.YearTopupStatusCardNumber) ([]*response.TopupResponseYearStatusFailed, bool) {
 	key := fmt.Sprintf(yearTopupStatusFailedByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusFailed](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetYearlyTopupStatusFailedByCardNumberCache(req *requests.YearTopupStatusCardNumber, data []*response.TopupResponseYearStatusFailed) {
@@ -94,15 +94,15 @@ func (s *topupStatisticByCardCache) SetYearlyTopupStatusFailedByCardNumberCache(
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetMonthlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod) []*response.TopupMonthAmountResponse {
+func (s *topupStatisticByCardCache) GetMonthlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod) ([]*response.TopupMonthAmountResponse, bool) {
 	key := fmt.Sprintf(monthTopupAmountByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupMonthAmountResponse](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetMonthlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod, data []*response.TopupMonthAmountResponse) {
@@ -110,15 +110,15 @@ func (s *topupStatisticByCardCache) SetMonthlyTopupAmountsByCardNumberCache(req 
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetYearlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod) []*response.TopupYearlyAmountResponse {
+func (s *topupStatisticByCardCache) GetYearlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod) ([]*response.TopupYearlyAmountResponse, bool) {
 	key := fmt.Sprintf(yearTopupAmountByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupYearlyAmountResponse](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetYearlyTopupAmountsByCardNumberCache(req *requests.YearMonthMethod, data []*response.TopupYearlyAmountResponse) {
@@ -126,15 +126,15 @@ func (s *topupStatisticByCardCache) SetYearlyTopupAmountsByCardNumberCache(req *
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetMonthlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod) []*response.TopupMonthMethodResponse {
+func (s *topupStatisticByCardCache) GetMonthlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod) ([]*response.TopupMonthMethodResponse, bool) {
 	key := fmt.Sprintf(monthTopupMethodByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupMonthMethodResponse](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetMonthlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod, data []*response.TopupMonthMethodResponse) {
@@ -142,15 +142,15 @@ func (s *topupStatisticByCardCache) SetMonthlyTopupMethodsByCardNumberCache(req 
 	SetToCache(s.store, key, &data, ttlDefault)
 }
 
-func (s *topupStatisticByCardCache) GetYearlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod) []*response.TopupYearlyMethodResponse {
+func (s *topupStatisticByCardCache) GetYearlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod) ([]*response.TopupYearlyMethodResponse, bool) {
 	key := fmt.Sprintf(yearTopupMethodByCardCacheKey, req.CardNumber, req.Year)
 
 	result, found := GetFromCache[[]*response.TopupYearlyMethodResponse](s.store, key)
 
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 
 func (s *topupStatisticByCardCache) SetYearlyTopupMethodsByCardNumberCache(req *requests.YearMonthMethod, data []*response.TopupYearlyMethodResponse) {

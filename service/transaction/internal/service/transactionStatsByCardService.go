@@ -84,7 +84,7 @@ func (s *transactionStatisticByCardService) FindMonthTransactionStatusSuccessByC
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTransactionStatusSuccessByCardCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTransactionStatusSuccessByCardCache(req); found {
 		logSuccess("Successfully fetched monthly Transaction status success from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -115,7 +115,7 @@ func (s *transactionStatisticByCardService) FindYearlyTransactionStatusSuccessBy
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearTransactionStatusSuccessByCardCache(req); data != nil {
+	if data, found := s.mencache.GetYearTransactionStatusSuccessByCardCache(req); found {
 		logSuccess("Successfully fetched yearly Transaction status success from cache", zap.Int("year", year), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -147,7 +147,7 @@ func (s *transactionStatisticByCardService) FindMonthTransactionStatusFailedByCa
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthTransactionStatusFailedByCardCache(req); data != nil {
+	if data, found := s.mencache.GetMonthTransactionStatusFailedByCardCache(req); found {
 		logSuccess("Successfully fetched monthly Transaction status Failed from cache", zap.Int("year", year), zap.Int("month", month), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -177,7 +177,7 @@ func (s *transactionStatisticByCardService) FindYearlyTransactionStatusFailedByC
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearTransactionStatusFailedByCardCache(req); data != nil {
+	if data, found := s.mencache.GetYearTransactionStatusFailedByCardCache(req); found {
 		logSuccess("Successfully fetched yearly Transaction status Failed from cache", zap.Int("year", year), zap.String("card_number", card_number))
 		return data, nil
 	}
@@ -208,7 +208,7 @@ func (s *transactionStatisticByCardService) FindMonthlyPaymentMethodsByCardNumbe
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyPaymentMethodsByCardCache(req); data != nil {
+	if data, found := s.mencache.GetMonthlyPaymentMethodsByCardCache(req); found {
 		logSuccess("Successfully fetched monthly payment methods by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -240,7 +240,7 @@ func (s *transactionStatisticByCardService) FindYearlyPaymentMethodsByCardNumber
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyPaymentMethodsByCardCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyPaymentMethodsByCardCache(req); found {
 		logSuccess("Successfully fetched yearly payment methods by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -272,7 +272,7 @@ func (s *transactionStatisticByCardService) FindMonthlyAmountsByCardNumber(req *
 		end(status)
 	}()
 
-	if data := s.mencache.GetMonthlyAmountsByCardCache(req); data != nil {
+	if data, found := s.mencache.GetMonthlyAmountsByCardCache(req); found {
 		logSuccess("Successfully fetched monthly amounts by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}
@@ -303,7 +303,7 @@ func (s *transactionStatisticByCardService) FindYearlyAmountsByCardNumber(req *r
 		end(status)
 	}()
 
-	if data := s.mencache.GetYearlyAmountsByCardCache(req); data != nil {
+	if data, found := s.mencache.GetYearlyAmountsByCardCache(req); found {
 		logSuccess("Successfully fetched yearly amounts by card number from cache", zap.String("card_number", cardNumber), zap.Int("year", year))
 		return data, nil
 	}

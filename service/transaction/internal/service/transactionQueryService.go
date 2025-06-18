@@ -139,7 +139,7 @@ func (s *transactionQueryService) FindById(transactionID int) (*response.Transac
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTransactionCache(transactionID); data != nil {
+	if data, found := s.mencache.GetCachedTransactionCache(transactionID); found {
 		logSuccess("Successfully fetched transaction from cache", zap.Int("transaction.id", transactionID))
 		return data, nil
 	}
@@ -232,7 +232,7 @@ func (s *transactionQueryService) FindTransactionByMerchantId(merchantID int) ([
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTransactionByMerchantIdCache(merchantID); data != nil {
+	if data, found := s.mencache.GetCachedTransactionByMerchantIdCache(merchantID); found {
 		logSuccess("Successfully fetched transaction by merchant ID from cache", zap.Int("merchant.id", merchantID))
 		return data, nil
 	}

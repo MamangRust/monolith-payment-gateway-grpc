@@ -107,7 +107,7 @@ func (s *transferQueryService) FindById(transferId int) (*response.TransferRespo
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTransferCache(transferId); data != nil {
+	if data, found := s.mencache.GetCachedTransferCache(transferId); found {
 		logSuccess("Successfully fetched transfer from cache", zap.Int("transfer.id", transferId))
 		return data, nil
 	}
@@ -200,7 +200,7 @@ func (s *transferQueryService) FindTransferByTransferFrom(transfer_from string) 
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTransferByFrom(transfer_from); data != nil {
+	if data, found := s.mencache.GetCachedTransferByFrom(transfer_from); found {
 		logSuccess("Successfully fetched transfer from cache", zap.String("transfer_from", transfer_from))
 		return data, nil
 	}
@@ -229,7 +229,7 @@ func (s *transferQueryService) FindTransferByTransferTo(transfer_to string) ([]*
 		end(status)
 	}()
 
-	if data := s.mencache.GetCachedTransferByTo(transfer_to); data != nil {
+	if data, found := s.mencache.GetCachedTransferByTo(transfer_to); found {
 		logSuccess("Successfully fetched transfer from cache", zap.String("transfer_to", transfer_to))
 		return data, nil
 	}

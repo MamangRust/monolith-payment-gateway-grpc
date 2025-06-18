@@ -128,14 +128,14 @@ func (c *topupQueryCache) SetCachedTopupTrashedCache(req *requests.FindAllTopups
 	SetToCache(c.store, key, payload, ttlDefault)
 }
 
-func (c *topupQueryCache) GetCachedTopupCache(id int) *response.TopupResponse {
+func (c *topupQueryCache) GetCachedTopupCache(id int) (*response.TopupResponse, bool) {
 	key := fmt.Sprintf(topupByIdCacheKey, id)
 
-	result, found := GetFromCache[response.TopupResponse](c.store, key)
+	result, found := GetFromCache[*response.TopupResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return result
+	return *result, true
 }
 
 func (c *topupQueryCache) SetCachedTopupCache(data *response.TopupResponse) {

@@ -104,13 +104,13 @@ func (c *transferQueryCache) SetCachedTransferTrashedCache(req *requests.FindAll
 	SetToCache(c.store, key, payload, ttlDefault)
 }
 
-func (c *transferQueryCache) GetCachedTransferCache(id int) *response.TransferResponse {
+func (c *transferQueryCache) GetCachedTransferCache(id int) (*response.TransferResponse, bool) {
 	key := fmt.Sprintf(transferByIdCacheKey, id)
-	result, found := GetFromCache[response.TransferResponse](c.store, key)
+	result, found := GetFromCache[*response.TransferResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return result
+	return *result, true
 }
 
 func (c *transferQueryCache) SetCachedTransferCache(data *response.TransferResponse) {
@@ -118,27 +118,27 @@ func (c *transferQueryCache) SetCachedTransferCache(data *response.TransferRespo
 	SetToCache(c.store, key, data, ttlDefault)
 }
 
-func (c *transferQueryCache) GetCachedTransferByFrom(from string) []*response.TransferResponse {
+func (c *transferQueryCache) GetCachedTransferByFrom(from string) ([]*response.TransferResponse, bool) {
 	key := fmt.Sprintf(transferByFromCacheKey, from)
 	result, found := GetFromCache[[]*response.TransferResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (c *transferQueryCache) SetCachedTransferByFrom(from string, data []*response.TransferResponse) {
 	key := fmt.Sprintf(transferByFromCacheKey, from)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
 
-func (c *transferQueryCache) GetCachedTransferByTo(to string) []*response.TransferResponse {
+func (c *transferQueryCache) GetCachedTransferByTo(to string) ([]*response.TransferResponse, bool) {
 	key := fmt.Sprintf(transferByToCacheKey, to)
 
 	result, found := GetFromCache[[]*response.TransferResponse](c.store, key)
 	if !found {
-		return nil
+		return nil, false
 	}
-	return *result
+	return *result, true
 }
 func (c *transferQueryCache) SetCachedTransferByTo(to string, data []*response.TransferResponse) {
 	key := fmt.Sprintf(transferByToCacheKey, to)

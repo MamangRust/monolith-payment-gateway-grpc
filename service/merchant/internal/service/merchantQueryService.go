@@ -107,7 +107,7 @@ func (s *merchantQueryService) FindById(merchantID int) (*response.MerchantRespo
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetCachedMerchant(merchantID); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetCachedMerchant(merchantID); found {
 		logSuccess("Successfully retrieved merchant from cache", zap.Int("merchant.id", merchantID))
 		return cachedMerchant, nil
 	}
@@ -231,7 +231,7 @@ func (s *merchantQueryService) FindByMerchantUserId(userID int) ([]*response.Mer
 		end(status)
 	}()
 
-	if cachedMerchants := s.mencache.GetCachedMerchantsByUserId(userID); cachedMerchants != nil {
+	if cachedMerchants, found := s.mencache.GetCachedMerchantsByUserId(userID); found {
 		logSuccess("Successfully found merchants by user ID from cache", zap.Int("user.id", userID), zap.Int("count", len(cachedMerchants)))
 
 		return cachedMerchants, nil
