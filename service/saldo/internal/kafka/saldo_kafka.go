@@ -5,17 +5,21 @@ import (
 	"fmt"
 
 	"github.com/IBM/sarama"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"go.uber.org/zap"
 )
 
 type saldoKafkaHandler struct {
+	logger       logger.LoggerInterface
 	saldoService service.SaldoCommandService
 }
 
-func NewSaldoKafkaHandler(saldoService service.SaldoCommandService) sarama.ConsumerGroupHandler {
+func NewSaldoKafkaHandler(saldoService service.SaldoCommandService, logger logger.LoggerInterface) sarama.ConsumerGroupHandler {
 	return &saldoKafkaHandler{
 		saldoService: saldoService,
+		logger:       logger,
 	}
 }
 
@@ -41,6 +45,8 @@ func (s *saldoKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cl
 		})
 
 		if errRes != nil {
+			s.logger.Error("card service error", zap.Any("error", errRes))
+
 			return fmt.Errorf("card service error: %v", errRes.Message)
 		}
 	}

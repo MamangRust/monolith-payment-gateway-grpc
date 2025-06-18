@@ -41,6 +41,10 @@ func (m *roleQueryCache) SetCachedRoles(req *requests.FindAllRoles, data []*resp
 		total = &zero
 	}
 
+	if data == nil {
+		data = []*response.RoleResponse{}
+	}
+
 	key := fmt.Sprintf(roleAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &roleCachedResponse{Data: data, TotalRecords: total}
@@ -48,11 +52,19 @@ func (m *roleQueryCache) SetCachedRoles(req *requests.FindAllRoles, data []*resp
 }
 
 func (m *roleQueryCache) SetCachedRoleById(id int, data *response.RoleResponse) {
+	if data == nil {
+		data = &response.RoleResponse{}
+	}
+
 	key := fmt.Sprintf(roleByIdCacheKey, id)
 	SetToCache(m.store, key, data, ttlDefault)
 }
 
 func (m *roleQueryCache) SetCachedRoleByUserId(userId int, data []*response.RoleResponse) {
+	if data == nil {
+		data = []*response.RoleResponse{}
+	}
+
 	key := fmt.Sprintf(roleByIdCacheKey, userId)
 	SetToCache(m.store, key, &data, ttlDefault)
 }
@@ -61,6 +73,10 @@ func (m *roleQueryCache) SetCachedRoleActive(req *requests.FindAllRoles, data []
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.RoleResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(roleActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -74,6 +90,11 @@ func (m *roleQueryCache) SetCachedRoleTrashed(req *requests.FindAllRoles, data [
 		zero := 0
 		total = &zero
 	}
+
+	if data == nil {
+		data = []*response.RoleResponseDeleteAt{}
+	}
+
 	key := fmt.Sprintf(roleTrashedCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &roleCachedResponseDeleteAt{Data: data, TotalRecords: total}
 	SetToCache(m.store, key, payload, ttlDefault)
@@ -83,29 +104,35 @@ func (m *roleQueryCache) GetCachedRoles(req *requests.FindAllRoles) ([]*response
 	key := fmt.Sprintf(roleAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[roleCachedResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (m *roleQueryCache) GetCachedRoleById(id int) (*response.RoleResponse, bool) {
 	key := fmt.Sprintf(roleByIdCacheKey, id)
 
-	result, found := GetFromCache[response.RoleResponse](m.store, key)
-	if !found {
+	result, found := GetFromCache[*response.RoleResponse](m.store, key)
+
+	if !found || result == nil {
 		return nil, false
 	}
-	return result, true
+
+	return *result, true
 }
 
 func (m *roleQueryCache) GetCachedRoleByUserId(userId int) ([]*response.RoleResponse, bool) {
 	key := fmt.Sprintf(roleByIdCacheKey, userId)
 
 	result, found := GetFromCache[[]*response.RoleResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
@@ -113,9 +140,11 @@ func (m *roleQueryCache) GetCachedRoleActive(req *requests.FindAllRoles) ([]*res
 	key := fmt.Sprintf(roleActiveCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[roleCachedResponseDeleteAt](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -123,8 +152,10 @@ func (m *roleQueryCache) GetCachedRoleTrashed(req *requests.FindAllRoles) ([]*re
 	key := fmt.Sprintf(roleTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[roleCachedResponseDeleteAt](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }

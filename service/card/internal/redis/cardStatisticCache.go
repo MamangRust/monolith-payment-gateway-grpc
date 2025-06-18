@@ -39,168 +39,252 @@ func NewCardStatisticCache(store *CacheStore) *cardStatisticCache {
 
 func (c *cardStatisticCache) GetMonthlyBalanceCache(year int) ([]*response.CardResponseMonthBalance, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyBalance, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthBalance](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthBalance](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyBalanceCache(year int, data []*response.CardResponseMonthBalance) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyBalance, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyBalanceCache(year int) ([]*response.CardResponseYearlyBalance, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyBalance, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearlyBalance](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearlyBalance](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyBalanceCache(year int, data []*response.CardResponseYearlyBalance) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyBalance, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetMonthlyTopupAmountCache(year int) ([]*response.CardResponseMonthAmount, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyTopupAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyTopupAmountCache(year int, data []*response.CardResponseMonthAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyTopupAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyTopupAmountCache(year int) ([]*response.CardResponseYearAmount, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyTopupAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyTopupAmountCache(year int, data []*response.CardResponseYearAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyTopupAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetMonthlyWithdrawAmountCache(year int) ([]*response.CardResponseMonthAmount, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyWithdrawAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyWithdrawAmountCache(year int, data []*response.CardResponseMonthAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyWithdrawAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyWithdrawAmountCache(year int) ([]*response.CardResponseYearAmount, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyWithdrawAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyWithdrawAmountCache(year int, data []*response.CardResponseYearAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyWithdrawAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetMonthlyTransactionAmountCache(year int) ([]*response.CardResponseMonthAmount, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyTransactionAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyTransactionAmountCache(year int, data []*response.CardResponseMonthAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyTransactionAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyTransactionAmountCache(year int) ([]*response.CardResponseYearAmount, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyTransactionAmount, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyTransactionAmountCache(year int, data []*response.CardResponseYearAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyTransactionAmount, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetMonthlyTransferAmountSenderCache(year int) ([]*response.CardResponseMonthAmount, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyTransferSender, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyTransferAmountSenderCache(year int, data []*response.CardResponseMonthAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyTransferSender, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyTransferAmountSenderCache(year int) ([]*response.CardResponseYearAmount, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyTransferSender, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyTransferAmountSenderCache(year int, data []*response.CardResponseYearAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyTransferSender, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetMonthlyTransferAmountReceiverCache(year int) ([]*response.CardResponseMonthAmount, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyTransferReceiver, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseMonthAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetMonthlyTransferAmountReceiverCache(year int, data []*response.CardResponseMonthAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyMonthlyTransferReceiver, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }
 
 func (c *cardStatisticCache) GetYearlyTransferAmountReceiverCache(year int) ([]*response.CardResponseYearAmount, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyTransferReceiver, year)
-	if cache, ok := GetFromCache[[]*response.CardResponseYearAmount](c.store, key); ok && cache != nil {
-		return *cache, true
+
+	result, found := GetFromCache[[]*response.CardResponseYearAmount](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
 
-	return nil, false
+	return *result, true
 }
 
 func (c *cardStatisticCache) SetYearlyTransferAmountReceiverCache(year int, data []*response.CardResponseYearAmount) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyYearlyTransferReceiver, year)
 	SetToCache(c.store, key, &data, ttlStatistic)
 }

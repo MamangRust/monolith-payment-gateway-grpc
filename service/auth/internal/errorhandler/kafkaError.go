@@ -47,3 +47,18 @@ func (e *kafkaError) HandleSendEmailRegister(
 		fields...,
 	)
 }
+
+func (e *kafkaError) HandleSendEmailVerifyCode(
+	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
+) (bool, *response.ErrorResponse) {
+	return handleErrorKafkaSend[bool](
+		e.logger,
+		err,
+		method,
+		tracePrefix,
+		span,
+		status,
+		user_errors.ErrFailedSendEmail,
+		fields...,
+	)
+}

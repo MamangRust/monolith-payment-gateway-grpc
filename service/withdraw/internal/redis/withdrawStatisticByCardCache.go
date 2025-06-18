@@ -29,13 +29,19 @@ func NewWithdrawStatisticByCardCache(store *CacheStore) *withdrawStatisticByCard
 func (w *withdrawStatisticByCardCache) GetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusSuccess, bool) {
 	key := fmt.Sprintf(monthWithdrawStatusSuccessByCardKey, req.CardNumber, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawResponseMonthStatusSuccess](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (w *withdrawStatisticByCardCache) SetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthWithdrawStatusSuccessByCardKey, req.CardNumber, req.Month, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }
@@ -43,13 +49,19 @@ func (w *withdrawStatisticByCardCache) SetCachedMonthWithdrawStatusSuccessByCard
 func (w *withdrawStatisticByCardCache) GetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusSuccess, bool) {
 	key := fmt.Sprintf(yearWithdrawStatusSuccessByCardKey, req.CardNumber, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawResponseYearStatusSuccess](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (w *withdrawStatisticByCardCache) SetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearWithdrawStatusSuccessByCardKey, req.CardNumber, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }
@@ -57,12 +69,18 @@ func (w *withdrawStatisticByCardCache) SetCachedYearlyWithdrawStatusSuccessByCar
 func (w *withdrawStatisticByCardCache) GetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusFailed, bool) {
 	key := fmt.Sprintf(monthWithdrawStatusSuccessByCardKey, req.CardNumber, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawResponseMonthStatusFailed](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 func (w *withdrawStatisticByCardCache) SetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthWithdrawStatusSuccessByCardKey, req.CardNumber, req.Month, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }
@@ -70,13 +88,19 @@ func (w *withdrawStatisticByCardCache) SetCachedMonthWithdrawStatusFailedByCardN
 func (w *withdrawStatisticByCardCache) GetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusFailed, bool) {
 	key := fmt.Sprintf(yearWithdrawStatusFailedByCardKey, req.CardNumber, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawResponseYearStatusFailed](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (w *withdrawStatisticByCardCache) SetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearWithdrawStatusFailedByCardKey, req.CardNumber, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }
@@ -84,13 +108,19 @@ func (w *withdrawStatisticByCardCache) SetCachedYearlyWithdrawStatusFailedByCard
 func (w *withdrawStatisticByCardCache) GetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawMonthlyAmountResponse, bool) {
 	key := fmt.Sprintf(monthWithdrawAmountByCardKey, req.CardNumber, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawMonthlyAmountResponse](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (w *withdrawStatisticByCardCache) SetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawMonthlyAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthWithdrawAmountByCardKey, req.CardNumber, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }
@@ -98,13 +128,19 @@ func (w *withdrawStatisticByCardCache) SetCachedMonthlyWithdrawsByCardNumber(req
 func (w *withdrawStatisticByCardCache) GetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawYearlyAmountResponse, bool) {
 	key := fmt.Sprintf(yearWithdrawAmountByCardKey, req.CardNumber, req.Year)
 	result, found := GetFromCache[[]*response.WithdrawYearlyAmountResponse](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (w *withdrawStatisticByCardCache) SetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawYearlyAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearWithdrawAmountByCardKey, req.CardNumber, req.Year)
 	SetToCache(w.store, key, &data, ttlDefault)
 }

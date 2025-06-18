@@ -41,18 +41,24 @@ func (m *merchantQueryCache) GetCachedMerchants(req *requests.FindAllMerchants) 
 	key := fmt.Sprintf(merchantAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantCachedResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchants(req *requests.FindAllMerchants, data []*response.MerchantResponse, total *int) {
-
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
+
+	if data == nil {
+		data = []*response.MerchantResponse{}
+	}
+
 	key := fmt.Sprintf(merchantAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &merchantCachedResponse{Data: data, TotalRecords: total}
@@ -63,9 +69,11 @@ func (m *merchantQueryCache) GetCachedMerchantActive(req *requests.FindAllMercha
 	key := fmt.Sprintf(merchantActiveCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantCachedResponseDeleteAt](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -73,6 +81,10 @@ func (m *merchantQueryCache) SetCachedMerchantActive(req *requests.FindAllMercha
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(merchantActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -85,9 +97,11 @@ func (m *merchantQueryCache) GetCachedMerchantTrashed(req *requests.FindAllMerch
 	key := fmt.Sprintf(merchantTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantCachedResponseDeleteAt](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -95,6 +109,10 @@ func (m *merchantQueryCache) SetCachedMerchantTrashed(req *requests.FindAllMerch
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(merchantTrashedCacheKey, req.Page, req.PageSize, req.Search)
@@ -107,13 +125,19 @@ func (m *merchantQueryCache) GetCachedMerchant(id int) (*response.MerchantRespon
 	key := fmt.Sprintf(merchantByIdCacheKey, id)
 
 	result, found := GetFromCache[*response.MerchantResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchant(data *response.MerchantResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(merchantByIdCacheKey, data.ID)
 
 	SetToCache(m.store, key, data, ttlDefault)
@@ -123,29 +147,41 @@ func (m *merchantQueryCache) GetCachedMerchantsByUserId(id int) ([]*response.Mer
 	key := fmt.Sprintf(merchantByUserIdCacheKey, id)
 
 	result, found := GetFromCache[[]*response.MerchantResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchantsByUserId(userId int, data []*response.MerchantResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(merchantByUserIdCacheKey, userId)
 
 	SetToCache(m.store, key, &data, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchantByApiKey(apiKey string) *response.MerchantResponse {
+func (m *merchantQueryCache) GetCachedMerchantByApiKey(apiKey string) (*response.MerchantResponse, bool) {
 	key := fmt.Sprintf(merchantByApiKeyCacheKey, apiKey)
 
-	result, found := GetFromCache[response.MerchantResponse](m.store, key)
-	if !found {
-		return nil
+	result, found := GetFromCache[*response.MerchantResponse](m.store, key)
+
+	if !found || result == nil {
+		return nil, false
 	}
-	return result
+
+	return *result, true
 }
 
 func (m *merchantQueryCache) SetCachedMerchantByApiKey(apiKey string, data *response.MerchantResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(merchantByApiKeyCacheKey, apiKey)
 
 	SetToCache(m.store, key, data, ttlDefault)

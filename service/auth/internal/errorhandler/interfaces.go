@@ -37,6 +37,9 @@ type KafkaErrorHandler interface {
 	HandleSendEmailRegister(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 	) (*response.UserResponse, *response.ErrorResponse)
+	HandleSendEmailVerifyCode(
+		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
+	) (bool, *response.ErrorResponse)
 }
 
 type LoginErrorHandler interface {
@@ -50,6 +53,9 @@ type MarshalErrorHandler interface {
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 	) (*response.UserResponse, *response.ErrorResponse)
 	HandleMarsalForgotPassword(
+		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
+	) (bool, *response.ErrorResponse)
+	HandleMarshalVerifyCode(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
 	) (bool, *response.ErrorResponse)
 }

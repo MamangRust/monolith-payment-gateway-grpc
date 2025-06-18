@@ -16,7 +16,7 @@ type MerchantQueryCache interface {
 	SetCachedMerchant(data *response.MerchantResponse)
 	GetCachedMerchantsByUserId(id int) ([]*response.MerchantResponse, bool)
 	SetCachedMerchantsByUserId(userId int, data []*response.MerchantResponse)
-	GetCachedMerchantByApiKey(apiKey string) *response.MerchantResponse
+	GetCachedMerchantByApiKey(apiKey string) (*response.MerchantResponse, bool)
 	SetCachedMerchantByApiKey(apiKey string, data *response.MerchantResponse)
 }
 

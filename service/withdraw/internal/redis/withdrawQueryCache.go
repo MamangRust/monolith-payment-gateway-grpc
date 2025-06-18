@@ -40,13 +40,24 @@ func (w *withdrawQueryCache) GetCachedWithdrawsCache(req *requests.FindAllWithdr
 	key := fmt.Sprintf(withdrawAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[withdrawCachedResponse](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (w *withdrawQueryCache) SetCachedWithdrawsCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponse, total *int) {
+	if total == nil {
+		zero := 0
+		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.WithdrawResponse{}
+	}
+
 	key := fmt.Sprintf(withdrawAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &withdrawCachedResponse{Data: data, TotalRecords: total}
@@ -58,13 +69,24 @@ func (w *withdrawQueryCache) GetCachedWithdrawByCardCache(req *requests.FindAllW
 	key := fmt.Sprintf(withdrawByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[withdrawCachedResponse](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (w *withdrawQueryCache) SetCachedWithdrawByCardCache(req *requests.FindAllWithdrawCardNumber, data []*response.WithdrawResponse, total *int) {
+	if total == nil {
+		zero := 0
+		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.WithdrawResponse{}
+	}
+
 	key := fmt.Sprintf(withdrawByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
 
 	payload := &withdrawCachedResponse{Data: data, TotalRecords: total}
@@ -74,13 +96,24 @@ func (w *withdrawQueryCache) SetCachedWithdrawByCardCache(req *requests.FindAllW
 func (w *withdrawQueryCache) GetCachedWithdrawActiveCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(withdrawActiveCacheKey, req.Page, req.PageSize, req.Search)
 	result, found := GetFromCache[withdrawCachedResponseDeleteAt](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (w *withdrawQueryCache) SetCachedWithdrawActiveCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
+	if total == nil {
+		zero := 0
+		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.WithdrawResponseDeleteAt{}
+	}
+
 	key := fmt.Sprintf(withdrawActiveCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &withdrawCachedResponseDeleteAt{Data: data, TotalRecords: total}
 	SetToCache(w.store, key, payload, ttlDefault)
@@ -89,13 +122,25 @@ func (w *withdrawQueryCache) SetCachedWithdrawActiveCache(req *requests.FindAllW
 func (w *withdrawQueryCache) GetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(withdrawTrashedCacheKey, req.Page, req.PageSize, req.Search)
 	result, found := GetFromCache[withdrawCachedResponseDeleteAt](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
 func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
+	if total == nil {
+		zero := 0
+
+		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.WithdrawResponseDeleteAt{}
+	}
+
 	key := fmt.Sprintf(withdrawTrashedCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &withdrawCachedResponseDeleteAt{Data: data, TotalRecords: total}
 	SetToCache(w.store, key, payload, ttlDefault)
@@ -104,14 +149,20 @@ func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(req *requests.FindAll
 func (w *withdrawQueryCache) GetCachedWithdrawCache(id int) (*response.WithdrawResponse, bool) {
 	key := fmt.Sprintf(withdrawByIdCacheKey, id)
 	result, found := GetFromCache[*response.WithdrawResponse](w.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 
 }
 
 func (w *withdrawQueryCache) SetCachedWithdrawCache(data *response.WithdrawResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(withdrawByIdCacheKey, data.ID)
 	SetToCache(w.store, key, data, ttlDefault)
 }

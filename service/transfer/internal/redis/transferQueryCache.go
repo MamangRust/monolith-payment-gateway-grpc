@@ -43,7 +43,7 @@ func (c *transferQueryCache) GetCachedTransfersCache(req *requests.FindAllTranfe
 
 	result, found := GetFromCache[transferCacheResponse](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, nil, false
 	}
 	return result.Data, result.TotalRecords, true
@@ -53,6 +53,10 @@ func (c *transferQueryCache) SetCachedTransfersCache(req *requests.FindAllTranfe
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TransferResponse{}
 	}
 
 	key := fmt.Sprintf(transferAllCacheKey, req.Page, req.PageSize, req.Search)
@@ -65,15 +69,21 @@ func (c *transferQueryCache) GetCachedTransferActiveCache(req *requests.FindAllT
 	key := fmt.Sprintf(transferActiveCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[transferCachedResponseDeleteAt](c.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 func (c *transferQueryCache) SetCachedTransferActiveCache(req *requests.FindAllTranfers, data []*response.TransferResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TransferResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(transferActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -86,9 +96,11 @@ func (c *transferQueryCache) GetCachedTransferTrashedCache(req *requests.FindAll
 	key := fmt.Sprintf(transferTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[transferCachedResponseDeleteAt](c.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -96,6 +108,10 @@ func (c *transferQueryCache) SetCachedTransferTrashedCache(req *requests.FindAll
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TransferResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(transferTrashedCacheKey, req.Page, req.PageSize, req.Search)
@@ -107,13 +123,19 @@ func (c *transferQueryCache) SetCachedTransferTrashedCache(req *requests.FindAll
 func (c *transferQueryCache) GetCachedTransferCache(id int) (*response.TransferResponse, bool) {
 	key := fmt.Sprintf(transferByIdCacheKey, id)
 	result, found := GetFromCache[*response.TransferResponse](c.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *transferQueryCache) SetCachedTransferCache(data *response.TransferResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(transferByIdCacheKey, data.ID)
 	SetToCache(c.store, key, data, ttlDefault)
 }
@@ -121,12 +143,16 @@ func (c *transferQueryCache) SetCachedTransferCache(data *response.TransferRespo
 func (c *transferQueryCache) GetCachedTransferByFrom(from string) ([]*response.TransferResponse, bool) {
 	key := fmt.Sprintf(transferByFromCacheKey, from)
 	result, found := GetFromCache[[]*response.TransferResponse](c.store, key)
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 func (c *transferQueryCache) SetCachedTransferByFrom(from string, data []*response.TransferResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(transferByFromCacheKey, from)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -135,12 +161,16 @@ func (c *transferQueryCache) GetCachedTransferByTo(to string) ([]*response.Trans
 	key := fmt.Sprintf(transferByToCacheKey, to)
 
 	result, found := GetFromCache[[]*response.TransferResponse](c.store, key)
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 func (c *transferQueryCache) SetCachedTransferByTo(to string, data []*response.TransferResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(transferByToCacheKey, to)
 	SetToCache(c.store, key, &data, ttlDefault)
 }

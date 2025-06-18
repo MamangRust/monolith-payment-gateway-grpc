@@ -1,7 +1,7 @@
 github.com/IBM/sarama v1.45.1 h1:nY30XqYpqyXOXSNoe2XCgjj9jklGM1Ye94ierUb1jQ0=
 github.com/IBM/sarama v1.45.1/go.mod h1:qifDhA3VWSrQ1TjSMyxDl3nYL3oX2C83u+G6L79sq4w=
-github.com/MamangRust/monolith-payment-gateway-pkg v1.0.6 h1:zBwT8uV4A2f50TzPlryTGSzFShgTfYIrDPNqfCb3KDs=
-github.com/MamangRust/monolith-payment-gateway-pkg v1.0.6/go.mod h1:w5JoFvujGyjK8NTx5c39mSLr2aXdtg291aAPRTtaFkk=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.7 h1:lqtO4fIliNS+Y1zFX9YkNpmO2aQgE1Wi2b9jB5BicqM=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.7/go.mod h1:w5JoFvujGyjK8NTx5c39mSLr2aXdtg291aAPRTtaFkk=
 github.com/MamangRust/monolith-payment-gateway-shared v1.0.2 h1:043DfQnY27X9eQozlcwxor2hGifsxNqO6YTSuHgL+bY=
 github.com/MamangRust/monolith-payment-gateway-shared v1.0.2/go.mod h1:S9+5zxodhnsPDeSejLq+1WoVda/+LHcGRrCvPOZHUk4=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

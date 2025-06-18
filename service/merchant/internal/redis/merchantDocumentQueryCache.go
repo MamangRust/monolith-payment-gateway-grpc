@@ -36,7 +36,8 @@ func (s *merchantDocumentQueryCache) GetCachedMerchantDocuments(req *requests.Fi
 	key := fmt.Sprintf(merchantDocumentAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantDocumentQueryCachedResponse](s.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
 
@@ -47,6 +48,10 @@ func (s *merchantDocumentQueryCache) SetCachedMerchantDocuments(req *requests.Fi
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantDocumentResponse{}
 	}
 
 	key := fmt.Sprintf(merchantDocumentAllCacheKey, req.Page, req.PageSize, req.Search)
@@ -60,7 +65,8 @@ func (s *merchantDocumentQueryCache) GetCachedMerchantDocumentsActive(req *reque
 	key := fmt.Sprintf(merchantDocumentActiveCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantDocumentQueryCachedResponseDeleteAt](s.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
 
@@ -71,6 +77,10 @@ func (s *merchantDocumentQueryCache) SetCachedMerchantDocumentsActive(req *reque
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantDocumentResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(merchantDocumentActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -84,7 +94,8 @@ func (s *merchantDocumentQueryCache) GetCachedMerchantDocumentsTrashed(req *requ
 	key := fmt.Sprintf(merchantDocumentTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
 	result, found := GetFromCache[merchantDocumentQueryCachedResponseDeleteAt](s.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
 
@@ -95,6 +106,10 @@ func (s *merchantDocumentQueryCache) SetCachedMerchantDocumentsTrashed(req *requ
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantDocumentResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(merchantDocumentTrashedCacheKey, req.Page, req.PageSize, req.Search)
@@ -108,7 +123,8 @@ func (s *merchantDocumentQueryCache) GetCachedMerchantDocument(id int) (*respons
 	key := fmt.Sprintf(merchantDocumentByIdCacheKey, id)
 
 	result, found := GetFromCache[*response.MerchantDocumentResponse](s.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
 
@@ -116,6 +132,10 @@ func (s *merchantDocumentQueryCache) GetCachedMerchantDocument(id int) (*respons
 }
 
 func (s *merchantDocumentQueryCache) SetCachedMerchantDocument(id int, data *response.MerchantDocumentResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(merchantDocumentByIdCacheKey, id)
 
 	SetToCache(s.store, key, data, ttlDefault)

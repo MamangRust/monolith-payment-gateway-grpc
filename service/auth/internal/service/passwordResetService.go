@@ -210,6 +210,23 @@ func (s *passwordResetService) VerifyCode(code string) (bool, *response.ErrorRes
 
 	s.mencache.DeleteVerificationCodeCache(res.Email)
 
+	htmlBody := emails.GenerateEmailHTML(map[string]string{
+		"Title":   "Verification Success",
+		"Message": "Your account has been successfully verified. Click the button below to view or manage your card.",
+		"Button":  "Go to Dashboard",
+		"Link":    "https://sanedge.example.com/card/create",
+	})
+
+	payloadBytes, err := json.Marshal(htmlBody)
+	if err != nil {
+		return s.errorMarshal.HandleMarshalVerifyCode(err, method, "SEND_EMAIL_VERIFY_CODE_ERR", span, &status, zap.Error(err))
+	}
+
+	err = s.kafka.SendMessage("email-service-topic-auth-verify-code-success", strconv.Itoa(res.ID), payloadBytes)
+	if err != nil {
+		return s.errorKafka.HandleSendEmailVerifyCode(err, method, "SEND_EMAIL_VERIFY_CODE_ERR", span, &status, zap.Error(err))
+	}
+
 	logSuccess("Successfully verify code", zap.String("code", code))
 
 	return true, nil

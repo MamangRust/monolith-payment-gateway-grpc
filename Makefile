@@ -14,6 +14,10 @@ generate-proto:
 	protoc --proto_path=pkg/proto --go_out=shared/pb --go_opt=paths=source_relative --go-grpc_out=shared/pb --go-grpc_opt=paths=source_relative pkg/proto/*.proto
 
 
+generate-sql:
+	sqlc generate
+
+
 generate-swagger:
 	swag init -g service/apigateway/cmd/main.go -o service/apigateway/docs
 

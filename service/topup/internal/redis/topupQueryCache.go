@@ -41,9 +41,10 @@ func (c *topupQueryCache) GetCachedTopupsCache(req *requests.FindAllTopups) ([]*
 
 	result, found := GetFromCache[topupCachedResponse](c.store, key)
 
-	if found {
-		return result.Data, result.Total, false
+	if !found || result == nil {
+		return nil, nil, false
 	}
+
 	return result.Data, result.Total, true
 }
 
@@ -51,6 +52,10 @@ func (c *topupQueryCache) SetCachedTopupsCache(req *requests.FindAllTopups, data
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TopupResponse{}
 	}
 
 	key := fmt.Sprintf(topupAllCacheKey, req.Page, req.PageSize, req.Search)
@@ -64,9 +69,10 @@ func (c *topupQueryCache) GetCacheTopupByCardCache(req *requests.FindAllTopupsBy
 
 	result, found := GetFromCache[topupCachedResponse](c.store, key)
 
-	if found {
-		return result.Data, result.Total, false
+	if !found || result == nil {
+		return nil, nil, false
 	}
+
 	return result.Data, result.Total, true
 }
 
@@ -74,6 +80,10 @@ func (c *topupQueryCache) SetCacheTopupByCardCache(req *requests.FindAllTopupsBy
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TopupResponse{}
 	}
 
 	key := fmt.Sprintf(topupByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
@@ -87,9 +97,10 @@ func (c *topupQueryCache) GetCachedTopupActiveCache(req *requests.FindAllTopups)
 
 	result, found := GetFromCache[topupCachedResponseDeleteAt](c.store, key)
 
-	if found {
-		return result.Data, result.Total, false
+	if !found || result == nil {
+		return nil, nil, false
 	}
+
 	return result.Data, result.Total, true
 }
 
@@ -97,6 +108,10 @@ func (c *topupQueryCache) SetCachedTopupActiveCache(req *requests.FindAllTopups,
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TopupResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(topupActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -110,9 +125,10 @@ func (c *topupQueryCache) GetCachedTopupTrashedCache(req *requests.FindAllTopups
 
 	result, found := GetFromCache[topupCachedResponseDeleteAt](c.store, key)
 
-	if found {
-		return result.Data, result.Total, false
+	if !found || result == nil {
+		return nil, nil, false
 	}
+
 	return result.Data, result.Total, true
 }
 
@@ -120,6 +136,10 @@ func (c *topupQueryCache) SetCachedTopupTrashedCache(req *requests.FindAllTopups
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.TopupResponseDeleteAt{}
 	}
 
 	key := fmt.Sprintf(topupTrashedCacheKey, req.Page, req.PageSize, req.Search)
@@ -132,13 +152,19 @@ func (c *topupQueryCache) GetCachedTopupCache(id int) (*response.TopupResponse, 
 	key := fmt.Sprintf(topupByIdCacheKey, id)
 
 	result, found := GetFromCache[*response.TopupResponse](c.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupQueryCache) SetCachedTopupCache(data *response.TopupResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(topupByIdCacheKey, data.ID)
 	SetToCache(c.store, key, data, ttlDefault)
 }

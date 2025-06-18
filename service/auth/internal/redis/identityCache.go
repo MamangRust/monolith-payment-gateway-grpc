@@ -32,7 +32,7 @@ func (c *identityCache) GetRefreshToken(token string) (string, bool) {
 	key = fmt.Sprintf(key, token)
 
 	result, found := GetFromCache[string](c.store, key)
-	if !found {
+	if !found || result == nil {
 		return "", false
 	}
 	return *result, true
@@ -44,6 +44,10 @@ func (c *identityCache) DeleteRefreshToken(token string) {
 }
 
 func (c *identityCache) SetCachedUserInfo(user *response.UserResponse, expiration time.Duration) {
+	if user == nil {
+		return
+	}
+
 	key := fmt.Sprintf(keyIdentityUserInfo, user.ID)
 
 	SetToCache(c.store, key, user, expiration)

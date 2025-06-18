@@ -34,6 +34,10 @@ func (m *merchantTransactionCachhe) SetCacheAllMerchantTransactions(req *request
 		total = &zero
 	}
 
+	if data == nil {
+		data = []*response.MerchantTransactionResponse{}
+	}
+
 	key := fmt.Sprintf(merchantTransactionsCacheKey, req.Search, req.Page, req.PageSize)
 
 	payload := &merchantTransactionCachheResponse{Data: data, TotalRecords: total}
@@ -45,9 +49,11 @@ func (m *merchantTransactionCachhe) GetCacheAllMerchantTransactions(req *request
 	key := fmt.Sprintf(merchantTransactionsCacheKey, req.Search, req.Page, req.PageSize)
 
 	result, found := GetFromCache[merchantTransactionCachheResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -55,6 +61,10 @@ func (m *merchantTransactionCachhe) SetCacheMerchantTransactions(req *requests.F
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantTransactionResponse{}
 	}
 
 	key := fmt.Sprintf(merchantTransactionCacheKey, req.MerchantID, req.Search, req.Page, req.PageSize)
@@ -68,9 +78,11 @@ func (m *merchantTransactionCachhe) GetCacheMerchantTransactions(req *requests.F
 	key := fmt.Sprintf(merchantTransactionCacheKey, req.MerchantID, req.Search, req.Page, req.PageSize)
 
 	result, found := GetFromCache[merchantTransactionCachheResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }
 
@@ -78,6 +90,10 @@ func (m *merchantTransactionCachhe) SetCacheMerchantTransactionApikey(req *reque
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.MerchantTransactionResponse{}
 	}
 
 	key := fmt.Sprintf(merchantTransactionApikeyCacheKey, req.ApiKey, req.Search, req.Page, req.PageSize)
@@ -91,8 +107,10 @@ func (m *merchantTransactionCachhe) GetCacheMerchantTransactionApikey(req *reque
 	key := fmt.Sprintf(merchantTransactionApikeyCacheKey, req.ApiKey, req.Search, req.Page, req.PageSize)
 
 	result, found := GetFromCache[merchantTransactionCachheResponse](m.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return nil, nil, false
 	}
+
 	return result.Data, result.TotalRecords, true
 }

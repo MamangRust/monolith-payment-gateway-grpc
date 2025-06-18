@@ -33,13 +33,18 @@ func (c *topupStatisticCache) GetMonthTopupStatusSuccessCache(req *requests.Mont
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusSuccess](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthTopupStatusSuccessCache(req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -49,13 +54,18 @@ func (c *topupStatisticCache) GetYearlyTopupStatusSuccessCache(year int) ([]*res
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusSuccess](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupStatusSuccessCache(year int, data []*response.TopupResponseYearStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -65,13 +75,18 @@ func (c *topupStatisticCache) GetMonthTopupStatusFailedCache(req *requests.Month
 
 	result, found := GetFromCache[[]*response.TopupResponseMonthStatusFailed](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthTopupStatusFailedCache(req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -81,13 +96,17 @@ func (c *topupStatisticCache) GetYearlyTopupStatusFailedCache(year int) ([]*resp
 
 	result, found := GetFromCache[[]*response.TopupResponseYearStatusFailed](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupStatusFailedCache(year int, data []*response.TopupResponseYearStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -97,13 +116,18 @@ func (c *topupStatisticCache) GetMonthlyTopupAmountsCache(year int) ([]*response
 
 	result, found := GetFromCache[[]*response.TopupMonthAmountResponse](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthlyTopupAmountsCache(year int, data []*response.TopupMonthAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -113,13 +137,18 @@ func (c *topupStatisticCache) GetYearlyTopupAmountsCache(year int) ([]*response.
 
 	result, found := GetFromCache[[]*response.TopupYearlyAmountResponse](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupAmountsCache(year int, data []*response.TopupYearlyAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupAmountCacheKey, year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -129,13 +158,17 @@ func (c *topupStatisticCache) GetMonthlyTopupMethodsCache(month int) ([]*respons
 
 	result, found := GetFromCache[[]*response.TopupMonthMethodResponse](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetMonthlyTopupMethodsCache(month int, data []*response.TopupMonthMethodResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupMethodCacheKey, month)
 	SetToCache(c.store, key, &data, ttlDefault)
 }
@@ -145,13 +178,17 @@ func (c *topupStatisticCache) GetYearlyTopupMethodsCache(year int) ([]*response.
 
 	result, found := GetFromCache[[]*response.TopupYearlyMethodResponse](c.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
 func (c *topupStatisticCache) SetYearlyTopupMethodsCache(year int, data []*response.TopupYearlyMethodResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
 	SetToCache(c.store, key, &data, ttlDefault)
 }

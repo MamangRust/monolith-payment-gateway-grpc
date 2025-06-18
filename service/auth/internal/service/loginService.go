@@ -87,8 +87,6 @@ func NewLoginService(
 	}
 }
 
-// Login itu harus is_verified = true jika ga maka suruh verifikasi
-
 func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResponse, *response.ErrorResponse) {
 	const method = "Login"
 
@@ -103,7 +101,7 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 		return cachedToken, nil
 	}
 
-	res, err := s.user.FindByEmail(request.Email)
+	res, err := s.user.FindByEmailAndVerify(request.Email)
 	if err != nil {
 		return s.errorHandler.HandleFindEmailError(err, method, "LOGIN_ERR", span, &status, zap.Error(err))
 	}

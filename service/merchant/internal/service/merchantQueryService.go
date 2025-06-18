@@ -203,7 +203,7 @@ func (s *merchantQueryService) FindByApiKey(apiKey string) (*response.MerchantRe
 		end(status)
 	}()
 
-	if cachedMerchant := s.mencache.GetCachedMerchantByApiKey(apiKey); cachedMerchant != nil {
+	if cachedMerchant, found := s.mencache.GetCachedMerchantByApiKey(apiKey); found {
 		logSuccess("Successfully found merchant by API key from cache", zap.String("api_key", apiKey))
 		return cachedMerchant, nil
 	}

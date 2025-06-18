@@ -29,7 +29,8 @@ func (c *passwordResetCache) GetResetTokenCache(token string) (int, bool) {
 	key := fmt.Sprintf(keyPasswordResetToken, token)
 
 	result, found := GetFromCache[int](c.store, key)
-	if !found {
+
+	if !found || result == nil {
 		return 0, false
 	}
 	return *result, true

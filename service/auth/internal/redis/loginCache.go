@@ -22,7 +22,7 @@ func (s *loginCache) GetCachedLogin(email string) (*response.TokenResponse, bool
 
 	result, found := GetFromCache[*response.TokenResponse](s.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 
@@ -30,6 +30,10 @@ func (s *loginCache) GetCachedLogin(email string) (*response.TokenResponse, bool
 }
 
 func (s *loginCache) SetCachedLogin(email string, data *response.TokenResponse, expiration time.Duration) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(keylogin, email)
 
 	SetToCache(s.store, key, data, expiration)

@@ -39,12 +39,26 @@ func NewCardQueryCache(store *CacheStore) *cardQueryCache {
 
 func (c *cardQueryCache) GetByIdCache(cardID int) (*response.CardResponse, bool) {
 	key := fmt.Sprintf(cardByIdCacheKey, cardID)
-	return GetFromCache[response.CardResponse](c.store, key)
+
+	result, found := GetFromCache[*response.CardResponse](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
+	}
+
+	return *result, true
 }
 
 func (c *cardQueryCache) GetByUserIDCache(userID int) (*response.CardResponse, bool) {
 	key := fmt.Sprintf(cardByUserIdCacheKey, userID)
-	return GetFromCache[response.CardResponse](c.store, key)
+
+	result, found := GetFromCache[*response.CardResponse](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
+	}
+
+	return *result, true
 }
 
 func (c *cardQueryCache) GetByCardNumberCache(cardNumber string) (*response.CardResponse, bool) {
@@ -54,26 +68,38 @@ func (c *cardQueryCache) GetByCardNumberCache(cardNumber string) (*response.Card
 
 func (c *cardQueryCache) GetFindAllCache(req *requests.FindAllCards) ([]*response.CardResponse, *int, bool) {
 	key := fmt.Sprintf(cardAllCacheKey, req.Page, req.PageSize, req.Search)
-	if cached, ok := GetFromCache[cardCachedResponse](c.store, key); ok && cached != nil {
-		return cached.Data, cached.TotalRecords, true
+
+	result, found := GetFromCache[cardCachedResponse](c.store, key)
+
+	if !found || result == nil {
+		return nil, nil, false
 	}
-	return nil, nil, false
+
+	return result.Data, result.TotalRecords, true
 }
 
 func (c *cardQueryCache) GetByActiveCache(req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cardActiveCacheKey, req.Page, req.PageSize, req.Search)
-	if cached, ok := GetFromCache[cardCachedResponseDeleteAt](c.store, key); ok && cached != nil {
-		return cached.Data, cached.TotalRecords, true
+
+	result, found := GetFromCache[cardCachedResponseDeleteAt](c.store, key)
+
+	if !found || result == nil {
+		return nil, nil, false
 	}
-	return nil, nil, false
+
+	return result.Data, result.TotalRecords, true
 }
 
 func (c *cardQueryCache) GetByTrashedCache(req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cardTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	if cached, ok := GetFromCache[cardCachedResponseDeleteAt](c.store, key); ok && cached != nil {
-		return cached.Data, cached.TotalRecords, true
+
+	result, found := GetFromCache[cardCachedResponseDeleteAt](c.store, key)
+
+	if !found || result == nil {
+		return nil, nil, false
 	}
-	return nil, nil, false
+
+	return result.Data, result.TotalRecords, true
 }
 
 func (c *cardQueryCache) SetByIdCache(cardID int, data *response.CardResponse) {
@@ -82,11 +108,19 @@ func (c *cardQueryCache) SetByIdCache(cardID int, data *response.CardResponse) {
 }
 
 func (c *cardQueryCache) SetByUserIDCache(userID int, data *response.CardResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cardByUserIdCacheKey, userID)
 	SetToCache(c.store, key, data, ttlDefault)
 }
 
 func (c *cardQueryCache) SetByCardNumberCache(cardNumber string, data *response.CardResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cardByCardNumCacheKey, cardNumber)
 	SetToCache(c.store, key, data, ttlDefault)
 }
@@ -96,6 +130,11 @@ func (c *cardQueryCache) SetFindAllCache(req *requests.FindAllCards, data []*res
 		zero := 0
 		total = &zero
 	}
+
+	if data == nil {
+		data = []*response.CardResponse{}
+	}
+
 	payload := &cardCachedResponse{Data: data, TotalRecords: total}
 
 	key := fmt.Sprintf(cardAllCacheKey, req.Page, req.PageSize, req.Search)
@@ -107,6 +146,11 @@ func (c *cardQueryCache) SetByActiveCache(req *requests.FindAllCards, data []*re
 		zero := 0
 		total = &zero
 	}
+
+	if data == nil {
+		data = []*response.CardResponseDeleteAt{}
+	}
+
 	payload := &cardCachedResponseDeleteAt{Data: data, TotalRecords: total}
 
 	key := fmt.Sprintf(cardActiveCacheKey, req.Page, req.PageSize, req.Search)
@@ -117,6 +161,10 @@ func (c *cardQueryCache) SetByTrashedCache(req *requests.FindAllCards, data []*r
 	if total == nil {
 		zero := 0
 		total = &zero
+	}
+
+	if data == nil {
+		data = []*response.CardResponseDeleteAt{}
 	}
 
 	payload := &cardCachedResponseDeleteAt{Data: data, TotalRecords: total}

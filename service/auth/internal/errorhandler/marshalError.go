@@ -47,3 +47,18 @@ func (e *marshalError) HandleMarsalForgotPassword(
 		fields...,
 	)
 }
+
+func (e *marshalError) HandleMarshalVerifyCode(
+	err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
+) (bool, *response.ErrorResponse) {
+	return handleErrorJSONMarshal[bool](
+		e.logger,
+		err,
+		method,
+		tracePrefix,
+		span,
+		status,
+		user_errors.ErrFailedSendEmail,
+		fields...,
+	)
+}

@@ -32,13 +32,18 @@ func (t *transactionStatisticCache) GetMonthTransactonStatusSuccessCache(req *re
 	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.TransactionResponseMonthStatusSuccess](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetMonthTransactonStatusSuccessCache(req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -47,13 +52,18 @@ func (t *transactionStatisticCache) GetYearTransactonStatusSuccessCache(year int
 	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
 	result, found := GetFromCache[[]*response.TransactionResponseYearStatusSuccess](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetYearTransactonStatusSuccessCache(year int, data []*response.TransactionResponseYearStatusSuccess) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -62,13 +72,18 @@ func (t *transactionStatisticCache) GetMonthTransactonStatusFailedCache(req *req
 	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
 	result, found := GetFromCache[[]*response.TransactionResponseMonthStatusFailed](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetMonthTransactonStatusFailedCache(req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -77,13 +92,18 @@ func (t *transactionStatisticCache) GetYearTransactonStatusFailedCache(year int)
 	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
 	result, found := GetFromCache[[]*response.TransactionResponseYearStatusFailed](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetYearTransactonStatusFailedCache(year int, data []*response.TransactionResponseYearStatusFailed) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -92,13 +112,18 @@ func (t *transactionStatisticCache) GetMonthlyPaymentMethodsCache(year int) ([]*
 	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
 	result, found := GetFromCache[[]*response.TransactionMonthMethodResponse](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetMonthlyPaymentMethodsCache(year int, data []*response.TransactionMonthMethodResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -107,13 +132,18 @@ func (t *transactionStatisticCache) GetYearlyPaymentMethodsCache(year int) ([]*r
 	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
 	result, found := GetFromCache[[]*response.TransactionYearMethodResponse](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetYearlyPaymentMethodsCache(year int, data []*response.TransactionYearMethodResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -122,13 +152,18 @@ func (t *transactionStatisticCache) GetMonthlyAmountsCache(year int) ([]*respons
 	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
 	result, found := GetFromCache[[]*response.TransactionMonthAmountResponse](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
 func (t *transactionStatisticCache) SetMonthlyAmountsCache(year int, data []*response.TransactionMonthAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }
@@ -138,7 +173,7 @@ func (t *transactionStatisticCache) GetYearlyAmountsCache(year int) ([]*response
 
 	result, found := GetFromCache[[]*response.TransactionYearlyAmountResponse](t.store, key)
 
-	if !found {
+	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
@@ -146,6 +181,10 @@ func (t *transactionStatisticCache) GetYearlyAmountsCache(year int) ([]*response
 }
 
 func (t *transactionStatisticCache) SetYearlyAmountsCache(year int, data []*response.TransactionYearlyAmountResponse) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(yearTopupAmountCacheKey, year)
 	SetToCache(t.store, key, &data, ttlDefault)
 }

@@ -22,10 +22,20 @@ func NewCardDashboardCache(store *CacheStore) *cardDashboardCache {
 }
 
 func (c *cardDashboardCache) GetDashboardCardCache() (*response.DashboardCard, bool) {
-	return GetFromCache[response.DashboardCard](c.store, cacheKeyDashboardDefault)
+	result, found := GetFromCache[*response.DashboardCard](c.store, cacheKeyDashboardDefault)
+
+	if !found || result == nil {
+		return nil, false
+	}
+
+	return *result, true
 }
 
 func (c *cardDashboardCache) SetDashboardCardCache(data *response.DashboardCard) {
+	if data == nil {
+		return
+	}
+
 	SetToCache(c.store, cacheKeyDashboardDefault, data, ttlDashboardDefault)
 }
 
@@ -35,10 +45,20 @@ func (c *cardDashboardCache) DeleteDashboardCardCache() {
 
 func (c *cardDashboardCache) GetDashboardCardCardNumberCache(cardNumber string) (*response.DashboardCardCardNumber, bool) {
 	key := fmt.Sprintf(cacheKeyDashboardCardNumber, cardNumber)
-	return GetFromCache[response.DashboardCardCardNumber](c.store, key)
+	result, found := GetFromCache[*response.DashboardCardCardNumber](c.store, key)
+
+	if !found || result == nil {
+		return nil, false
+	}
+
+	return *result, true
 }
 
 func (c *cardDashboardCache) SetDashboardCardCardNumberCache(cardNumber string, data *response.DashboardCardCardNumber) {
+	if data == nil {
+		return
+	}
+
 	key := fmt.Sprintf(cacheKeyDashboardCardNumber, cardNumber)
 	SetToCache(c.store, key, data, ttlDashboardDefault)
 }
