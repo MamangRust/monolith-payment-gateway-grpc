@@ -12,9 +12,13 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
+	"github.com/MamangRust/monolith-payment-gateway-role/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-role/internal/handler"
+	myhandlerkafka "github.com/MamangRust/monolith-payment-gateway-role/internal/kafka"
+	mencache "github.com/MamangRust/monolith-payment-gateway-role/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-role/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-role/internal/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
@@ -79,7 +83,10 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	repositories := repository.NewRepositories(depsRepo)
 
+	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
+
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("role-service", ctx)
+
 	if err != nil {
 		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
 
@@ -102,12 +109,31 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		return nil, nil, err
 	}
 
+	mencache := mencache.NewMencache(&mencache.Deps{
+		Ctx:    ctx,
+		Redis:  myredis,
+		Logger: logger,
+	})
+
+	errorhandler := errorhandler.NewErrorHandler(logger)
+
 	services := service.NewService(&service.Deps{
 		Ctx:          ctx,
 		Redis:        myredis,
 		Repositories: repositories,
 		Logger:       logger,
+		ErrorHandler: errorhandler,
+		Mencache:     mencache,
 	})
+
+	handler_kafka_role := myhandlerkafka.NewRoleKafkaHandler(services.RoleQuery, myKafka, logger)
+
+	err = myKafka.StartConsumers([]string{"request-role"}, "role-service-group", handler_kafka_role)
+
+	if err != nil {
+		logger.Fatal("Failed to start Kafka consumer", zap.Error(err))
+		return nil, nil, err
+	}
 
 	handlers := handler.NewHandler(&handler.Deps{
 		Service: services,

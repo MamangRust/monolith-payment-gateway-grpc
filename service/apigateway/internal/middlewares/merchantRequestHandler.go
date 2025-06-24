@@ -6,20 +6,20 @@ import (
 	"github.com/IBM/sarama"
 )
 
-type responseHandler struct {
+type merchantResponseHandler struct {
 	validator *ApiKeyValidator
 }
 
-func NewResponseHandler(validator *ApiKeyValidator) *responseHandler {
-	return &responseHandler{
+func NewResponseHandler(validator *ApiKeyValidator) *merchantResponseHandler {
+	return &merchantResponseHandler{
 		validator: validator,
 	}
 }
 
-func (h *responseHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
-func (h *responseHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *merchantResponseHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *merchantResponseHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
-func (h *responseHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+func (h *merchantResponseHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		var payload map[string]interface{}
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {

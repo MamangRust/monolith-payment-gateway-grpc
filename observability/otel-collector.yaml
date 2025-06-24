@@ -136,7 +136,6 @@ exporters:
   prometheus:
     endpoint: "0.0.0.0:8889"
 
-  # Replace the deprecated loki exporter with otlphttp exporter
   otlphttp/loki:
     endpoint: "http://loki:3100/otlp"
     tls:

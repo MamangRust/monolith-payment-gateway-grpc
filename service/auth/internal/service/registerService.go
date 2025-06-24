@@ -115,7 +115,7 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	}
 	request.Password = passwordHash
 
-	const defaultRoleName = "Admin Access 1"
+	const defaultRoleName = "Admin_Admin_14"
 
 	role, err := s.role.FindByName(defaultRoleName)
 

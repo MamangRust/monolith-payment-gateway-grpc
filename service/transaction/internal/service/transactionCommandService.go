@@ -98,7 +98,9 @@ func NewTransactionCommandService(
 func (s *transactionCommandService) Create(apiKey string, request *requests.CreateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
 	const method = "CreateTransacton"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	s.logger.Debug("CreateTransaction called", zap.String("card_number", request.CardNumber), zap.String("api_key", apiKey))
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("apikey", apiKey))
 
 	defer func() {
 		end(status)
@@ -111,12 +113,12 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 
 	card, err := s.cardRepository.FindUserCardByCardNumber(request.CardNumber)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
 	saldo, err := s.saldoRepository.FindByCardNumber(card.CardNumber)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedFindSaldoByCardNumber, zap.Error(err))
 	}
 
 	if saldo.TotalBalance < request.Amount {
@@ -128,7 +130,7 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 		CardNumber:   card.CardNumber,
 		TotalBalance: saldo.TotalBalance,
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	request.MerchantID = &merchant.ID
@@ -141,14 +143,14 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 			TotalBalance: saldo.TotalBalance,
 		})
 		if err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
 		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
 			TransactionID: transaction.ID,
 			Status:        "failed",
 		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, transaction_errors.ErrFailedUpdateTransaction, zap.Error(err))
 		}
 
 		return s.errorhandler.HandleCreateTransactionError(err, method, "FAILED_CREATE_TRANSACTION", span, &status, zap.Error(err))
@@ -158,17 +160,17 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 		TransactionID: transaction.ID,
 		Status:        "success",
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, transaction_errors.ErrFailedUpdateTransaction, zap.Error(err))
 	}
 
 	merchantCard, err := s.cardRepository.FindCardByUserId(merchant.UserID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_USER_ID", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_USER_ID_MERCHANT", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
 	merchantSaldo, err := s.saldoRepository.FindByCardNumber(merchantCard.CardNumber)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER_MERCHANT", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
 	}
 
 	merchantSaldo.TotalBalance += request.Amount
@@ -177,7 +179,7 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 		CardNumber:   merchantCard.CardNumber,
 		TotalBalance: merchantSaldo.TotalBalance,
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_MERCHANT", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 	}
 
 	htmlBody := email.GenerateEmailHTML(map[string]string{

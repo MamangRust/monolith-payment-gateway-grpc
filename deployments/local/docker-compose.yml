@@ -389,6 +389,7 @@ services:
       withdraw:
         condition: service_started
     environment:
+      - OTEL_ENDPOINT=otel-collector:4317
       - APP_ENV=docker
       - KAFKA_BROKERS=kafka:9092
 
@@ -434,6 +435,8 @@ services:
     depends_on:
       - prometheus
       - jaeger
+      - alertmanager
+      - loki
 
 
   nginx:
@@ -500,12 +503,11 @@ services:
   loki:
     container_name: loki
     image: grafana/loki:2.9.0
-    user: "10001:10001"
     ports:
       - "3100:3100"
     volumes:
       - ../../observability/loki-config.yaml:/etc/loki/local-config.yaml
-      - ../../observability/loki-data:/loki
+      - loki-data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
       - app_network
@@ -521,6 +523,7 @@ services:
       - app_network
 
 volumes:
+  loki-data:
   grafana-storage:
   postgres_data:
   kafka_data:

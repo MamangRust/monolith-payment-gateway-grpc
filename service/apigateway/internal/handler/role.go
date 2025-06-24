@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors"
@@ -22,6 +24,7 @@ import (
 )
 
 type roleHandleApi struct {
+	kafka           *kafka.Kafka
 	role            pb.RoleServiceClient
 	logger          logger.LoggerInterface
 	mapping         apimapper.RoleResponseMapper
@@ -30,7 +33,7 @@ type roleHandleApi struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewHandlerRole(role pb.RoleServiceClient, router *echo.Echo, logger logger.LoggerInterface, mapping apimapper.RoleResponseMapper) *roleHandleApi {
+func NewHandlerRole(role pb.RoleServiceClient, router *echo.Echo, logger logger.LoggerInterface, mapping apimapper.RoleResponseMapper, kafka *kafka.Kafka) *roleHandleApi {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "role_handler_requests_total",
@@ -55,17 +58,34 @@ func NewHandlerRole(role pb.RoleServiceClient, router *echo.Echo, logger logger.
 		trace:           otel.Tracer("role-handler"),
 		requestCounter:  requestCounter,
 		requestDuration: requestDuration,
+		kafka:           kafka,
 	}
+
+	roleMiddleware := middlewares.NewRoleValidator(kafka, "request-role", "response-role", 5*time.Second, logger)
 
 	routerRole := router.Group("/api/role")
 
-	routerRole.GET("", roleHandler.FindAll)
+	roleMiddlewareChain := roleMiddleware.Middleware()
+	requireAdmin := middlewares.RequireRoles("Admin_Admin_14")
+
+	routerRole.GET("", roleMiddlewareChain(requireAdmin(roleHandler.FindAll)))
+
 	routerRole.GET("/:id", roleHandler.FindById)
-	routerRole.GET("/active", roleHandler.FindByActive)
+
+	routerRole.GET("/active", roleMiddlewareChain(requireAdmin(roleHandler.FindAll)))
+
 	routerRole.GET("/trashed", roleHandler.FindByTrashed)
+
 	routerRole.GET("/user/:user_id", roleHandler.FindByUserId)
-	routerRole.POST("", roleHandler.Create)
-	routerRole.POST("/:id", roleHandler.Update)
+
+	routerRole.POST("/",
+		roleHandler.Create,
+		roleMiddleware.Middleware(),
+		middlewares.RequireRoles("Admin_Admin_14"),
+	)
+
+	routerRole.POST("/:id", roleHandler.Update, roleMiddleware.Middleware(), middlewares.RequireRoles("Admin_Admin_14"))
+
 	routerRole.DELETE("/:id", roleHandler.Trashed)
 	routerRole.PUT("/restore/:id", roleHandler.Restore)
 	routerRole.DELETE("/permanent/:id", roleHandler.DeletePermanent)

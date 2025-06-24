@@ -7,6 +7,8 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/service"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"go.uber.org/zap"
 )
 
@@ -34,33 +36,29 @@ func (m *merchantKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) erro
 
 func (m *merchantKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
-		var payload map[string]interface{}
+		var payload requests.MerchantRequestPayload
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {
-			m.logger.Error("Failed to unmarshal message", zap.Error(err))
+			m.logger.Error("Failed to unmarshal merchant request", zap.Error(err))
 			continue
 		}
 
-		apiKey, _ := payload["api_key"].(string)
-		correlationID, _ := payload["correlation_id"].(string)
-		replyTopic, _ := payload["reply_topic"].(string)
-
-		resp := map[string]interface{}{
-			"correlation_id": correlationID,
-			"valid":          false,
+		resp := response.MerchantResponsePayload{
+			CorrelationID: payload.CorrelationID,
+			Valid:         false,
 		}
 
-		merchant, err := m.merchantService.FindByApiKey(apiKey)
-		if err == nil {
-			resp["valid"] = true
-			resp["merchant_id"] = merchant.ID
+		merchant, err := m.merchantService.FindByApiKey(payload.ApiKey)
+		if err == nil && merchant != nil {
+			resp.Valid = true
+			resp.MerchantID = int64(merchant.ID)
 		}
 
 		respBytes, _ := json.Marshal(resp)
-
-		sendErr := m.kafka.SendMessage(replyTopic, correlationID, respBytes)
+		sendErr := m.kafka.SendMessage(payload.ReplyTopic, payload.CorrelationID, respBytes)
 		if sendErr != nil {
 			m.logger.Error("Failed to send Kafka response", zap.Error(sendErr))
 		}
+
 		session.MarkMessage(msg, "")
 	}
 	return nil

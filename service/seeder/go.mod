@@ -3,7 +3,7 @@ module github.com/MamangRust/payment-gateway-monolith-grpc-seeder
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.3
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.9
 	github.com/spf13/viper v1.20.1
 	go.uber.org/zap v1.27.0
 )

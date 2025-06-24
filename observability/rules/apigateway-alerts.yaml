@@ -3,7 +3,7 @@ groups:
     rules:
       - alert: AuthHighErrorRate
         expr: |
-          sum(rate(auth_handler_requests_total{status=~"5.."}[1m])) 
+          sum(rate(auth_handler_requests_total{status="error"}[1m])) 
           / 
           sum(rate(auth_handler_requests_total[1m])) > 0.1
         for: 2m
@@ -38,7 +38,7 @@ groups:
 
       - alert: CardHighErrorRate
         expr: |
-          sum(rate(card_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(card_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(card_service_requests_total[1m])) > 0.1
         for: 2m
@@ -73,7 +73,7 @@ groups:
 
       - alert: MerchantHighErrorRate
         expr: |
-          sum(rate(merchant_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(merchant_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(merchant_service_requests_total[1m])) > 0.1
         for: 2m
@@ -108,7 +108,7 @@ groups:
 
       - alert: RoleHighErrorRate
         expr: |
-          sum(rate(role_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(role_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(role_service_requests_total[1m])) > 0.1
         for: 2m
@@ -143,7 +143,7 @@ groups:
 
       - alert: SaldoHighErrorRate
         expr: |
-          sum(rate(saldo_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(saldo_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(saldo_service_requests_total[1m])) > 0.1
         for: 2m
@@ -178,7 +178,7 @@ groups:
 
       - alert: TopupHighErrorRate
         expr: |
-          sum(rate(topup_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(topup_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(topup_service_requests_total[1m])) > 0.05
         for: 2m
@@ -212,7 +212,7 @@ groups:
 
       - alert: TransactionHighErrorRate
         expr: |
-          sum(rate(transaction_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(transaction_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(transaction_service_requests_total[1m])) > 0.05
         for: 2m
@@ -246,7 +246,7 @@ groups:
 
       - alert: TransferHighErrorRate
         expr: |
-          sum(rate(transfer_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(transfer_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(transfer_service_requests_total[1m])) > 0.05
         for: 2m
@@ -280,7 +280,7 @@ groups:
 
       - alert: UserHighErrorRate
         expr: |
-          sum(rate(user_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(user_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(user_service_requests_total[1m])) > 0.1
         for: 2m
@@ -314,7 +314,7 @@ groups:
 
       - alert: WithdrawalHighErrorRate
         expr: |
-          sum(rate(withdrawal_service_requests_total{status=~"5.."}[1m])) 
+          sum(rate(withdrawal_service_requests_total{status="error"}[1m])) 
           / 
           sum(rate(withdrawal_service_requests_total[1m])) > 0.05
         for: 2m

@@ -24,7 +24,6 @@ type ServiceConnections struct {
 }
 
 type Deps struct {
-	Conn               *grpc.ClientConn
 	Kafka              *kafka.Kafka
 	Token              auth.TokenManager
 	E                  *echo.Echo
@@ -38,6 +37,7 @@ func NewHandler(deps *Deps) {
 	clientRole := pb.NewRoleServiceClient(deps.ServiceConnections.Role)
 	clientCard := pb.NewCardServiceClient(deps.ServiceConnections.Card)
 	clientMerchant := pb.NewMerchantServiceClient(deps.ServiceConnections.Merchant)
+	clientMerchantDocument := pb.NewMerchantDocumentServiceClient(deps.ServiceConnections.Merchant)
 	clientUser := pb.NewUserServiceClient(deps.ServiceConnections.User)
 	clientSaldo := pb.NewSaldoServiceClient(deps.ServiceConnections.Saldo)
 	clientTopup := pb.NewTopupServiceClient(deps.ServiceConnections.Topup)
@@ -46,10 +46,11 @@ func NewHandler(deps *Deps) {
 	clientWithdraw := pb.NewWithdrawServiceClient(deps.ServiceConnections.Withdraw)
 
 	NewHandlerAuth(clientAuth, deps.E, deps.Logger, deps.Mapping.AuthResponseMapper)
-	NewHandlerRole(clientRole, deps.E, deps.Logger, deps.Mapping.RoleResponseMapper)
+	NewHandlerRole(clientRole, deps.E, deps.Logger, deps.Mapping.RoleResponseMapper, deps.Kafka)
 	NewHandlerUser(clientUser, deps.E, deps.Logger, deps.Mapping.UserResponseMapper)
 	NewHandlerCard(clientCard, deps.E, deps.Logger, deps.Mapping.CardResponseMapper)
 	NewHandlerMerchant(clientMerchant, deps.E, deps.Logger, deps.Mapping.MerchantResponseMapper)
+	NewHandlerMerchantDocument(clientMerchantDocument, deps.E, deps.Logger, deps.Mapping.MerchantDocumentProMapper)
 	NewHandlerTransaction(clientTransaction, clientMerchant, deps.E, deps.Logger, deps.Mapping.TransactionResponseMapper, deps.Kafka)
 	NewHandlerSaldo(clientSaldo, deps.E, deps.Logger, deps.Mapping.SaldoResponseMapper)
 	NewHandlerTopup(clientTopup, deps.E, deps.Logger, deps.Mapping.TopupResponseMapper)

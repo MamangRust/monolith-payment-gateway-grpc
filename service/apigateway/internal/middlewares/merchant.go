@@ -7,12 +7,17 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 type ApiKeyValidator struct {
 	kafka         *kafka.Kafka
+	logger        logger.LoggerInterface
 	requestTopic  string
 	responseTopic string
 	timeout       time.Duration
@@ -20,19 +25,21 @@ type ApiKeyValidator struct {
 	mu            sync.Mutex
 }
 
-func NewApiKeyValidator(k *kafka.Kafka, requestTopic, responseTopic string, timeout time.Duration) *ApiKeyValidator {
+func NewApiKeyValidator(k *kafka.Kafka, requestTopic, responseTopic string, timeout time.Duration, logger logger.LoggerInterface) *ApiKeyValidator {
 	v := &ApiKeyValidator{
 		kafka:         k,
 		requestTopic:  requestTopic,
 		responseTopic: responseTopic,
 		timeout:       timeout,
 		responseChans: make(map[string]chan []byte),
+		logger:        logger,
 	}
 
-	handler := &responseHandler{validator: v}
+	handler := &merchantResponseHandler{validator: v}
 	go func() {
 		err := k.StartConsumers([]string{responseTopic}, "api-gateway-group", handler)
 		if err != nil {
+			v.logger.Fatal("Failed to start kafka consumer", zap.Error(err))
 			panic("failed to start kafka consumer: " + err.Error())
 		}
 	}()
@@ -45,32 +52,37 @@ func (v *ApiKeyValidator) Middleware() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			apiKey := c.Request().Header.Get("X-Api-Key")
 			if apiKey == "" {
+				v.logger.Error("Missing API Key in request header")
 				return echo.NewHTTPError(http.StatusUnauthorized, "API Key is required")
 			}
 
 			correlationID := uuid.NewString()
-			payload := map[string]interface{}{
-				"api_key":        apiKey,
-				"correlation_id": correlationID,
-				"reply_topic":    v.responseTopic,
+			v.logger.Info("Received request with API Key", zap.String("apiKey", apiKey), zap.String("correlationID", correlationID))
+
+			payload := requests.MerchantRequestPayload{
+				ApiKey:        apiKey,
+				CorrelationID: correlationID,
+				ReplyTopic:    v.responseTopic,
 			}
 
 			data, err := json.Marshal(payload)
 			if err != nil {
+				v.logger.Error("Failed to encode payload", zap.Error(err), zap.String("correlationID", correlationID))
 				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to encode payload")
 			}
 
 			err = v.kafka.SendMessage(v.requestTopic, correlationID, data)
 			if err != nil {
+				v.logger.Error("Failed to send Kafka message", zap.Error(err), zap.String("correlationID", correlationID))
 				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to send Kafka message")
 			}
+			v.logger.Info("Kafka message sent", zap.String("topic", v.requestTopic), zap.String("correlationID", correlationID))
 
 			respChan := make(chan []byte, 1)
 
 			v.mu.Lock()
 			v.responseChans[correlationID] = respChan
 			v.mu.Unlock()
-
 			defer func() {
 				v.mu.Lock()
 				delete(v.responseChans, correlationID)
@@ -79,26 +91,26 @@ func (v *ApiKeyValidator) Middleware() echo.MiddlewareFunc {
 
 			select {
 			case msg := <-respChan:
-				var response map[string]interface{}
+				v.logger.Info("Received response from Kafka", zap.String("correlationID", correlationID))
+				var response response.MerchantResponsePayload
 				if err := json.Unmarshal(msg, &response); err != nil {
+					v.logger.Error("Failed to decode Kafka response", zap.Error(err), zap.String("correlationID", correlationID))
 					return echo.NewHTTPError(http.StatusInternalServerError, "Invalid response format")
 				}
 
-				valid, ok := response["valid"].(bool)
-				if !ok || !valid {
+				if !response.Valid || response.MerchantID == 0 {
+					v.logger.Error("Invalid API Key validation result", zap.String("correlationID", correlationID), zap.String("apiKey", apiKey))
 					return echo.NewHTTPError(http.StatusUnauthorized, "Invalid API Key")
 				}
 
-				merchantID, ok := response["merchant_id"]
-				if !ok {
-					return echo.NewHTTPError(http.StatusUnauthorized, "Merchant ID not found in response")
-				}
+				v.logger.Info("API Key validated successfully", zap.Int("merchant_id", int(response.MerchantID)), zap.String("correlationID", correlationID))
 
-				c.Set("merchant_id", merchantID)
+				c.Set("merchant_id", response.MerchantID)
 				c.Set("apiKey", apiKey)
 				return next(c)
 
 			case <-time.After(v.timeout):
+				v.logger.Error("Timeout waiting for Kafka response", zap.String("correlationID", correlationID), zap.Duration("timeout", v.timeout))
 				return echo.NewHTTPError(http.StatusRequestTimeout, "Timeout waiting for API key validation")
 			}
 		}

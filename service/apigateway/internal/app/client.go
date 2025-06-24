@@ -82,7 +82,7 @@ func RunClient() (*Client, func(), error) {
 		return nil, nil, fmt.Errorf("failed to connect services: %w", err)
 	}
 
-	e := setupEcho(log)
+	e := setupEcho()
 
 	token, err := auth.NewManager(viper.GetString("SECRET_KEY"))
 	if err != nil {
@@ -90,7 +90,7 @@ func RunClient() (*Client, func(), error) {
 	}
 
 	ctx := context.Background()
-	shutdownTracer, err := otel_pkg.InitTracerProvider("auth-service", ctx)
+	shutdownTracer, err := otel_pkg.InitTracerProvider("apigateway", ctx)
 	if err != nil {
 		log.Fatal("Failed to initialize tracer provider", zap.Error(err))
 	}
@@ -99,7 +99,6 @@ func RunClient() (*Client, func(), error) {
 	mapping := apimapper.NewResponseApiMapper()
 
 	deps := &handler.Deps{
-		Conn:               conns.Auth,
 		Kafka:              myKafka,
 		Token:              token,
 		E:                  e,
@@ -240,7 +239,7 @@ func loadServiceAddresses() ServiceAddresses {
 	}
 }
 
-func setupEcho(log logger.LoggerInterface) *echo.Echo {
+func setupEcho() *echo.Echo {
 	e := echo.New()
 
 	limiter := middlewares.NewRateLimiter(20, 50)

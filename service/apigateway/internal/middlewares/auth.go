@@ -29,7 +29,7 @@ func WebSecurityConfig(e *echo.Echo) {
 
 			if claims, ok := user.Claims.(jwt.MapClaims); ok {
 				subject := claims["sub"]
-				c.Set("userID", subject)
+				c.Set("user_id", subject)
 			}
 		},
 		ErrorHandler: func(c echo.Context, err error) error {

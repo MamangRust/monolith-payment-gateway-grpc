@@ -14,7 +14,6 @@ import (
 
 type Mailer struct {
 	ctx      context.Context
-	trace    trace.Tracer
 	server   string
 	port     int
 	user     string

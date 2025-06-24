@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -14,9 +16,10 @@ import (
 )
 
 func main() {
-	logger, err := logger.NewLogger()
-	if err != nil {
-		logger.Fatal("Failed to create logger", zap.Error(err))
+	logger, err := logger.NewLogger("seeder")
+	if err != nil || logger == nil {
+		fmt.Println("Failed to create logger:", err)
+		os.Exit(1)
 	}
 
 	if err := dotenv.Viper(); err != nil {
@@ -37,13 +40,13 @@ func main() {
 
 	if db_seeder == "true" {
 		logger.Debug("Seeding database", zap.String("seeder", db_seeder))
-		seeder := seeder.NewSeeder(seeder.Deps{
+		mySeeder := seeder.NewSeeder(seeder.Deps{
 			DB:     DB,
 			Hash:   hash,
 			Ctx:    ctx,
 			Logger: logger,
 		})
-		if err := seeder.Run(); err != nil {
+		if err := mySeeder.Run(); err != nil {
 			logger.Fatal("Failed to run seeder", zap.Error(err))
 		}
 	}

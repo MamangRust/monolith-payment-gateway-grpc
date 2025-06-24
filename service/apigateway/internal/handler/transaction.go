@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -63,7 +64,7 @@ func NewHandlerTransaction(transaction pb.TransactionServiceClient, merchant pb.
 		requestDuration: requestDuration,
 	}
 
-	transactionMiddleware := middlewares.NewApiKeyValidator(kafka, "request-transaction", "response-transaction", 5*time.Second)
+	transactionMiddleware := middlewares.NewApiKeyValidator(kafka, "request-transaction", "response-transaction", 5*time.Second, logger)
 
 	routerTransaction := router.Group("/api/transactions")
 
@@ -1462,28 +1463,31 @@ func (h *transactionHandler) Create(c echo.Context) error {
 	}
 
 	merchantIDRaw := c.Get("merchant_id")
-
-	if merchantIDRaw == nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "Unauthorized: merchant ID not found")
-	}
+	h.logger.Debug("Merchant ID raw", zap.Any("merchantID", merchantIDRaw), zap.String("type", fmt.Sprintf("%T", merchantIDRaw)))
 
 	var merchantID int
-	switch v := merchantIDRaw.(type) {
-	case float64:
-		merchantID = int(v)
+	switch id := merchantIDRaw.(type) {
 	case int:
-		merchantID = v
+		merchantID = id
+	case int32:
+		merchantID = int(id)
+	case int64:
+		merchantID = int(id)
+	case float64:
+		merchantID = int(id)
+	case string:
+		parsed, err := strconv.Atoi(id)
+		if err != nil {
+			h.logger.Error("Failed to parse merchant ID string", zap.String("value", id), zap.Error(err))
+			return echo.NewHTTPError(http.StatusInternalServerError, "Invalid merchant ID format")
+		}
+		merchantID = parsed
 	default:
-		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to convert merchant ID")
+		h.logger.Error("Unknown merchant ID type", zap.Any("merchantID", merchantIDRaw))
+		return echo.NewHTTPError(http.StatusInternalServerError, "Unknown merchant ID type")
 	}
 
-	h.logger.Debug("Merchant ID", zap.Int("merchantID", merchantID))
-
-	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to convert merchant ID to string")
-	}
-
-	h.logger.Debug("Merchant ID", zap.Int("merchantID", merchantID))
+	h.logger.Debug("Merchant ID parsed", zap.Int("merchant.id", merchantID))
 
 	res, err := h.transaction.CreateTransaction(ctx, &pb.CreateTransactionRequest{
 		ApiKey:          apiKey,

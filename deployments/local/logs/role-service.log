@@ -102,3 +102,157 @@
 {"level":"info","ts":"2025-06-17T09:27:34.590Z","caller":"apps/server.go:155","msg":"Server running on port 50052"}
 {"level":"info","ts":"2025-06-17T09:27:34.590Z","caller":"apps/server.go:162","msg":"Metrics server listening on :8082"}
 {"level":"info","ts":"2025-06-17T09:27:34.591Z","caller":"apps/server.go:170","msg":"gRPC server listening on :50052"}
+{"level":"debug","ts":"2025-06-24T09:16:57.424Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T09:16:57.441Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T09:16:57.441Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T09:16:57.441Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T09:40:22.864Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T09:40:22.891Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T09:40:22.892Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T09:40:22.892Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"debug","ts":"2025-06-24T09:48:40.637Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T09:48:40.702Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T09:48:40.702Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T09:48:40.702Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"error","ts":"2025-06-24T09:56:45.062Z","caller":"kafka/role_kafka.go:45","msg":"user_id not found or invalid"}
+{"level":"debug","ts":"2025-06-24T10:44:38.234Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T10:44:38.243Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T10:44:38.243Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T10:44:38.243Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T10:45:44.448Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T11:04:41.032Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T11:04:41.070Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T11:04:41.070Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T11:04:41.070Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T11:07:42.786Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T11:32:47.930Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T11:32:47.947Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T11:32:47.947Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T11:32:47.947Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T11:38:34.843Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T11:38:34.886Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T11:38:34.886Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T11:38:34.886Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T12:23:00.571Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T12:23:00.603Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T12:23:00.604Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T12:23:00.605Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T12:26:42.801Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T13:07:29.025Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T13:07:29.076Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T13:07:29.076Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T13:07:29.076Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T13:17:47.068Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T13:17:47.096Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T13:17:47.096Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T13:17:47.096Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T13:25:07.896Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T13:25:07.919Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T13:25:07.919Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T13:25:07.919Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T13:28:07.144Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T13:28:07.163Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T13:28:07.165Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T13:28:07.165Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T13:36:03.022Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T13:36:03.035Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T13:36:03.035Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T13:36:03.035Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T14:03:39.071Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T14:18:08.220Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T14:18:08.235Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T14:18:08.235Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T14:18:08.235Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T14:19:10.444Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T14:19:10.462Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T14:19:10.464Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T14:19:10.464Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"debug","ts":"2025-06-24T14:45:27.034Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T15:33:59.510Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T15:33:59.543Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T15:33:59.543Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T15:33:59.543Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T15:34:02.599Z","caller":"kafka/role_kafka.go:30","msg":"Role Kafka handler setup completed"}
+{"level":"debug","ts":"2025-06-24T15:35:35.527Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"737b7fb4-b06e-42eb-b46d-c26794dd20fb"}
+{"level":"info","ts":"2025-06-24T15:35:35.527Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"737b7fb4-b06e-42eb-b46d-c26794dd20fb"}
+{"level":"debug","ts":"2025-06-24T15:35:35.527Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T15:54:43.529Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T15:54:43.546Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T15:54:43.546Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T15:54:43.547Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T15:54:46.579Z","caller":"kafka/role_kafka.go:30","msg":"Role Kafka handler setup completed"}
+{"level":"debug","ts":"2025-06-24T16:52:06.314Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T16:52:06.338Z","caller":"apps/server.go:169","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T16:52:06.339Z","caller":"apps/server.go:184","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T16:52:06.339Z","caller":"apps/server.go:176","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T16:52:13.598Z","caller":"kafka/role_kafka.go:30","msg":"Role Kafka handler setup completed"}
+{"level":"debug","ts":"2025-06-24T16:52:34.710Z","caller":"handler/role.go:80","msg":"Fetching role record","id":1}
+{"level":"debug","ts":"2025-06-24T16:52:34.710Z","caller":"service/roleQueryService.go:115","msg":"Fetching role by ID","id":1}
+{"level":"debug","ts":"2025-06-24T17:01:19.112Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T17:01:19.130Z","caller":"apps/server.go:181","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T17:01:19.130Z","caller":"apps/server.go:196","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T17:01:19.130Z","caller":"apps/server.go:188","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T17:01:22.207Z","caller":"kafka/role_kafka.go:30","msg":"Role Kafka handler setup completed"}
+{"level":"debug","ts":"2025-06-24T17:01:41.636Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"5068804c-4d26-4be5-a1c9-e0272cb7d159"}
+{"level":"info","ts":"2025-06-24T17:01:41.636Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"5068804c-4d26-4be5-a1c9-e0272cb7d159"}
+{"level":"debug","ts":"2025-06-24T17:01:41.636Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:01:41.649Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"role:id:41","expiration":"5m0s"}
+{"level":"debug","ts":"2025-06-24T17:01:41.649Z","caller":"service/roleQueryService.go:170","msg":"Successfully fetched role by user ID","id":41}
+{"level":"info","ts":"2025-06-24T17:01:41.649Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"5068804c-4d26-4be5-a1c9-e0272cb7d159"}
+{"level":"info","ts":"2025-06-24T17:01:41.654Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"5068804c-4d26-4be5-a1c9-e0272cb7d159"}
+{"level":"debug","ts":"2025-06-24T17:01:41.682Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:01:41.682Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"debug","ts":"2025-06-24T17:01:41.689Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"role:all:page:1:pageSize:10:search:","expiration":"5m0s"}
+{"level":"info","ts":"2025-06-24T17:01:41.690Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records","totalRecords":20,"page":1,"pageSize":10}
+{"level":"debug","ts":"2025-06-24T17:02:13.866Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"694d1062-e166-4d2f-b94c-f2c1376adff4"}
+{"level":"info","ts":"2025-06-24T17:02:13.866Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"694d1062-e166-4d2f-b94c-f2c1376adff4"}
+{"level":"debug","ts":"2025-06-24T17:02:13.866Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:02:13.866Z","caller":"service/roleQueryService.go:156","msg":"Successfully fetched role from cache"}
+{"level":"info","ts":"2025-06-24T17:02:13.866Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"694d1062-e166-4d2f-b94c-f2c1376adff4"}
+{"level":"info","ts":"2025-06-24T17:02:13.868Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"694d1062-e166-4d2f-b94c-f2c1376adff4"}
+{"level":"debug","ts":"2025-06-24T17:02:13.870Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:02:13.870Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"info","ts":"2025-06-24T17:02:13.871Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records from cache","totalRecords":20,"page":1,"pageSize":10}
+{"level":"debug","ts":"2025-06-24T17:14:19.635Z","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T17:14:19.674Z","caller":"apps/server.go:181","msg":"Server running on port 50052"}
+{"level":"info","ts":"2025-06-24T17:14:19.683Z","caller":"apps/server.go:196","msg":"gRPC server listening on :50052"}
+{"level":"info","ts":"2025-06-24T17:14:19.683Z","caller":"apps/server.go:188","msg":"Metrics server listening on :8082"}
+{"level":"info","ts":"2025-06-24T17:14:25.479Z","caller":"kafka/role_kafka.go:30","msg":"Role Kafka handler setup completed"}
+{"level":"debug","ts":"2025-06-24T17:14:40.654Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"6d4afca3-d200-4935-abb8-3a985dbe8440"}
+{"level":"info","ts":"2025-06-24T17:14:40.654Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"6d4afca3-d200-4935-abb8-3a985dbe8440"}
+{"level":"debug","ts":"2025-06-24T17:14:40.654Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:14:40.666Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"role:id:41","expiration":"5m0s"}
+{"level":"debug","ts":"2025-06-24T17:14:40.666Z","caller":"service/roleQueryService.go:170","msg":"Successfully fetched role by user ID","id":41}
+{"level":"info","ts":"2025-06-24T17:14:40.666Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"6d4afca3-d200-4935-abb8-3a985dbe8440"}
+{"level":"info","ts":"2025-06-24T17:14:40.671Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"6d4afca3-d200-4935-abb8-3a985dbe8440"}
+{"level":"debug","ts":"2025-06-24T17:14:40.696Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:14:40.696Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"debug","ts":"2025-06-24T17:14:40.700Z","caller":"redis/cache_helpers.go:52","msg":"Successfully cached data","cacheKey":"role:all:page:1:pageSize:10:search:","expiration":"5m0s"}
+{"level":"info","ts":"2025-06-24T17:14:40.700Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records","totalRecords":20,"page":1,"pageSize":10}
+{"level":"debug","ts":"2025-06-24T17:15:14.699Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"8b248872-7040-4f59-b365-07235d20a335"}
+{"level":"info","ts":"2025-06-24T17:15:14.699Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"8b248872-7040-4f59-b365-07235d20a335"}
+{"level":"debug","ts":"2025-06-24T17:15:14.699Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:15:14.700Z","caller":"service/roleQueryService.go:156","msg":"Successfully fetched role from cache"}
+{"level":"info","ts":"2025-06-24T17:15:14.700Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"8b248872-7040-4f59-b365-07235d20a335"}
+{"level":"info","ts":"2025-06-24T17:15:14.702Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"8b248872-7040-4f59-b365-07235d20a335"}
+{"level":"debug","ts":"2025-06-24T17:15:14.703Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:15:14.703Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"info","ts":"2025-06-24T17:15:14.703Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records from cache","totalRecords":20,"page":1,"pageSize":10}
+{"level":"debug","ts":"2025-06-24T17:15:21.983Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"8b4b2eb4-9906-4ee4-9aa7-a43d188a49a3"}
+{"level":"info","ts":"2025-06-24T17:15:21.984Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"8b4b2eb4-9906-4ee4-9aa7-a43d188a49a3"}
+{"level":"debug","ts":"2025-06-24T17:15:21.984Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:15:21.984Z","caller":"service/roleQueryService.go:156","msg":"Successfully fetched role from cache"}
+{"level":"info","ts":"2025-06-24T17:15:21.985Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"8b4b2eb4-9906-4ee4-9aa7-a43d188a49a3"}
+{"level":"info","ts":"2025-06-24T17:15:21.987Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"8b4b2eb4-9906-4ee4-9aa7-a43d188a49a3"}
+{"level":"debug","ts":"2025-06-24T17:15:21.990Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:15:21.990Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"info","ts":"2025-06-24T17:15:21.990Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records from cache","totalRecords":20,"page":1,"pageSize":10}
+{"level":"debug","ts":"2025-06-24T17:15:59.177Z","caller":"kafka/role_kafka.go:41","msg":"Received role validation request","topic":"request-role","key":"9c4f2508-7032-46fd-8751-95775ca65d23"}
+{"level":"info","ts":"2025-06-24T17:15:59.177Z","caller":"kafka/role_kafka.go:60","msg":"Processing role validation request","user_id":41,"correlation_id":"9c4f2508-7032-46fd-8751-95775ca65d23"}
+{"level":"debug","ts":"2025-06-24T17:15:59.177Z","caller":"service/roleQueryService.go:153","msg":"Fetching role by user ID","id":41}
+{"level":"debug","ts":"2025-06-24T17:15:59.177Z","caller":"service/roleQueryService.go:156","msg":"Successfully fetched role from cache"}
+{"level":"info","ts":"2025-06-24T17:15:59.178Z","caller":"kafka/role_kafka.go:76","msg":"Role validation successful","user_id":41,"roles":["Admin_Admin_14"],"correlation_id":"9c4f2508-7032-46fd-8751-95775ca65d23"}
+{"level":"info","ts":"2025-06-24T17:15:59.179Z","caller":"kafka/role_kafka.go:103","msg":"Role response sent successfully","reply_topic":"response-role","correlation_id":"9c4f2508-7032-46fd-8751-95775ca65d23"}
+{"level":"debug","ts":"2025-06-24T17:15:59.180Z","caller":"handler/role.go:40","msg":"Fetching role records","page":1,"pageSize":10,"search":""}
+{"level":"info","ts":"2025-06-24T17:15:59.181Z","caller":"service/roleQueryService.go:265","msg":"Start: FindAll"}
+{"level":"info","ts":"2025-06-24T17:15:59.181Z","caller":"service/roleQueryService.go:279","msg":"Successfully retrieved all role records from cache","totalRecords":20,"page":1,"pageSize":10}
