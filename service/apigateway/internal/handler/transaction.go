@@ -122,27 +122,22 @@ func NewHandlerTransaction(transaction pb.TransactionServiceClient, merchant pb.
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transactions [get]
 func (h *transactionHandler) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransactionRequest{
@@ -154,8 +149,6 @@ func (h *transactionHandler) FindAll(c echo.Context) error {
 	res, err := h.transaction.FindAllTransaction(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindAllTransactions(c)
@@ -182,37 +175,28 @@ func (h *transactionHandler) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transactions/card-number/{card_number} [get]
 func (h *transactionHandler) FindAllTransactionByCardNumber(c echo.Context) error {
-	const method = "FindAllTransactionByCardNumber"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllTransactionByCardNumber"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.Param("card_number")
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransactionCardNumberRequest{
@@ -225,8 +209,6 @@ func (h *transactionHandler) FindAllTransactionByCardNumber(c echo.Context) erro
 	res, err := h.transaction.FindAllTransactionByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindByCardNumber(c)
@@ -256,10 +238,8 @@ func (h *transactionHandler) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -267,8 +247,6 @@ func (h *transactionHandler) FindById(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionID(c)
@@ -279,8 +257,6 @@ func (h *transactionHandler) FindById(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindById(c)
@@ -312,31 +288,20 @@ func (h *transactionHandler) FindMonthlyTransactionStatusSuccess(c echo.Context)
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyTransactionStatusSuccess(ctx, &pb.FindMonthlyTransactionStatus{
@@ -345,8 +310,6 @@ func (h *transactionHandler) FindMonthlyTransactionStatusSuccess(c echo.Context)
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlySuccess(c)
@@ -377,21 +340,14 @@ func (h *transactionHandler) FindYearlyTransactionStatusSuccess(c echo.Context) 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyTransactionStatusSuccess(ctx, &pb.FindYearTransactionStatus{
@@ -399,8 +355,6 @@ func (h *transactionHandler) FindYearlyTransactionStatusSuccess(c echo.Context) 
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlySuccess(c)
@@ -432,31 +386,20 @@ func (h *transactionHandler) FindMonthlyTransactionStatusFailed(c echo.Context) 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyTransactionStatusFailed(ctx, &pb.FindMonthlyTransactionStatus{
@@ -465,8 +408,6 @@ func (h *transactionHandler) FindMonthlyTransactionStatusFailed(c echo.Context) 
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyFailed(c)
@@ -497,21 +438,14 @@ func (h *transactionHandler) FindYearlyTransactionStatusFailed(c echo.Context) e
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyTransactionStatusFailed(ctx, &pb.FindYearTransactionStatus{
@@ -519,8 +453,6 @@ func (h *transactionHandler) FindYearlyTransactionStatusFailed(c echo.Context) e
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyFailed(c)
@@ -553,32 +485,26 @@ func (h *transactionHandler) FindMonthlyTransactionStatusSuccessByCardNumber(c e
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
+	month, err := parseQueryMonth(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidMonth(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyTransactionStatusSuccessByCardNumber(ctx, &pb.FindMonthlyTransactionStatusCardNumber{
@@ -588,8 +514,6 @@ func (h *transactionHandler) FindMonthlyTransactionStatusSuccessByCardNumber(c e
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlySuccess(c)
@@ -621,22 +545,20 @@ func (h *transactionHandler) FindYearlyTransactionStatusSuccessByCardNumber(c ec
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("cardNumber")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyTransactionStatusSuccessByCardNumber(ctx, &pb.FindYearTransactionStatusCardNumber{
@@ -645,8 +567,6 @@ func (h *transactionHandler) FindYearlyTransactionStatusSuccessByCardNumber(c ec
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlySuccess(c)
@@ -679,42 +599,26 @@ func (h *transactionHandler) FindMonthlyTransactionStatusFailedByCardNumber(c ec
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("cardNumber")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		err := errors.New("card number is required")
-
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyTransactionStatusFailedByCardNumber(ctx, &pb.FindMonthlyTransactionStatusCardNumber{
@@ -724,8 +628,6 @@ func (h *transactionHandler) FindMonthlyTransactionStatusFailedByCardNumber(c ec
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyFailed(c)
@@ -757,32 +659,28 @@ func (h *transactionHandler) FindYearlyTransactionStatusFailedByCardNumber(c ech
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	card_number := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyTransactionStatusFailedByCardNumber(ctx, &pb.FindYearTransactionStatusCardNumber{
-		CardNumber: card_number,
+		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyFailed(c)
@@ -813,28 +711,21 @@ func (h *transactionHandler) FindMonthlyPaymentMethods(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly payment methods", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyPaymentMethods(ctx, &pb.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve monthly payment methods", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyMethods(c)
@@ -865,28 +756,21 @@ func (h *transactionHandler) FindYearlyPaymentMethods(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve yearly payment methods", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyPaymentMethods(ctx, &pb.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve yearly payment methods", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyMethods(c)
@@ -917,28 +801,21 @@ func (h *transactionHandler) FindMonthlyAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly amounts", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyAmounts(ctx, &pb.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly amounts", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyAmounts(c)
@@ -969,28 +846,21 @@ func (h *transactionHandler) FindYearlyAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly amounts", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyAmounts(ctx, &pb.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly amounts", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyAmounts(c)
@@ -1022,31 +892,28 @@ func (h *transactionHandler) FindMonthlyPaymentMethodsByCardNumber(c echo.Contex
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("failed to retrieve monthly payment methods by card number", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyPaymentMethodsByCardNumber(ctx, &pb.FindByYearCardNumberTransactionRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve monthly payment methods by card number", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyMethodsByCard(c)
@@ -1078,32 +945,28 @@ func (h *transactionHandler) FindYearlyPaymentMethodsByCardNumber(c echo.Context
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("failed to retrieve yearly payment methods by card number", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyPaymentMethodsByCardNumber(ctx, &pb.FindByYearCardNumberTransactionRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve yearly payment methods by card number", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyMethodsByCard(c)
@@ -1135,31 +998,28 @@ func (h *transactionHandler) FindMonthlyAmountsByCardNumber(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly amounts by card number", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindMonthlyAmountsByCardNumber(ctx, &pb.FindByYearCardNumberTransactionRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly amounts by card number", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedMonthlyAmountsByCard(c)
@@ -1191,31 +1051,28 @@ func (h *transactionHandler) FindYearlyAmountsByCardNumber(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve yearly amounts by card number", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transaction_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.transaction.FindYearlyAmountsByCardNumber(ctx, &pb.FindByYearCardNumberTransactionRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly amounts by card number", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedYearlyAmountsByCard(c)
@@ -1245,10 +1102,8 @@ func (h *transactionHandler) FindByTransactionMerchantId(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantId := c.QueryParam("merchant_id")
@@ -1256,8 +1111,6 @@ func (h *transactionHandler) FindByTransactionMerchantId(c echo.Context) error {
 	merchantIdInt, err := strconv.Atoi(merchantId)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionMerchantID(c)
@@ -1270,8 +1123,6 @@ func (h *transactionHandler) FindByTransactionMerchantId(c echo.Context) error {
 	res, err := h.transaction.FindTransactionByMerchantId(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindByMerchantID(c)
@@ -1297,27 +1148,22 @@ func (h *transactionHandler) FindByTransactionMerchantId(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transactions/active [get]
 func (h *transactionHandler) FindByActiveTransaction(c echo.Context) error {
-	const method = "FindByActiveTransaction"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActiveTransaction"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransactionRequest{
@@ -1329,8 +1175,6 @@ func (h *transactionHandler) FindByActiveTransaction(c echo.Context) error {
 	res, err := h.transaction.FindByActiveTransaction(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindActive(c)
@@ -1356,27 +1200,22 @@ func (h *transactionHandler) FindByActiveTransaction(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transactions/trashed [get]
 func (h *transactionHandler) FindByTrashedTransaction(c echo.Context) error {
-	const method = "FindByTrashedTransaction"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashedTransaction"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransactionRequest{
@@ -1388,8 +1227,6 @@ func (h *transactionHandler) FindByTrashedTransaction(c echo.Context) error {
 	res, err := h.transaction.FindByTrashedTransaction(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transaction data", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedFindTrashed(c)
@@ -1419,17 +1256,15 @@ func (h *transactionHandler) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateTransactionRequest
 
 	apiKeyRaw := c.Get("apiKey")
+
 	if apiKeyRaw == nil {
-		status = "error"
 		err := errors.New("api key not found")
 
 		logError("Failed to create transaction", err, zap.Error(err))
@@ -1439,7 +1274,6 @@ func (h *transactionHandler) Create(c echo.Context) error {
 
 	apiKey, ok := apiKeyRaw.(string)
 	if !ok || apiKey == "" {
-		status = "error"
 		err := errors.New("invalid api key")
 
 		logError("Failed to create transaction", err, zap.Error(err))
@@ -1448,15 +1282,12 @@ func (h *transactionHandler) Create(c echo.Context) error {
 	}
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
 		logError("Failed to create transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiBindCreateTransaction(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to create transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiValidateCreateTransaction(c)
@@ -1499,7 +1330,6 @@ func (h *transactionHandler) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to create transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedCreateTransaction(c)
@@ -1529,17 +1359,13 @@ func (h *transactionHandler) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to update transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionID(c)
@@ -1551,7 +1377,6 @@ func (h *transactionHandler) Update(c echo.Context) error {
 
 	apiKey, ok := c.Get("apiKey").(string)
 	if !ok {
-		status = "error"
 		err := errors.New("invalid api key")
 
 		logError("Failed to update transaction", err, zap.Error(err))
@@ -1560,14 +1385,12 @@ func (h *transactionHandler) Update(c echo.Context) error {
 	}
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
 		logError("Failed to update transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiBindUpdateTransaction(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
 		logError("Failed to update transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiValidateUpdateTransaction(c)
@@ -1584,7 +1407,6 @@ func (h *transactionHandler) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to update transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedUpdateTransaction(c)
@@ -1614,10 +1436,8 @@ func (h *transactionHandler) TrashedTransaction(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1625,7 +1445,6 @@ func (h *transactionHandler) TrashedTransaction(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionID(c)
@@ -1636,7 +1455,6 @@ func (h *transactionHandler) TrashedTransaction(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to trashed transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedTrashTransaction(c)
@@ -1666,10 +1484,8 @@ func (h *transactionHandler) RestoreTransaction(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1677,7 +1493,6 @@ func (h *transactionHandler) RestoreTransaction(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionID(c)
@@ -1688,7 +1503,6 @@ func (h *transactionHandler) RestoreTransaction(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to restore transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedRestoreTransaction(c)
@@ -1718,10 +1532,8 @@ func (h *transactionHandler) DeletePermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1729,7 +1541,6 @@ func (h *transactionHandler) DeletePermanent(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transaction_errors.ErrApiInvalidTransactionID(c)
@@ -1740,7 +1551,6 @@ func (h *transactionHandler) DeletePermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to delete transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedDeletePermanent(c)
@@ -1769,16 +1579,13 @@ func (h *transactionHandler) RestoreAllTransaction(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.transaction.RestoreAllTransaction(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to restore all transaction", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedRestoreAllTransactions(c)
@@ -1807,16 +1614,13 @@ func (h *transactionHandler) DeleteAllTransactionPermanent(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.transaction.DeleteAllTransactionPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to delete all transaction permanently", err, zap.Error(err))
 
 		return transaction_errors.ErrApiFailedDeleteAllPermanent(c)
@@ -1833,7 +1637,11 @@ func (s *transactionHandler) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -1844,7 +1652,9 @@ func (s *transactionHandler) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -1854,12 +1664,14 @@ func (s *transactionHandler) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

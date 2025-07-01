@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -109,27 +108,22 @@ func NewHandlerWithdraw(client pb.WithdrawServiceClient, router *echo.Echo, logg
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw [get]
 func (h *withdrawHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllWithdrawRequest{
@@ -141,7 +135,6 @@ func (h *withdrawHandleApi) FindAll(c echo.Context) error {
 	res, err := h.client.FindAllWithdraw(ctx, req)
 
 	if err != nil {
-		status = "failed"
 		logError("failed to find all withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindAllWithdraw(c)
@@ -168,38 +161,28 @@ func (h *withdrawHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw/card-number/{card_number} [get]
 func (h *withdrawHandleApi) FindAllByCardNumber(c echo.Context) error {
-	const method = "FindAllByCardNumber"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllByCardNumber"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.Param("card_number")
-	if cardNumber == "" {
-		status = "error"
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		err := errors.New("card number is empty")
-
-		logError("failed to find all withdraw by card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllWithdrawByCardNumberRequest{
@@ -212,8 +195,6 @@ func (h *withdrawHandleApi) FindAllByCardNumber(c echo.Context) error {
 	res, err := h.client.FindAllWithdrawByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find all withdraw by card number", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindAllWithdrawByCardNumber(c)
@@ -244,17 +225,13 @@ func (h *withdrawHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve withdraw data", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiWithdrawInvalidID(c)
@@ -267,8 +244,6 @@ func (h *withdrawHandleApi) FindById(c echo.Context) error {
 	withdraw, err := h.client.FindByIdWithdraw(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve withdraw data", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindByIdWithdraw(c)
@@ -300,31 +275,20 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusSuccess(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly withdraw status success", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly withdraw status success", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdrawStatusSuccess(ctx, &pb.FindMonthlyWithdrawStatus{
@@ -333,8 +297,6 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusSuccess(c echo.Context) err
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly withdraw status success", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusSuccess(c)
@@ -365,20 +327,14 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusSuccess(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve yearly withdraw status success", err, zap.Error(err))
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdrawStatusSuccess(ctx, &pb.FindYearWithdrawStatus{
@@ -386,8 +342,6 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusSuccess(c echo.Context) erro
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly withdraw status success", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusSuccess(c)
@@ -419,31 +373,20 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusFailed(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly withdraw status failed", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve monthly withdraw status failed", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdrawStatusFailed(ctx, &pb.FindMonthlyWithdrawStatus{
@@ -452,8 +395,6 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusFailed(c echo.Context) erro
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve monthly withdraw status failed", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusFailed(c)
@@ -484,21 +425,14 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusFailed(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("failed to retrieve yearly withdraw status failed", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdrawStatusFailed(ctx, &pb.FindYearWithdrawStatus{
@@ -506,8 +440,6 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusFailed(c echo.Context) error
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly withdraw status failed", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusFailed(c)
@@ -540,42 +472,26 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusSuccessByCardNumber(c echo.
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		err := errors.New("card number is empty")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid month", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdrawStatusSuccessCardNumber(ctx, &pb.FindMonthlyWithdrawStatusCardNumber{
@@ -585,8 +501,6 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusSuccessByCardNumber(c echo.
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly withdraw status for successful transactions", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusSuccessCardNumber(c)
@@ -618,42 +532,28 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusSuccessByCardNumber(c echo.C
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	card_number := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if card_number == "" {
-		status = "error"
-
-		err := errors.New("card number is empty")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdrawStatusSuccessCardNumber(ctx, &pb.FindYearWithdrawStatusCardNumber{
-		CardNumber: card_number,
+		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly withdraw status for successful transactions", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusSuccessCardNumber(c)
@@ -686,53 +586,35 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawStatusFailedByCardNumber(c echo.C
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	card_number := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if card_number == "" {
-		status = "error"
-
-		err := errors.New("card number is empty")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid month", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdrawStatusFailedCardNumber(ctx, &pb.FindMonthlyWithdrawStatusCardNumber{
 		Year:       int32(year),
 		Month:      int32(month),
-		CardNumber: card_number,
+		CardNumber: cardNumber,
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly withdraw status for failed transactions", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusFailedCardNumber(c)
@@ -764,32 +646,20 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusFailedByCardNumber(c echo.Co
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		err := errors.New("card number is empty")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdrawStatusFailedCardNumber(ctx, &pb.FindYearWithdrawStatusCardNumber{
@@ -798,8 +668,6 @@ func (h *withdrawHandleApi) FindYearlyWithdrawStatusFailedByCardNumber(c echo.Co
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly withdraw status for failed transactions", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusFailedCardNumber(c)
@@ -830,28 +698,21 @@ func (h *withdrawHandleApi) FindMonthlyWithdraws(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdraws(ctx, &pb.FindYearWithdrawStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly withdraws", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdraws(c)
@@ -882,28 +743,21 @@ func (h *withdrawHandleApi) FindYearlyWithdraws(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdraws(ctx, &pb.FindYearWithdrawStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly withdraws", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdraws(c)
@@ -935,41 +789,28 @@ func (h *withdrawHandleApi) FindMonthlyWithdrawsByCardNumber(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		err := errors.New("card number is required")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyWithdrawsByCardNumber(ctx, &pb.FindYearWithdrawCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly withdraws by card number", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawsByCardNumber(c)
@@ -1001,41 +842,28 @@ func (h *withdrawHandleApi) FindYearlyWithdrawsByCardNumber(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		err := errors.New("card number is required")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyWithdrawsByCardNumber(ctx, &pb.FindYearWithdrawCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly withdraws by card number", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindYearlyWithdrawsByCardNumber(c)
@@ -1065,13 +893,15 @@ func (h *withdrawHandleApi) FindByCardNumber(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
+
+	if err != nil {
+		return err
+	}
 
 	req := &pb.FindByCardNumberRequest{
 		CardNumber: cardNumber,
@@ -1080,8 +910,6 @@ func (h *withdrawHandleApi) FindByCardNumber(c echo.Context) error {
 	withdraw, err := h.client.FindByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve withdraw data", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindByCardNumber(c)
@@ -1104,27 +932,22 @@ func (h *withdrawHandleApi) FindByCardNumber(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraws/active [get]
 func (h *withdrawHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllWithdrawRequest{
@@ -1136,8 +959,6 @@ func (h *withdrawHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve withdraw data", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindByActiveWithdraw(c)
@@ -1160,27 +981,22 @@ func (h *withdrawHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraws/trashed [get]
 func (h *withdrawHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllWithdrawRequest{
@@ -1192,8 +1008,6 @@ func (h *withdrawHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve withdraw data", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedFindByTrashedWithdraw(c)
@@ -1223,25 +1037,19 @@ func (h *withdrawHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateWithdrawRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateWithdraw request", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiBindCreateWithdraw(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate CreateWithdraw request", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiValidateCreateWithdraw(c)
@@ -1254,8 +1062,6 @@ func (h *withdrawHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to create withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedCreateWithdraw(c)
@@ -1286,17 +1092,13 @@ func (h *withdrawHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid withdraw ID", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiWithdrawInvalidID(c)
@@ -1305,16 +1107,12 @@ func (h *withdrawHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateWithdrawRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind UpdateWithdraw request", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiBindUpdateWithdraw(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate UpdateWithdraw request", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiValidateUpdateWithdraw(c)
@@ -1328,8 +1126,6 @@ func (h *withdrawHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to update withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedUpdateWithdraw(c)
@@ -1359,17 +1155,13 @@ func (h *withdrawHandleApi) TrashWithdraw(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid withdraw ID", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiWithdrawInvalidID(c)
@@ -1380,8 +1172,6 @@ func (h *withdrawHandleApi) TrashWithdraw(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to trash withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedTrashedWithdraw(c)
@@ -1411,17 +1201,13 @@ func (h *withdrawHandleApi) RestoreWithdraw(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid withdraw ID", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiWithdrawInvalidID(c)
@@ -1432,8 +1218,6 @@ func (h *withdrawHandleApi) RestoreWithdraw(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedRestoreWithdraw(c)
@@ -1463,17 +1247,13 @@ func (h *withdrawHandleApi) DeleteWithdrawPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid withdraw ID", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiWithdrawInvalidID(c)
@@ -1484,8 +1264,6 @@ func (h *withdrawHandleApi) DeleteWithdrawPermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete withdraw permanently", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedDeleteWithdrawPermanent(c)
@@ -1514,17 +1292,13 @@ func (h *withdrawHandleApi) RestoreAllWithdraw(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.RestoreAllWithdraw(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore all withdraw", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedRestoreAllWithdraw(c)
@@ -1548,22 +1322,18 @@ func (h *withdrawHandleApi) RestoreAllWithdraw(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete withdraw permanently:"
 // @Router /api/withdraws/permanent/all [post]
 func (h *withdrawHandleApi) DeleteAllWithdrawPermanent(c echo.Context) error {
-	const method = "FindAll"
+	const method = "DeleteAllWithdrawPermanent"
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.DeleteAllWithdrawPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete all withdraw permanently", err, zap.Error(err))
 
 		return withdraw_errors.ErrApiFailedDeleteAllWithdrawPermanent(c)
@@ -1580,7 +1350,11 @@ func (s *withdrawHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -1591,7 +1365,9 @@ func (s *withdrawHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -1601,12 +1377,14 @@ func (s *withdrawHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

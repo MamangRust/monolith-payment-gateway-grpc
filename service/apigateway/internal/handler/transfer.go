@@ -110,27 +110,22 @@ func NewHandlerTransfer(client pb.TransferServiceClient, router *echo.Echo, logg
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer [get]
 func (h *transferHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransferRequest{
@@ -142,8 +137,6 @@ func (h *transferHandleApi) FindAll(c echo.Context) error {
 	res, err := h.client.FindAllTransfer(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindAllTransfers(c)
@@ -173,10 +166,8 @@ func (h *transferHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -184,8 +175,6 @@ func (h *transferHandleApi) FindById(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiTransferInvalidID(c)
@@ -197,8 +186,6 @@ func (h *transferHandleApi) FindById(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindByIdTransfer(c)
@@ -230,31 +217,20 @@ func (h *transferHandleApi) FindMonthlyTransferStatusSuccess(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferStatusSuccess(ctx, &pb.FindMonthlyTransferStatus{
@@ -263,8 +239,6 @@ func (h *transferHandleApi) FindMonthlyTransferStatusSuccess(c echo.Context) err
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferStatusSuccess(c)
@@ -295,21 +269,14 @@ func (h *transferHandleApi) FindYearlyTransferStatusSuccess(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly Transfer status success", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferStatusSuccess(ctx, &pb.FindYearTransferStatus{
@@ -317,8 +284,6 @@ func (h *transferHandleApi) FindYearlyTransferStatusSuccess(c echo.Context) erro
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly Transfer status success", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferStatusSuccess(c)
@@ -350,31 +315,20 @@ func (h *transferHandleApi) FindMonthlyTransferStatusFailed(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status Failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status Failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferStatusFailed(ctx, &pb.FindMonthlyTransferStatus{
@@ -383,8 +337,6 @@ func (h *transferHandleApi) FindMonthlyTransferStatusFailed(c echo.Context) erro
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly Transfer status Failed", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferStatusFailed(c)
@@ -415,21 +367,14 @@ func (h *transferHandleApi) FindYearlyTransferStatusFailed(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly Transfer status Failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferStatusFailed(ctx, &pb.FindYearTransferStatus{
@@ -437,8 +382,6 @@ func (h *transferHandleApi) FindYearlyTransferStatusFailed(c echo.Context) error
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly Transfer status Failed", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferStatusFailed(c)
@@ -470,32 +413,26 @@ func (h *transferHandleApi) FindMonthlyTransferStatusSuccessByCardNumber(c echo.
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
+	month, err := parseQueryMonth(c, h.logger)
 
-		return transfer_errors.ErrApiInvalidMonth(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferStatusSuccessByCardNumber(ctx, &pb.FindMonthlyTransferStatusCardNumber{
@@ -505,8 +442,6 @@ func (h *transferHandleApi) FindMonthlyTransferStatusSuccessByCardNumber(c echo.
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly Transfer status success", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferStatusSuccessByCardNumber(c)
@@ -538,22 +473,20 @@ func (h *transferHandleApi) FindYearlyTransferStatusSuccessByCardNumber(c echo.C
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve yearly Transfer status success", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transfer_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferStatusSuccessByCardNumber(ctx, &pb.FindYearTransferStatusCardNumber{
@@ -562,8 +495,6 @@ func (h *transferHandleApi) FindYearlyTransferStatusSuccessByCardNumber(c echo.C
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly Transfer status success", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferStatusSuccessByCardNumber(c)
@@ -596,32 +527,26 @@ func (h *transferHandleApi) FindMonthlyTransferStatusFailedByCardNumber(c echo.C
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly Transfer status failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly Transfer status failed", err, zap.Error(err))
+	month, err := parseQueryMonth(c, h.logger)
 
-		return transfer_errors.ErrApiInvalidMonth(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferStatusFailedByCardNumber(ctx, &pb.FindMonthlyTransferStatusCardNumber{
@@ -631,8 +556,6 @@ func (h *transferHandleApi) FindMonthlyTransferStatusFailedByCardNumber(c echo.C
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly Transfer status failed", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferStatusFailedByCardNumber(c)
@@ -664,31 +587,20 @@ func (h *transferHandleApi) FindYearlyTransferStatusFailedByCardNumber(c echo.Co
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
-
-		logError("Failed to retrieve yearly Transfer status failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly Transfer status failed", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferStatusFailedByCardNumber(ctx, &pb.FindYearTransferStatusCardNumber{
@@ -697,8 +609,6 @@ func (h *transferHandleApi) FindYearlyTransferStatusFailedByCardNumber(c echo.Co
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly Transfer status failed", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferStatusFailedByCardNumber(c)
@@ -729,28 +639,20 @@ func (h *transferHandleApi) FindMonthlyTransferAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly transfer amounts", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferAmounts(ctx, &pb.FindYearTransferStatus{
 		Year: int32(year),
 	})
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly transfer amounts", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferAmounts(c)
@@ -781,28 +683,21 @@ func (h *transferHandleApi) FindYearlyTransferAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly transfer amounts", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferAmounts(ctx, &pb.FindYearTransferStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transfer amounts", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferAmounts(c)
@@ -834,41 +729,28 @@ func (h *transferHandleApi) FindMonthlyTransferAmountsBySenderCardNumber(c echo.
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is empty")
-
-		logError("Failed to retrieve monthly transfer amounts by sender card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidCardNumber(c)
-	}
-
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly transfer amounts by sender card number", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return transfer_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferAmountsBySenderCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transfer amounts by sender card number", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferAmountsBySenderCardNumber(c)
@@ -900,30 +782,20 @@ func (h *transferHandleApi) FindMonthlyTransferAmountsByReceiverCardNumber(c ech
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is empty")
-
-		logError("Failed to retrieve monthly transfer amounts by receiver card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidCardNumber(c)
-	}
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
-		logError("Failed to retrieve monthly transfer amounts by receiver card number", err, zap.Error(err))
+		return err
+	}
 
-		return transfer_errors.ErrApiInvalidYear(c)
+	year, err := parseQueryYear(c, h.logger)
+
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTransferAmountsByReceiverCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
@@ -932,7 +804,6 @@ func (h *transferHandleApi) FindMonthlyTransferAmountsByReceiverCardNumber(c ech
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve monthly transfer amounts by receiver card number", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindMonthlyTransferAmountsByReceiverCardNumber(c)
@@ -964,29 +835,28 @@ func (h *transferHandleApi) FindYearlyTransferAmountsBySenderCardNumber(c echo.C
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
-		logError("Failed to retrieve yearly transfer amounts by sender card number", err, zap.Error(err))
+		return err
+	}
 
-		return transfer_errors.ErrApiInvalidYear(c)
+	year, err := parseQueryYear(c, h.logger)
+
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferAmountsBySenderCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
+
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve yearly transfer amounts by sender card number", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferAmountsBySenderCardNumber(c)
@@ -1018,22 +888,20 @@ func (h *transferHandleApi) FindYearlyTransferAmountsByReceiverCardNumber(c echo
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
-		logError("Failed to retrieve yearly transfer amounts by receiver card number", err, zap.Error(err))
+		return err
+	}
 
-		return transfer_errors.ErrApiInvalidYear(c)
+	year, err := parseQueryYear(c, h.logger)
+
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTransferAmountsByReceiverCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
@@ -1042,7 +910,6 @@ func (h *transferHandleApi) FindYearlyTransferAmountsByReceiverCardNumber(c echo
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve yearly transfer amounts by receiver card number", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindYearlyTransferAmountsByReceiverCardNumber(c)
@@ -1071,16 +938,13 @@ func (h *transferHandleApi) FindByTransferByTransferFrom(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	transfer_from := c.Param("transfer_from")
 
 	if transfer_from == "" {
-		status = "error"
 		err := errors.New("transfer_from is required")
 
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
@@ -1093,7 +957,6 @@ func (h *transferHandleApi) FindByTransferByTransferFrom(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindByTransferFrom(c)
@@ -1122,16 +985,13 @@ func (h *transferHandleApi) FindByTransferByTransferTo(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	transfer_to := c.Param("transfer_to")
 
 	if transfer_to == "" {
-		status = "error"
 		err := errors.New("transfer_to is required")
 
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
@@ -1144,7 +1004,6 @@ func (h *transferHandleApi) FindByTransferByTransferTo(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindByTransferTo(c)
@@ -1171,27 +1030,22 @@ func (h *transferHandleApi) FindByTransferByTransferTo(c echo.Context) error {
 // @Router /api/transfer/active [get]
 
 func (h *transferHandleApi) FindByActiveTransfer(c echo.Context) error {
-	const method = "FindByActiveTransfer"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActiveTransfer"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransferRequest{
@@ -1203,7 +1057,6 @@ func (h *transferHandleApi) FindByActiveTransfer(c echo.Context) error {
 	res, err := h.client.FindByActiveTransfer(ctx, req)
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindByActiveTransfer(c)
@@ -1229,27 +1082,22 @@ func (h *transferHandleApi) FindByActiveTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer/trashed [get]
 func (h *transferHandleApi) FindByTrashedTransfer(c echo.Context) error {
-	const method = "FindByTrashedTransfer"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashedTransfer"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTransferRequest{
@@ -1261,7 +1109,6 @@ func (h *transferHandleApi) FindByTrashedTransfer(c echo.Context) error {
 	res, err := h.client.FindByTrashedTransfer(ctx, req)
 
 	if err != nil {
-		status = "error"
 		logError("Failed to retrieve transfer data", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedFindByTrashedTransfer(c)
@@ -1291,25 +1138,19 @@ func (h *transferHandleApi) CreateTransfer(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateTransferRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateTransfer request", err, zap.Error(err))
 
 		return transfer_errors.ErrApiBindCreateTransfer(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate CreateTransfer request", err, zap.Error(err))
 
 		return transfer_errors.ErrApiValidateCreateTransfer(c)
@@ -1322,7 +1163,6 @@ func (h *transferHandleApi) CreateTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to create transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedCreateTransfer(c)
@@ -1353,10 +1193,8 @@ func (h *transferHandleApi) UpdateTransfer(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1364,7 +1202,6 @@ func (h *transferHandleApi) UpdateTransfer(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transfer_errors.ErrApiTransferInvalidID(c)
@@ -1373,14 +1210,12 @@ func (h *transferHandleApi) UpdateTransfer(c echo.Context) error {
 	var body requests.UpdateTransferRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
 		logError("Failed to bind UpdateTransfer request", err, zap.Error(err))
 
 		return transfer_errors.ErrApiBindUpdateTransfer(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
 		logError("Failed to validate UpdateTransfer request", err, zap.Error(err))
 
 		return transfer_errors.ErrApiValidateUpdateTransfer(c)
@@ -1394,7 +1229,6 @@ func (h *transferHandleApi) UpdateTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to update transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedUpdateTransfer(c)
@@ -1424,10 +1258,8 @@ func (h *transferHandleApi) TrashTransfer(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1435,7 +1267,6 @@ func (h *transferHandleApi) TrashTransfer(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transfer_errors.ErrApiTransferInvalidID(c)
@@ -1446,7 +1277,6 @@ func (h *transferHandleApi) TrashTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to trashed transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedTrashedTransfer(c)
@@ -1476,10 +1306,8 @@ func (h *transferHandleApi) RestoreTransfer(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1487,7 +1315,6 @@ func (h *transferHandleApi) RestoreTransfer(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transfer_errors.ErrApiTransferInvalidID(c)
@@ -1498,7 +1325,6 @@ func (h *transferHandleApi) RestoreTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to restore transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedRestoreTransfer(c)
@@ -1528,10 +1354,8 @@ func (h *transferHandleApi) DeleteTransferPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1539,7 +1363,6 @@ func (h *transferHandleApi) DeleteTransferPermanent(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return transfer_errors.ErrApiTransferInvalidID(c)
@@ -1550,7 +1373,6 @@ func (h *transferHandleApi) DeleteTransferPermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to delete transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedDeleteTransferPermanent(c)
@@ -1579,16 +1401,13 @@ func (h *transferHandleApi) RestoreAllTransfer(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.RestoreAllTransfer(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to restore all transfer", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedRestoreAllTransfer(c)
@@ -1618,16 +1437,13 @@ func (h *transferHandleApi) DeleteAllTransferPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.DeleteAllTransferPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to delete all transfer permanently", err, zap.Error(err))
 
 		return transfer_errors.ErrApiFailedDeleteAllTransferPermanent(c)
@@ -1644,7 +1460,11 @@ func (s *transferHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -1655,7 +1475,9 @@ func (s *transferHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -1665,12 +1487,14 @@ func (s *transferHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

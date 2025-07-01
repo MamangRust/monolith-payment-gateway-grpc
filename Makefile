@@ -28,24 +28,24 @@ seeder:
 build-image:
 	@for service in $(SERVICES); do \
 		echo "🔨 Building $$service-service..."; \
-		docker build -t $$service-service:1.0 -f service/$$service/Dockerfile service/$$service || exit 1; \
+		docker build -t $$service-service:1.1 -f service/$$service/Dockerfile service/$$service || exit 1; \
 	done
 	@echo "✅ All services built successfully."
 
 image-load:
 	@for service in $(SERVICES); do \
 		echo "🚚 Loading $$service-service..."; \
-		minikube image load $$service-service:1.0 || exit 1; \
+		minikube image load $$service-service:1.1 || exit 1; \
 	done
 	@echo "✅ All services loaded successfully."
 
 
-go-mod-tidy:
+image-delete:
 	@for service in $(SERVICES); do \
-		echo "🔧 Running go mod tidy for $$service..."; \
-		cd service/$$service && go mod tidy || exit 1; \
+		echo "🗑️ Deleting $$service-service image..."; \
+		minikube image rm $$service-service:1.1 || echo "⚠️ Failed to delete $$service-service (maybe not found)"; \
 	done
-	@echo "✅ All go.mod tidy completed."
+	@echo "✅ All requested images deleted (if they existed)."
 
 
 ps:
@@ -59,3 +59,30 @@ down:
 
 build-up:
 	make build-image && make up
+
+kube-start:
+	minikube start --driver=docker
+
+kube-up:
+	kubectl apply -f deployments/kubernetes/namespace.yaml
+	kubectl apply -f deployments/kubernetes
+
+kube-down:
+	kubectl delete -f deployments/kubernetes --ignore-not-found
+	kubectl delete -f deployments/kubernetes/namespace.yaml --ignore-not-found
+
+kube-status:
+	@echo "🔍 Checking Pods in payment-gateway..."
+	@kubectl get pods -n payment-gateway
+
+	@echo "\n🔍 Checking Services in payment-gateway..."
+	@kubectl get svc -n payment-gateway
+
+	@echo "\n🔍 Checking PVCs in payment-gateway..."
+	@kubectl get pvc -n payment-gateway
+
+	@echo "\n🔍 Checking Jobs in payment-gateway..."
+	@kubectl get jobs -n payment-gateway
+
+kube-tunnel:
+	minikube tunnel

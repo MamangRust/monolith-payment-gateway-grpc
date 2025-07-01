@@ -70,28 +70,26 @@ func NewHandlerRole(role pb.RoleServiceClient, router *echo.Echo, logger logger.
 
 	routerRole.GET("", roleMiddlewareChain(requireAdmin(roleHandler.FindAll)))
 
-	routerRole.GET("/:id", roleHandler.FindById)
+	routerRole.GET("/:id", roleMiddlewareChain(requireAdmin(roleHandler.FindById)))
 
 	routerRole.GET("/active", roleMiddlewareChain(requireAdmin(roleHandler.FindAll)))
 
-	routerRole.GET("/trashed", roleHandler.FindByTrashed)
+	routerRole.GET("/trashed", roleMiddlewareChain(requireAdmin(roleHandler.FindByTrashed)))
 
-	routerRole.GET("/user/:user_id", roleHandler.FindByUserId)
+	routerRole.GET("/user/:user_id", roleMiddlewareChain(requireAdmin(roleHandler.FindByUserId)))
 
 	routerRole.POST("/",
-		roleHandler.Create,
-		roleMiddleware.Middleware(),
-		middlewares.RequireRoles("Admin_Admin_14"),
+		roleMiddlewareChain(requireAdmin(roleHandler.Create)),
 	)
 
-	routerRole.POST("/:id", roleHandler.Update, roleMiddleware.Middleware(), middlewares.RequireRoles("Admin_Admin_14"))
+	routerRole.POST("/:id", roleMiddlewareChain(requireAdmin(roleHandler.Update)))
 
-	routerRole.DELETE("/:id", roleHandler.Trashed)
-	routerRole.PUT("/restore/:id", roleHandler.Restore)
-	routerRole.DELETE("/permanent/:id", roleHandler.DeletePermanent)
+	routerRole.DELETE("/:id", roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)))
+	routerRole.PUT("/restore/:id", roleMiddlewareChain(requireAdmin(roleHandler.Restore)))
+	routerRole.DELETE("/permanent/:id", roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)))
 
-	routerRole.POST("/restore/all", roleHandler.RestoreAll)
-	routerRole.POST("/permanent/all", roleHandler.DeleteAllPermanent)
+	routerRole.POST("/restore/all", roleMiddlewareChain(requireAdmin(roleHandler.RestoreAll)))
+	routerRole.POST("/permanent/all", roleMiddlewareChain(requireAdmin(roleHandler.DeleteAllPermanent)))
 
 	return roleHandler
 }
@@ -111,27 +109,22 @@ func NewHandlerRole(role pb.RoleServiceClient, router *echo.Echo, logger logger.
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch roles"
 // @Router /api/role [get]
 func (h *roleHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllRoleRequest{
@@ -141,9 +134,8 @@ func (h *roleHandleApi) FindAll(c echo.Context) error {
 	}
 
 	res, err := h.role.FindAllRole(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to fetch roles", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedFindAll(c)
@@ -174,16 +166,13 @@ func (h *roleHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	roleID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || roleID <= 0 {
-		status = "error"
 
+	if err != nil || roleID <= 0 {
 		logError("invalid role ID", err, zap.Error(err))
 
 		return role_errors.ErrApiRoleInvalidId(c)
@@ -194,9 +183,8 @@ func (h *roleHandleApi) FindById(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByIdRole(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to fetch role", err, zap.Error(err))
 
 		return role_errors.ErrApiRoleNotFound(c)
@@ -224,26 +212,22 @@ func (h *roleHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch active roles"
 // @Router /api/role/active [get]
 func (h *roleHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 
 	search := c.QueryParam("search")
 
@@ -254,9 +238,8 @@ func (h *roleHandleApi) FindByActive(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByActive(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to fetch active roles", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedFindActive(c)
@@ -284,27 +267,22 @@ func (h *roleHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch trashed roles"
 // @Router /api/role/trashed [get]
 func (h *roleHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllRoleRequest{
@@ -314,9 +292,8 @@ func (h *roleHandleApi) FindByTrashed(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByTrashed(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to fetch trashed roles", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedFindTrashed(c)
@@ -347,16 +324,13 @@ func (h *roleHandleApi) FindByUserId(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	userID, err := strconv.Atoi(c.Param("user_id"))
-	if err != nil || userID <= 0 {
-		status = "error"
 
+	if err != nil || userID <= 0 {
 		logError("invalid user id", err, zap.Error(err))
 
 		return role_errors.ErrApiRoleInvalidId(c)
@@ -367,9 +341,8 @@ func (h *roleHandleApi) FindByUserId(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByUserId(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to fetch role by user id", err, zap.Error(err))
 
 		return role_errors.ErrApiRoleNotFound(c)
@@ -400,25 +373,19 @@ func (h *roleHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var req requests.CreateRoleRequest
 
 	if err := c.Bind(&req); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateRole request", err, zap.Error(err))
 
 		return role_errors.ErrApiBindCreateRole(c)
 	}
 
 	if err := req.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate CreateRole request", err, zap.Error(err))
 
 		return role_errors.ErrApiValidateCreateRole(c)
@@ -431,8 +398,6 @@ func (h *roleHandleApi) Create(c echo.Context) error {
 	res, err := h.role.CreateRole(ctx, reqPb)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to create role", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedCreateRole(c)
@@ -464,33 +429,27 @@ func (h *roleHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	roleID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || roleID <= 0 {
-		status = "error"
 
+	if err != nil || roleID <= 0 {
 		logError("Failed to update role", err, zap.Error(err))
 
 		return role_errors.ErrInvalidRoleId(c)
 	}
 
 	var req requests.UpdateRoleRequest
-	if err := c.Bind(&req); err != nil {
-		status = "error"
 
+	if err := c.Bind(&req); err != nil {
 		logError("Failed to bind UpdateRole request", err, zap.Error(err))
 
 		return role_errors.ErrApiBindUpdateRole(c)
 	}
 
 	if err := req.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate UpdateRole request", err, zap.Error(err))
 
 		return role_errors.ErrApiValidateUpdateRole(c)
@@ -502,9 +461,8 @@ func (h *roleHandleApi) Update(c echo.Context) error {
 	}
 
 	res, err := h.role.UpdateRole(ctx, reqPb)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to update role", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedUpdateRole(c)
@@ -535,17 +493,13 @@ func (h *roleHandleApi) Trashed(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	roleID, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil || roleID <= 0 {
-		status = "error"
-
 		logError("Failed to trash role", err, zap.Error(err))
 
 		return role_errors.ErrInvalidRoleId(c)
@@ -556,9 +510,8 @@ func (h *roleHandleApi) Trashed(c echo.Context) error {
 	}
 
 	res, err := h.role.TrashedRole(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to trash role", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedTrashedRole(c)
@@ -589,16 +542,13 @@ func (h *roleHandleApi) Restore(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	roleID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || roleID <= 0 {
-		status = "error"
 
+	if err != nil || roleID <= 0 {
 		logError("Failed to restore role", err, zap.Error(err))
 
 		return role_errors.ErrInvalidRoleId(c)
@@ -609,9 +559,8 @@ func (h *roleHandleApi) Restore(c echo.Context) error {
 	}
 
 	res, err := h.role.RestoreRole(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to restore role", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedRestoreRole(c)
@@ -642,16 +591,13 @@ func (h *roleHandleApi) DeletePermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	roleID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || roleID <= 0 {
-		status = "error"
 
+	if err != nil || roleID <= 0 {
 		logError("Failed to delete role permanently", err, zap.Error(err))
 
 		return role_errors.ErrInvalidRoleId(c)
@@ -662,9 +608,8 @@ func (h *roleHandleApi) DeletePermanent(c echo.Context) error {
 	}
 
 	res, err := h.role.DeleteRolePermanent(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to delete role permanently", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedDeletePermanent(c)
@@ -693,15 +638,13 @@ func (h *roleHandleApi) RestoreAll(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.role.RestoreAllRole(ctx, &emptypb.Empty{})
+
 	if err != nil {
-		status = "error"
 		logError("Failed to restore all roles", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedRestoreAll(c)
@@ -730,15 +673,12 @@ func (h *roleHandleApi) DeleteAllPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.role.DeleteAllRolePermanent(ctx, &emptypb.Empty{})
 	if err != nil {
-		status = "error"
 		logError("Failed to delete all roles permanently", err, zap.Error(err))
 
 		return role_errors.ErrApiFailedDeleteAll(c)
@@ -755,7 +695,11 @@ func (s *roleHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -766,7 +710,9 @@ func (s *roleHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -776,12 +722,14 @@ func (s *roleHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

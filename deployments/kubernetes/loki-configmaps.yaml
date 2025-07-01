@@ -72,7 +72,7 @@ data:
             period: 24h
 
     ruler:
-      alertmanager_url: http://localhost:9093
+      alertmanager_url: http://alertmanager.monitoring.svc.cluster.local:9093
 
     compactor:
       working_directory: /loki/compactor

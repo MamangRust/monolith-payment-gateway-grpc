@@ -105,16 +105,14 @@ func (h *authHandleApi) VerifyCode(c echo.Context) error {
 		method,
 		attribute.String("verify_code", verifyCode),
 	)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	res, err := h.client.VerifyCode(ctx, &pb.VerifyCodeRequest{
 		Code: verifyCode,
 	})
 
 	if err != nil {
-		status = "error"
 		logError("Failed to verify code", err, zap.Error(err))
 
 		return auth_errors.ErrApiVerifyCode(c)
@@ -142,23 +140,18 @@ func (h *authHandleApi) ForgotPassword(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	var body requests.ForgotPasswordRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind forgot password request", err, zap.Error(err))
 
 		return auth_errors.ErrBindForgotPassword(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate forgot password request", err, zap.Error(err))
 
 		return auth_errors.ErrValidateForgotPassword(c)
@@ -169,9 +162,8 @@ func (h *authHandleApi) ForgotPassword(c echo.Context) error {
 	res, err := h.client.ForgotPassword(ctx, &pb.ForgotPasswordRequest{
 		Email: body.Email,
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to forgot password", err, zap.Error(err))
 
 		return auth_errors.ErrApiForgotPassword(c)
@@ -200,23 +192,18 @@ func (h *authHandleApi) ResetPassword(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	var body requests.CreateResetPasswordRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind reset password request", err, zap.Error(err))
 
 		return auth_errors.ErrBindResetPassword(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate reset password request", err, zap.Error(err))
 
 		return auth_errors.ErrValidateResetPassword(c)
@@ -229,8 +216,6 @@ func (h *authHandleApi) ResetPassword(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to reset password", err, zap.Error(err))
 
 		return auth_errors.ErrApiResetPassword(c)
@@ -260,23 +245,18 @@ func (h *authHandleApi) Register(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	var body requests.CreateUserRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind register request", err, zap.Error(err))
 
 		return auth_errors.ErrBindRegister(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate register request", err, zap.Error(err))
 
 		return auth_errors.ErrValidateRegister(c)
@@ -293,8 +273,6 @@ func (h *authHandleApi) Register(c echo.Context) error {
 	res, err := h.client.RegisterUser(ctx, data)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to register user", err, zap.Error(err))
 
 		return auth_errors.ErrApiRegister(c)
@@ -324,23 +302,18 @@ func (h *authHandleApi) Login(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	var body requests.AuthRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind login request", err, zap.Error(err))
 
 		return auth_errors.ErrBindLogin(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate login request", err, zap.Error(err))
 
 		return auth_errors.ErrValidateRegister(c)
@@ -354,8 +327,6 @@ func (h *authHandleApi) Login(c echo.Context) error {
 	res, err := h.client.LoginUser(ctx, data)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to login user", err, zap.Error(err))
 
 		return auth_errors.ErrApiLogin(c)
@@ -385,23 +356,18 @@ func (h *authHandleApi) RefreshToken(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	var body requests.RefreshTokenRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind refresh token request", err, zap.Error(err))
 
 		return auth_errors.ErrBindRefreshToken(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate refresh token request", err, zap.Error(err))
 
 		return auth_errors.ErrValidateRefreshToken(c)
@@ -412,8 +378,6 @@ func (h *authHandleApi) RefreshToken(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to refresh token", err, zap.Error(err))
 
 		return auth_errors.ErrApiRefreshToken(c)
@@ -443,17 +407,14 @@ func (h *authHandleApi) GetMe(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
-	defer func() { end(status) }()
+	defer func() { end() }()
 
 	authHeader := c.Request().Header.Get("Authorization")
 
 	h.logger.Debug("Authorization header: ", zap.String("authHeader", authHeader))
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		status = "error"
-
 		err := errors.New("invalid authorization header")
 
 		logError("Invalid authorization header", err, zap.String("authHeader", authHeader))
@@ -468,8 +429,6 @@ func (h *authHandleApi) GetMe(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to get me", err, zap.Error(err))
 
 		return auth_errors.ErrApiGetMe(c)
@@ -486,7 +445,11 @@ func (s *authHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -497,7 +460,9 @@ func (s *authHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -507,12 +472,14 @@ func (s *authHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

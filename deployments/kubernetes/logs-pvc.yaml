@@ -5,8 +5,9 @@ metadata:
   namespace: payment-gateway
 spec:
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce              
   resources:
     requests:
-      storage: 5Gi
-  storageClassName: logs-storage
+      storage: 5Gi               
+  storageClassName: standard     
+  volumeName: app-logs-pv       

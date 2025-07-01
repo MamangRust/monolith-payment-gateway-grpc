@@ -25,7 +25,14 @@ spec:
         volumeMounts:
         - name: redis-data
           mountPath: /data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
       volumes:
       - name: redis-data
         persistentVolumeClaim:
-          claimName: redis
+          claimName: redis-pvc

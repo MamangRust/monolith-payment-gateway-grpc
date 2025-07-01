@@ -66,6 +66,7 @@ func main() {
 		cfg.SMTPPort,
 		cfg.SMTPUser,
 		cfg.SMTPPass,
+		logger,
 	)
 
 	h := handler.NewEmailHandler(ctx, logger, m)
@@ -89,5 +90,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error starting consumer: %v", err)
 	}
+
+	logger.Info("Email service started", zap.String("service", "email-service"))
+
 	select {}
+
 }

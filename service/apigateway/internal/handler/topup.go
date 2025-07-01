@@ -111,27 +111,22 @@ func NewHandlerTopup(client pb.TopupServiceClient, router *echo.Echo, logger log
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topups [get]
 func (h topupHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTopupRequest{
@@ -143,8 +138,6 @@ func (h topupHandleApi) FindAll(c echo.Context) error {
 	res, err := h.client.FindAllTopup(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find all topups", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindAllTopups(c)
@@ -171,37 +164,28 @@ func (h topupHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topups data"
 // @Router /api/topups/card-number/{card_number} [get]
 func (h *topupHandleApi) FindAllByCardNumber(c echo.Context) error {
-	const method = "FindAllByCardNumber"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllByCardNumber"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.Param("card_number")
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTopupByCardNumberRequest{
@@ -214,8 +198,6 @@ func (h *topupHandleApi) FindAllByCardNumber(c echo.Context) error {
 	res, err := h.client.FindAllTopupByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find all topups by card number", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindAllByCardNumberTopup(c)
@@ -245,10 +227,8 @@ func (h topupHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -256,8 +236,6 @@ func (h topupHandleApi) FindById(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		err := errors.New("invalid topup id")
 
 		logError("Invalid topup id", err, zap.Error(err))
@@ -270,8 +248,6 @@ func (h topupHandleApi) FindById(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find topup by id", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindByIdTopup(c)
@@ -303,31 +279,20 @@ func (h *topupHandleApi) FindMonthlyTopupStatusSuccess(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupStatusSuccess(ctx, &pb.FindMonthlyTopupStatus{
@@ -336,8 +301,6 @@ func (h *topupHandleApi) FindMonthlyTopupStatusSuccess(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupStatusSuccess(c)
@@ -368,21 +331,14 @@ func (h *topupHandleApi) FindYearlyTopupStatusSuccess(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupStatusSuccess(ctx, &pb.FindYearTopupStatus{
@@ -390,8 +346,6 @@ func (h *topupHandleApi) FindYearlyTopupStatusSuccess(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupStatusSuccess(c)
@@ -423,31 +377,20 @@ func (h *topupHandleApi) FindMonthlyTopupStatusFailed(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupStatusFailed(ctx, &pb.FindMonthlyTopupStatus{
@@ -456,8 +399,6 @@ func (h *topupHandleApi) FindMonthlyTopupStatusFailed(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupStatusFailed(c)
@@ -488,21 +429,14 @@ func (h *topupHandleApi) FindYearlyTopupStatusFailed(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupStatusFailed(ctx, &pb.FindYearTopupStatus{
@@ -510,8 +444,6 @@ func (h *topupHandleApi) FindYearlyTopupStatusFailed(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupStatusFailed(c)
@@ -544,32 +476,26 @@ func (h *topupHandleApi) FindMonthlyTopupStatusSuccessByCardNumber(c echo.Contex
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		return topup_errors.ErrApiInvalidMonth(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupStatusSuccessByCardNumber(ctx, &pb.FindMonthlyTopupStatusCardNumber{
@@ -579,8 +505,6 @@ func (h *topupHandleApi) FindMonthlyTopupStatusSuccessByCardNumber(c echo.Contex
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupStatusSuccess(c)
@@ -612,22 +536,20 @@ func (h *topupHandleApi) FindYearlyTopupStatusSuccessByCardNumber(c echo.Context
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("card_number")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupStatusSuccessByCardNumber(ctx, &pb.FindYearTopupStatusCardNumber{
@@ -636,8 +558,6 @@ func (h *topupHandleApi) FindYearlyTopupStatusSuccessByCardNumber(c echo.Context
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupStatusSuccess(c)
@@ -670,32 +590,26 @@ func (h *topupHandleApi) FindMonthlyTopupStatusFailedByCardNumber(c echo.Context
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
-	cardNumber := c.QueryParam("card_number")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		return topup_errors.ErrApiInvalidMonth(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupStatusFailedByCardNumber(ctx, &pb.FindMonthlyTopupStatusCardNumber{
@@ -705,8 +619,6 @@ func (h *topupHandleApi) FindMonthlyTopupStatusFailedByCardNumber(c echo.Context
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupStatusFailed(c)
@@ -738,22 +650,20 @@ func (h *topupHandleApi) FindYearlyTopupStatusFailedByCardNumber(c echo.Context)
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	cardNumber := c.QueryParam("card_number")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupStatusFailedByCardNumber(ctx, &pb.FindYearTopupStatusCardNumber{
@@ -762,8 +672,6 @@ func (h *topupHandleApi) FindYearlyTopupStatusFailedByCardNumber(c echo.Context)
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupStatusFailed(c)
@@ -794,28 +702,21 @@ func (h *topupHandleApi) FindMonthlyTopupMethods(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupMethods(ctx, &pb.FindYearTopupStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly top-up methods", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupMethods(c)
@@ -846,28 +747,21 @@ func (h *topupHandleApi) FindYearlyTopupMethods(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupMethods(ctx, &pb.FindYearTopupStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly top-up methods", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupMethods(c)
@@ -898,28 +792,21 @@ func (h *topupHandleApi) FindMonthlyTopupAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupAmounts(ctx, &pb.FindYearTopupStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly top-up amounts", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupAmounts(c)
@@ -950,28 +837,21 @@ func (h *topupHandleApi) FindYearlyTopupAmounts(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupAmounts(ctx, &pb.FindYearTopupStatus{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly top-up amounts", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupAmounts(c)
@@ -1003,41 +883,28 @@ func (h *topupHandleApi) FindMonthlyTopupMethodsByCardNumber(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
-
-		logError("Invalid card number parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidCardNumber(c)
-	}
-
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Invalid year parameter", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupMethodsByCardNumber(ctx, &pb.FindYearTopupCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly top-up methods by card number", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupMethodsByCardNumber(c)
@@ -1069,41 +936,28 @@ func (h *topupHandleApi) FindYearlyTopupMethodsByCardNumber(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
-
-		logError("Invalid card number parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidCardNumber(c)
-	}
-
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Invalid year parameter", err, zap.Error(err))
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupMethodsByCardNumber(ctx, &pb.FindYearTopupCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly top-up methods by card number", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupMethodsByCardNumber(c)
@@ -1135,40 +989,28 @@ func (h *topupHandleApi) FindMonthlyTopupAmountsByCardNumber(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
-
-		logError("Invalid card number parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidCardNumber(c)
-	}
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Invalid year parameter", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindMonthlyTopupAmountsByCardNumber(ctx, &pb.FindYearTopupCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly top-up amounts by card number", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindMonthlyTopupAmountsByCardNumber(c)
@@ -1200,41 +1042,28 @@ func (h *topupHandleApi) FindYearlyTopupAmountsByCardNumber(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.QueryParam("card_number")
-
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("card number is required")
-
-		logError("Invalid card number parameter", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidCardNumber(c)
-	}
-
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	cardNumber, err := parseQueryCard(c, h.logger)
 
 	if err != nil {
-		status = "error"
+		return err
+	}
 
-		logError("Invalid year parameter", err, zap.Error(err))
+	year, err := parseQueryYear(c, h.logger)
 
-		return topup_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.client.FindYearlyTopupAmountsByCardNumber(ctx, &pb.FindYearTopupCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly top-up amounts by card number", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindYearlyTopupAmountsByCardNumber(c)
@@ -1260,27 +1089,22 @@ func (h *topupHandleApi) FindYearlyTopupAmountsByCardNumber(c echo.Context) erro
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topups/active [get]
 func (h *topupHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTopupRequest{
@@ -1292,8 +1116,6 @@ func (h *topupHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve active topups", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindAllTopupsActive(c)
@@ -1319,27 +1141,22 @@ func (h *topupHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topups/trashed [get]
 func (h *topupHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllTopupRequest{
@@ -1351,8 +1168,6 @@ func (h *topupHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve trashed topups", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedFindAllTopupsTrashed(c)
@@ -1382,25 +1197,19 @@ func (h *topupHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateTopupRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateTopup request", err, zap.Error(err))
 
 		return topup_errors.ErrApiBindCreateTopup(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate CreateTopup request", err, zap.Error(err))
 
 		return topup_errors.ErrApiValidateCreateTopup(c)
@@ -1413,8 +1222,6 @@ func (h *topupHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to create topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedCreateTopup(c)
@@ -1445,17 +1252,13 @@ func (h *topupHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	idint, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return topup_errors.ErrApiInvalidTopupID(c)
@@ -1464,16 +1267,12 @@ func (h *topupHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateTopupRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind UpdateTopup request", err, zap.Error(err))
 
 		return topup_errors.ErrApiBindUpdateTopup(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate UpdateTopup request", err, zap.Error(err))
 
 		return topup_errors.ErrApiValidateUpdateTopup(c)
@@ -1487,8 +1286,6 @@ func (h *topupHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to update topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedUpdateTopup(c)
@@ -1518,10 +1315,8 @@ func (h *topupHandleApi) TrashTopup(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1529,8 +1324,6 @@ func (h *topupHandleApi) TrashTopup(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return topup_errors.ErrApiInvalidTopupID(c)
@@ -1541,8 +1334,6 @@ func (h *topupHandleApi) TrashTopup(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to trash topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedTrashTopup(c)
@@ -1572,10 +1363,8 @@ func (h *topupHandleApi) RestoreTopup(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1583,8 +1372,6 @@ func (h *topupHandleApi) RestoreTopup(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return topup_errors.ErrApiInvalidTopupID(c)
@@ -1595,8 +1382,6 @@ func (h *topupHandleApi) RestoreTopup(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedRestoreTopup(c)
@@ -1626,10 +1411,8 @@ func (h *topupHandleApi) DeleteTopupPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1637,8 +1420,6 @@ func (h *topupHandleApi) DeleteTopupPermanent(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return topup_errors.ErrApiInvalidTopupID(c)
@@ -1649,8 +1430,6 @@ func (h *topupHandleApi) DeleteTopupPermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedDeletePermanentTopup(c)
@@ -1678,17 +1457,13 @@ func (h *topupHandleApi) RestoreAllTopup(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.RestoreAllTopup(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore all topup", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedRestoreAllTopup(c)
@@ -1716,17 +1491,13 @@ func (h *topupHandleApi) DeleteAllTopupPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.client.DeleteAllTopupPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete all topup permanently", err, zap.Error(err))
 
 		return topup_errors.ErrApiFailedDeleteAllTopupPermanent(c)
@@ -1743,7 +1514,11 @@ func (s *topupHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -1754,7 +1529,9 @@ func (s *topupHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -1764,12 +1541,14 @@ func (s *topupHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

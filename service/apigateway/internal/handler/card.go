@@ -129,29 +129,22 @@ func NewHandlerCard(card pb.CardServiceClient, router *echo.Echo, logger logger.
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card data"
 // @Router /api/card [get]
 func (h *cardHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllCardRequest{
@@ -161,8 +154,8 @@ func (h *cardHandleApi) FindAll(c echo.Context) error {
 	}
 
 	cards, err := h.card.FindAllCard(ctx, req)
+
 	if err != nil {
-		status = "error"
 		logError("Failed to find all cards", err,
 			zap.Int("page", page),
 			zap.Int("page_size", pageSize),
@@ -201,17 +194,13 @@ func (h *cardHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid card ID", err, zap.Error(err))
 		return card_errors.ErrApiInvalidCardID(c)
 	}
@@ -250,10 +239,9 @@ func (h *cardHandleApi) FindByUserID(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	userIDRaw := c.Get("user_id")
@@ -300,17 +288,14 @@ func (h *cardHandleApi) DashboardCard(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.card.DashboardCard(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve dashboard card data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedDashboardCard(c)
@@ -340,20 +325,15 @@ func (h *cardHandleApi) DashboardCardCardNumber(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.Param("cardNumber")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		err := errors.New("card number is empty")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindByCardNumberRequest{
@@ -361,9 +341,8 @@ func (h *cardHandleApi) DashboardCardCardNumber(c echo.Context) error {
 	}
 
 	res, err := h.card.DashboardCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve dashboard card data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedDashboardCardByCardNumber(c)
@@ -393,22 +372,15 @@ func (h *cardHandleApi) FindMonthlyBalance(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearBalance{
@@ -418,8 +390,6 @@ func (h *cardHandleApi) FindMonthlyBalance(c echo.Context) error {
 	res, err := h.card.FindMonthlyBalance(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly balance data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyBalance(c)
@@ -449,22 +419,15 @@ func (h *cardHandleApi) FindYearlyBalance(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearBalance{
@@ -474,8 +437,6 @@ func (h *cardHandleApi) FindYearlyBalance(c echo.Context) error {
 	res, err := h.card.FindYearlyBalance(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly balance data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyBalance(c)
@@ -501,25 +462,19 @@ func (h *cardHandleApi) FindYearlyBalance(c echo.Context) error {
 // @Router /api/card/monthly-topup-amount [get]
 func (h *cardHandleApi) FindMonthlyTopupAmount(c echo.Context) error {
 	const method = "FindMonthlyTopupAmount"
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -529,8 +484,6 @@ func (h *cardHandleApi) FindMonthlyTopupAmount(c echo.Context) error {
 	res, err := h.card.FindMonthlyTopupAmount(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly topup amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTopupAmount(c)
@@ -560,22 +513,15 @@ func (h *cardHandleApi) FindYearlyTopupAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -585,8 +531,6 @@ func (h *cardHandleApi) FindYearlyTopupAmount(c echo.Context) error {
 	res, err := h.card.FindYearlyTopupAmount(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly topup amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTopupAmount(c)
@@ -617,22 +561,15 @@ func (h *cardHandleApi) FindMonthlyWithdrawAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -642,8 +579,6 @@ func (h *cardHandleApi) FindMonthlyWithdrawAmount(c echo.Context) error {
 	res, err := h.card.FindMonthlyWithdrawAmount(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly withdraw amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyWithdrawAmount(c)
@@ -672,22 +607,15 @@ func (h *cardHandleApi) FindYearlyWithdrawAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -695,9 +623,8 @@ func (h *cardHandleApi) FindYearlyWithdrawAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindYearlyWithdrawAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly withdraw amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyWithdrawAmount(c)
@@ -728,22 +655,14 @@ func (h *cardHandleApi) FindMonthlyTransactionAmount(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -751,9 +670,8 @@ func (h *cardHandleApi) FindMonthlyTransactionAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindMonthlyTransactionAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transaction amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransactionAmount(c)
@@ -782,22 +700,15 @@ func (h *cardHandleApi) FindYearlyTransactionAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -805,9 +716,8 @@ func (h *cardHandleApi) FindYearlyTransactionAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindYearlyTransactionAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transaction amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransactionAmount(c)
@@ -837,22 +747,15 @@ func (h *cardHandleApi) FindMonthlyTransferSenderAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -860,9 +763,8 @@ func (h *cardHandleApi) FindMonthlyTransferSenderAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindMonthlyTransferSenderAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transfer sender amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransferSenderAmount(c)
@@ -892,22 +794,15 @@ func (h *cardHandleApi) FindYearlyTransferSenderAmount(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -915,9 +810,8 @@ func (h *cardHandleApi) FindYearlyTransferSenderAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindYearlyTransferSenderAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transfer sender amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransferSenderAmount(c)
@@ -948,22 +842,14 @@ func (h *cardHandleApi) FindMonthlyTransferReceiverAmount(c echo.Context) error 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -971,9 +857,8 @@ func (h *cardHandleApi) FindMonthlyTransferReceiverAmount(c echo.Context) error 
 	}
 
 	res, err := h.card.FindMonthlyTransferReceiverAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transfer receiver amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransferReceiverAmount(c)
@@ -1004,22 +889,14 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmount(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	req := &pb.FindYearAmount{
@@ -1027,9 +904,8 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmount(c echo.Context) error {
 	}
 
 	res, err := h.card.FindYearlyTransferReceiverAmount(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transfer receiver amount data", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransferReceiverAmount(c)
@@ -1061,32 +937,20 @@ func (h *cardHandleApi) FindMonthlyBalanceByCardNumber(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearBalanceCardNumber{
@@ -1095,9 +959,8 @@ func (h *cardHandleApi) FindMonthlyBalanceByCardNumber(c echo.Context) error {
 	}
 
 	res, err := h.card.FindMonthlyBalanceByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly balance data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyBalanceByCard(c)
@@ -1129,31 +992,20 @@ func (h *cardHandleApi) FindYearlyBalanceByCardNumber(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearBalanceCardNumber{
@@ -1162,9 +1014,8 @@ func (h *cardHandleApi) FindYearlyBalanceByCardNumber(c echo.Context) error {
 	}
 
 	res, err := h.card.FindYearlyBalanceByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly balance data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyBalanceByCard(c)
@@ -1196,32 +1047,20 @@ func (h *cardHandleApi) FindMonthlyTopupAmountByCardNumber(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1230,9 +1069,8 @@ func (h *cardHandleApi) FindMonthlyTopupAmountByCardNumber(c echo.Context) error
 	}
 
 	res, err := h.card.FindMonthlyTopupAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly topup amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTopupAmountByCard(c)
@@ -1264,33 +1102,20 @@ func (h *cardHandleApi) FindYearlyTopupAmountByCardNumber(c echo.Context) error 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1299,9 +1124,8 @@ func (h *cardHandleApi) FindYearlyTopupAmountByCardNumber(c echo.Context) error 
 	}
 
 	res, err := h.card.FindYearlyTopupAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly topup amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTopupAmountByCard(c)
@@ -1333,31 +1157,20 @@ func (h *cardHandleApi) FindMonthlyWithdrawAmountByCardNumber(c echo.Context) er
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1368,8 +1181,6 @@ func (h *cardHandleApi) FindMonthlyWithdrawAmountByCardNumber(c echo.Context) er
 	res, err := h.card.FindMonthlyWithdrawAmountByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve monthly withdraw amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyWithdrawAmountByCard(c)
@@ -1401,32 +1212,20 @@ func (h *cardHandleApi) FindYearlyWithdrawAmountByCardNumber(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1437,8 +1236,6 @@ func (h *cardHandleApi) FindYearlyWithdrawAmountByCardNumber(c echo.Context) err
 	res, err := h.card.FindYearlyWithdrawAmountByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve yearly withdraw amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyWithdrawAmountByCard(c)
@@ -1470,10 +1267,8 @@ func (h *cardHandleApi) FindMonthlyTransactionAmountByCardNumber(c echo.Context)
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	yearStr := c.QueryParam("year")
@@ -1481,21 +1276,15 @@ func (h *cardHandleApi) FindMonthlyTransactionAmountByCardNumber(c echo.Context)
 	year, err := strconv.Atoi(yearStr)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid year", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidYear(c)
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1504,9 +1293,8 @@ func (h *cardHandleApi) FindMonthlyTransactionAmountByCardNumber(c echo.Context)
 	}
 
 	res, err := h.card.FindMonthlyTransactionAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transaction amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransactionAmountByCard(c)
@@ -1538,10 +1326,8 @@ func (h *cardHandleApi) FindYearlyTransactionAmountByCardNumber(c echo.Context) 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	yearStr := c.QueryParam("year")
@@ -1549,21 +1335,15 @@ func (h *cardHandleApi) FindYearlyTransactionAmountByCardNumber(c echo.Context) 
 	year, err := strconv.Atoi(yearStr)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid year", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidYear(c)
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1572,9 +1352,8 @@ func (h *cardHandleApi) FindYearlyTransactionAmountByCardNumber(c echo.Context) 
 	}
 
 	res, err := h.card.FindYearlyTransactionAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transaction amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransactionAmountByCard(c)
@@ -1606,31 +1385,20 @@ func (h *cardHandleApi) FindMonthlyTransferSenderAmountByCardNumber(c echo.Conte
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1639,9 +1407,8 @@ func (h *cardHandleApi) FindMonthlyTransferSenderAmountByCardNumber(c echo.Conte
 	}
 
 	res, err := h.card.FindMonthlyTransferSenderAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transfer sender amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransferSenderAmountByCard(c)
@@ -1674,10 +1441,8 @@ func (h *cardHandleApi) FindYearlyTransferSenderAmountByCardNumber(c echo.Contex
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	yearStr := c.QueryParam("year")
@@ -1685,20 +1450,15 @@ func (h *cardHandleApi) FindYearlyTransferSenderAmountByCardNumber(c echo.Contex
 	year, err := strconv.Atoi(yearStr)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid year", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidYear(c)
 	}
 
-	cardNumber := c.QueryParam("card_number")
-	if cardNumber == "" {
-		status = "error"
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1707,9 +1467,8 @@ func (h *cardHandleApi) FindYearlyTransferSenderAmountByCardNumber(c echo.Contex
 	}
 
 	res, err := h.card.FindYearlyTransferSenderAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transfer sender amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransferSenderAmountByCard(c)
@@ -1742,10 +1501,8 @@ func (h *cardHandleApi) FindMonthlyTransferReceiverAmountByCardNumber(c echo.Con
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	yearStr := c.QueryParam("year")
@@ -1753,21 +1510,15 @@ func (h *cardHandleApi) FindMonthlyTransferReceiverAmountByCardNumber(c echo.Con
 	year, err := strconv.Atoi(yearStr)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid year", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidYear(c)
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1776,9 +1527,8 @@ func (h *cardHandleApi) FindMonthlyTransferReceiverAmountByCardNumber(c echo.Con
 	}
 
 	res, err := h.card.FindMonthlyTransferReceiverAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly transfer receiver amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindMonthlyTransferReceiverAmountByCard(c)
@@ -1810,10 +1560,8 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmountByCardNumber(c echo.Cont
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	yearStr := c.QueryParam("year")
@@ -1821,21 +1569,15 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmountByCardNumber(c echo.Cont
 	year, err := strconv.Atoi(yearStr)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid year", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidYear(c)
 	}
 
-	cardNumber := c.QueryParam("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return card_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearAmountCardNumber{
@@ -1844,9 +1586,8 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmountByCardNumber(c echo.Cont
 	}
 
 	res, err := h.card.FindYearlyTransferReceiverAmountByCardNumber(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly transfer receiver amount data by card number", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindYearlyTransferReceiverAmountByCard(c)
@@ -1870,28 +1611,22 @@ func (h *cardHandleApi) FindYearlyTransferReceiverAmountByCardNumber(c echo.Cont
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
 // @Router /api/card/active [get]
 func (h *cardHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllCardRequest{
@@ -1903,8 +1638,6 @@ func (h *cardHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.card.FindByActiveCard(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve card record", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindByActiveCard(c)
@@ -1930,28 +1663,22 @@ func (h *cardHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
 // @Router /api/card/trashed [get]
 func (h *cardHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllCardRequest{
@@ -1963,8 +1690,6 @@ func (h *cardHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.card.FindByTrashedCard(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve card record", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindByTrashedCard(c)
@@ -1995,16 +1720,13 @@ func (h *cardHandleApi) FindByCardNumber(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	cardNumber := c.Param("card_number")
 
 	if cardNumber == "" {
-		status = "error"
 		err := errors.New("invalid card number")
 
 		logError("Failed to fetch card record", err, zap.Error(err))
@@ -2019,8 +1741,6 @@ func (h *cardHandleApi) FindByCardNumber(c echo.Context) error {
 	res, err := h.card.FindByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve card record", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedFindByCardNumber(c)
@@ -2049,21 +1769,19 @@ func (h *cardHandleApi) CreateCard(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
+
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateCardRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
 		logError("Failed to bind CreateCard request", err, zap.Error(err))
 		return card_errors.ErrApiBindCreateCard(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
 		logError("Validation failed for CreateCard", err, zap.Error(err))
 		return card_errors.ErrApiValidateCreateCard(c)
 	}
@@ -2077,14 +1795,15 @@ func (h *cardHandleApi) CreateCard(c echo.Context) error {
 	}
 
 	res, err := h.card.CreateCard(ctx, req)
+
 	if err != nil {
-		status = "error"
 		logError("CreateCard service failed", err)
 		return card_errors.ErrApiFailedCreateCard(c)
 	}
 
 	response := h.mapping.ToApiResponseCard(res)
-	logSuccess("Successfully created card", zap.Int("card_id", int(response.Data.ID)))
+
+	logSuccess("Successfully created card", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, response)
 }
@@ -2108,10 +1827,8 @@ func (h *cardHandleApi) UpdateCard(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2119,8 +1836,6 @@ func (h *cardHandleApi) UpdateCard(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid card id", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidCardID(c)
@@ -2129,16 +1844,12 @@ func (h *cardHandleApi) UpdateCard(c echo.Context) error {
 	var body requests.UpdateCardRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind UpdateCard request", err, zap.Error(err))
 
 		return card_errors.ErrApiBindUpdateCard(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Validation failed for UpdateCard", err, zap.Error(err))
 
 		return card_errors.ErrApiValidateUpdateCard(c)
@@ -2156,8 +1867,6 @@ func (h *cardHandleApi) UpdateCard(c echo.Context) error {
 	res, err := h.card.UpdateCard(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("UpdateCard service failed", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedUpdateCard(c)
@@ -2188,10 +1897,8 @@ func (h *cardHandleApi) TrashedCard(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2199,8 +1906,6 @@ func (h *cardHandleApi) TrashedCard(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid card id", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidCardID(c)
@@ -2213,8 +1918,6 @@ func (h *cardHandleApi) TrashedCard(c echo.Context) error {
 	res, err := h.card.TrashedCard(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("TrashedCard service failed", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedTrashCard(c)
@@ -2245,10 +1948,8 @@ func (h *cardHandleApi) RestoreCard(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2256,8 +1957,6 @@ func (h *cardHandleApi) RestoreCard(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid card id", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidCardID(c)
@@ -2270,10 +1969,7 @@ func (h *cardHandleApi) RestoreCard(c echo.Context) error {
 	res, err := h.card.RestoreCard(ctx, req)
 
 	if err != nil {
-		status = "error"
-		msg := "Failed to restore card"
-
-		logError(msg, err, zap.Error(err))
+		logError("RestoreCard service failed", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedRestoreCard(c)
 	}
@@ -2303,10 +1999,8 @@ func (h *cardHandleApi) DeleteCardPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2314,8 +2008,6 @@ func (h *cardHandleApi) DeleteCardPermanent(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid card id", err, zap.Error(err))
 
 		return card_errors.ErrApiInvalidCardID(c)
@@ -2328,8 +2020,6 @@ func (h *cardHandleApi) DeleteCardPermanent(c echo.Context) error {
 	res, err := h.card.DeleteCardPermanent(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete card permanently", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedDeleteCardPermanent(c)
@@ -2358,16 +2048,13 @@ func (h *cardHandleApi) RestoreAllCard(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.card.RestoreAllCard(ctx, &emptypb.Empty{})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to restore all cards", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedRestoreAllCard(c)
@@ -2398,17 +2085,13 @@ func (h *cardHandleApi) DeleteAllCardPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.card.DeleteAllCardPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete all cards permanently", err, zap.Error(err))
 
 		return card_errors.ErrApiFailedDeleteAllCardPermanent(c)
@@ -2425,7 +2108,11 @@ func (s *cardHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -2436,7 +2123,9 @@ func (s *cardHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -2446,12 +2135,14 @@ func (s *cardHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

@@ -42,6 +42,70 @@ type ServiceAddresses struct {
 	Withdraw    string
 }
 
+func loadServiceAddresses() *ServiceAddresses {
+	return &ServiceAddresses{
+		Auth:        getEnvOrDefault("GRPC_AUTH_ADDR", "localhost:50051"),
+		Role:        getEnvOrDefault("GRPC_ROLE_ADDR", "localhost:50052"),
+		Card:        getEnvOrDefault("GRPC_CARD_ADDR", "localhost:50053"),
+		Merchant:    getEnvOrDefault("GRPC_MERCHANT_ADDR", "localhost:50054"),
+		User:        getEnvOrDefault("GRPC_USER_ADDR", "localhost:50055"),
+		Saldo:       getEnvOrDefault("GRPC_SALDO_ADDR", "localhost:50056"),
+		Topup:       getEnvOrDefault("GRPC_TOPUP_ADDR", "localhost:50057"),
+		Transaction: getEnvOrDefault("GRPC_TRANSACTION_ADDR", "localhost:50058"),
+		Transfer:    getEnvOrDefault("GRPC_TRANSFER_ADDR", "localhost:50059"),
+		Withdraw:    getEnvOrDefault("GRPC_WITHDRAW_ADDR", "localhost:50060"),
+	}
+}
+
+func createServiceConnections(addresses *ServiceAddresses, logger logger.LoggerInterface) (*handler.ServiceConnections, error) {
+	var connections handler.ServiceConnections
+
+	conns := map[string]*string{
+		"Auth":        &addresses.Auth,
+		"Role":        &addresses.Role,
+		"Card":        &addresses.Card,
+		"Merchant":    &addresses.Merchant,
+		"User":        &addresses.User,
+		"Saldo":       &addresses.Saldo,
+		"Topup":       &addresses.Topup,
+		"Transaction": &addresses.Transaction,
+		"Transfer":    &addresses.Transfer,
+		"Withdraw":    &addresses.Withdraw,
+	}
+
+	for name, addr := range conns {
+		conn, err := createConnection(*addr, name, logger)
+		if err != nil {
+			return nil, err
+		}
+
+		switch name {
+		case "Auth":
+			connections.Auth = conn
+		case "Role":
+			connections.Role = conn
+		case "Card":
+			connections.Card = conn
+		case "Merchant":
+			connections.Merchant = conn
+		case "User":
+			connections.User = conn
+		case "Saldo":
+			connections.Saldo = conn
+		case "Topup":
+			connections.Topup = conn
+		case "Transaction":
+			connections.Transaction = conn
+		case "Transfer":
+			connections.Transfer = conn
+		case "Withdraw":
+			connections.Withdraw = conn
+		}
+	}
+
+	return &connections, nil
+}
+
 // @title PaymentGateway gRPC
 // @version 1.0
 // @description gRPC based Payment Gateway service
@@ -104,7 +168,7 @@ func RunClient() (*Client, func(), error) {
 		E:                  e,
 		Logger:             log,
 		Mapping:            mapping,
-		ServiceConnections: handler.ServiceConnections(conns),
+		ServiceConnections: conns,
 	}
 
 	handler.NewHandler(deps)
@@ -149,63 +213,6 @@ func RunClient() (*Client, func(), error) {
 	return &Client{App: e, Logger: log}, shutdown, nil
 }
 
-func createServiceConnections(addresses ServiceAddresses, logger logger.LoggerInterface) (handler.ServiceConnections, error) {
-	var connections handler.ServiceConnections
-	var err error
-
-	connections.Auth, err = createConnection(addresses.Auth, "Auth", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Role, err = createConnection(addresses.Role, "Role", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Card, err = createConnection(addresses.Card, "Card", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Merchant, err = createConnection(addresses.Merchant, "Merchant", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.User, err = createConnection(addresses.User, "User", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Saldo, err = createConnection(addresses.Saldo, "Saldo", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Topup, err = createConnection(addresses.Topup, "Topup", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Transaction, err = createConnection(addresses.Transaction, "Transaction", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Transfer, err = createConnection(addresses.Transfer, "Transfer", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	connections.Withdraw, err = createConnection(addresses.Withdraw, "Withdraw", logger)
-	if err != nil {
-		return connections, err
-	}
-
-	return connections, nil
-}
-
 func createConnection(address, serviceName string, logger logger.LoggerInterface) (*grpc.ClientConn, error) {
 	logger.Info(fmt.Sprintf("Connecting to %s service at %s", serviceName, address))
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -216,26 +223,24 @@ func createConnection(address, serviceName string, logger logger.LoggerInterface
 	return conn, nil
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	value, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultValue
-	}
-	return value
-}
-
-func loadServiceAddresses() ServiceAddresses {
-	return ServiceAddresses{
-		Auth:        getEnvOrDefault("GRPC_AUTH_ADDR", "localhost:50051"),
-		Role:        getEnvOrDefault("GRPC_ROLE_ADDR", "localhost:50052"),
-		Card:        getEnvOrDefault("GRPC_CARD_ADDR", "localhost:50053"),
-		Merchant:    getEnvOrDefault("GRPC_MERCHANT_ADDR", "localhost:50054"),
-		User:        getEnvOrDefault("GRPC_USER_ADDR", "localhost:50055"),
-		Saldo:       getEnvOrDefault("GRPC_SALDO_ADDR", "localhost:50056"),
-		Topup:       getEnvOrDefault("GRPC_TOPUP_ADDR", "localhost:50057"),
-		Transaction: getEnvOrDefault("GRPC_TRANSACTION_ADDR", "localhost:50058"),
-		Transfer:    getEnvOrDefault("GRPC_TRANSFER_ADDR", "localhost:50059"),
-		Withdraw:    getEnvOrDefault("GRPC_WITHDRAW_ADDR", "localhost:50060"),
+func closeConnections(conns *handler.ServiceConnections, log logger.LoggerInterface) {
+	for name, conn := range map[string]*grpc.ClientConn{
+		"Auth":        conns.Auth,
+		"Role":        conns.Role,
+		"Card":        conns.Card,
+		"Merchant":    conns.Merchant,
+		"User":        conns.User,
+		"Saldo":       conns.Saldo,
+		"Topup":       conns.Topup,
+		"Transaction": conns.Transaction,
+		"Transfer":    conns.Transfer,
+		"Withdraw":    conns.Withdraw,
+	} {
+		if conn != nil {
+			if err := conn.Close(); err != nil {
+				log.Error(fmt.Sprintf("Failed to close %s connection", name), zap.Error(err))
+			}
+		}
 	}
 }
 
@@ -258,23 +263,10 @@ func setupEcho() *echo.Echo {
 	return e
 }
 
-func closeConnections(conns handler.ServiceConnections, log logger.LoggerInterface) {
-	for name, conn := range map[string]*grpc.ClientConn{
-		"Auth":        conns.Auth,
-		"Role":        conns.Role,
-		"Card":        conns.Card,
-		"Merchant":    conns.Merchant,
-		"User":        conns.User,
-		"Saldo":       conns.Saldo,
-		"Topup":       conns.Topup,
-		"Transaction": conns.Transaction,
-		"Transfer":    conns.Transfer,
-		"Withdraw":    conns.Withdraw,
-	} {
-		if conn != nil {
-			if err := conn.Close(); err != nil {
-				log.Error(fmt.Sprintf("Failed to close %s connection", name), zap.Error(err))
-			}
-		}
+func getEnvOrDefault(key, defaultValue string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return defaultValue
 	}
+	return value
 }

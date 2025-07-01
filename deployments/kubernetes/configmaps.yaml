@@ -6,9 +6,14 @@ metadata:
 data:
   APP_ENV: "kubernetes"
   DB_DRIVER: "postgres"
-  DB_HOST: "postgres"
+  DB_HOST: "postgres.payment-gateway.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "PAYMENT_GATEWAY"
+
+  SMTP_SERVER: smtp.ethereal.email
+  SMTP_PORT: "587"
+  SMTP_USER: julius.davis@ethereal.email
+  SMTP_PASS: 4vWXpZfTMPAazhVZFU
 
   POSTGRES_DB: "PAYMENT_GATEWAY"
 
@@ -17,7 +22,7 @@ data:
   DB_CONN_MAX_LIFETIME: "30m"
 
   DB_SEEDER: "true"
-  APP_LOGGER: "production"
+  APP_LOGGER: "kubernetes"
 
   KAFKA_BROKERS: "kafka.payment-gateway.svc.cluster.local:9092"
 

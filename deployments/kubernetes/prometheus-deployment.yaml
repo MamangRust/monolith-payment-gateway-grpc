@@ -22,6 +22,8 @@ spec:
         - name: prometheus-config
           mountPath: /etc/prometheus/prometheus.yml
           subPath: prometheus.yml
+        - name: prometheus-rules
+          mountPath: /etc/prometheus/rules
         resources:
           requests:
             memory: "512Mi"
@@ -33,3 +35,6 @@ spec:
       - name: prometheus-config
         configMap:
           name: prometheus-config
+      - name: prometheus-rules
+        configMap:
+          name: prometheus-rules

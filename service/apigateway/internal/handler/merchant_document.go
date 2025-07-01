@@ -92,27 +92,22 @@ func NewHandlerMerchantDocument(merchantDocument pb.MerchantDocumentServiceClien
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant document data"
 // @Router /api/merchant-documents [get]
 func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-	status := "success"
 
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantDocumentsRequest{
@@ -122,9 +117,8 @@ func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
 	}
 
 	res, err := h.merchantDocument.FindAll(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed find all", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedFindAllMerchantDocuments(c)
@@ -132,7 +126,7 @@ func (h *merchantDocumentHandleApi) FindAll(c echo.Context) error {
 
 	so := h.mapping.ToApiResponsePaginationMerchantDocument(res)
 
-	logSuccess("success find all", zap.Any("response", so))
+	logSuccess("success find all", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -156,17 +150,13 @@ func (h *merchantDocumentHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("failed find by id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
@@ -177,8 +167,6 @@ func (h *merchantDocumentHandleApi) FindById(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed find by id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedFindByIdMerchantDocument(c)
@@ -205,28 +193,22 @@ func (h *merchantDocumentHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve active merchant documents"
 // @Router /api/merchant-documents/active [get]
 func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
-	const method = "FindAllActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllActive"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantDocumentsRequest{
@@ -236,9 +218,8 @@ func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
 	}
 
 	res, err := h.merchantDocument.FindAllActive(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed find all active", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedFindAllActiveMerchantDocuments(c)
@@ -265,28 +246,22 @@ func (h *merchantDocumentHandleApi) FindAllActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed merchant documents"
 // @Router /api/merchant-documents/trashed [get]
 func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
-	const method = "FindAllTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllTrashed"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantDocumentsRequest{
@@ -296,9 +271,8 @@ func (h *merchantDocumentHandleApi) FindAllTrashed(c echo.Context) error {
 	}
 
 	res, err := h.merchantDocument.FindAllTrashed(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed find all trashed", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedFindAllTrashedMerchantDocuments(c)
@@ -330,25 +304,19 @@ func (h *merchantDocumentHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateMerchantDocumentRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("failed bind create", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindCreateMerchantDocument(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("failed validate create", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindCreateMerchantDocument(c)
@@ -363,8 +331,6 @@ func (h *merchantDocumentHandleApi) Create(c echo.Context) error {
 	res, err := h.merchantDocument.Create(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed create", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedCreateMerchantDocument(c)
@@ -397,10 +363,8 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
@@ -412,16 +376,12 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateMerchantDocumentRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("failed bind update", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocument(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("failed validate update", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiValidateUpdateMerchantDocument(c)
@@ -439,8 +399,6 @@ func (h *merchantDocumentHandleApi) Update(c echo.Context) error {
 	res, err := h.merchantDocument.Update(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed update", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedUpdateMerchantDocument(c)
@@ -473,17 +431,13 @@ func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("failed parse id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
@@ -492,16 +446,12 @@ func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
 	var body requests.UpdateMerchantDocumentStatusRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("failed bind update status", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("failed validate update status", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
@@ -515,9 +465,8 @@ func (h *merchantDocumentHandleApi) UpdateStatus(c echo.Context) error {
 	}
 
 	res, err := h.merchantDocument.UpdateStatus(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed update status", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiBindUpdateMerchantDocumentStatus(c)
@@ -549,10 +498,8 @@ func (h *merchantDocumentHandleApi) TrashedDocument(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -560,8 +507,6 @@ func (h *merchantDocumentHandleApi) TrashedDocument(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed parse id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
@@ -572,8 +517,6 @@ func (h *merchantDocumentHandleApi) TrashedDocument(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed trashed", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedTrashMerchantDocument(c)
@@ -605,10 +548,8 @@ func (h *merchantDocumentHandleApi) RestoreDocument(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -616,8 +557,6 @@ func (h *merchantDocumentHandleApi) RestoreDocument(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed parse id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
@@ -628,8 +567,6 @@ func (h *merchantDocumentHandleApi) RestoreDocument(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed restore", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedRestoreMerchantDocument(c)
@@ -661,17 +598,13 @@ func (h *merchantDocumentHandleApi) Delete(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("failed parse id", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
@@ -682,8 +615,6 @@ func (h *merchantDocumentHandleApi) Delete(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed delete", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedDeleteMerchantDocumentPermanent(c)
@@ -713,16 +644,13 @@ func (h *merchantDocumentHandleApi) RestoreAllDocuments(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.merchantDocument.RestoreAll(ctx, &emptypb.Empty{})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed restore all", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedRestoreAllMerchantDocuments(c)
@@ -752,17 +680,13 @@ func (h *merchantDocumentHandleApi) DeleteAllDocumentsPermanent(c echo.Context) 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.merchantDocument.DeleteAllPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("failed delete all", err, zap.Error(err))
 
 		return merchantdocument_errors.ErrApiFailedDeleteAllMerchantDocumentsPermanent(c)
@@ -779,7 +703,11 @@ func (s *merchantDocumentHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -790,7 +718,9 @@ func (s *merchantDocumentHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -800,12 +730,14 @@ func (s *merchantDocumentHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

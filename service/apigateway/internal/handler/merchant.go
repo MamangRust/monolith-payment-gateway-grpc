@@ -124,27 +124,22 @@ func NewHandlerMerchant(merchant pb.MerchantServiceClient, router *echo.Echo, lo
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant data"
 // @Router /api/merchants [get]
 func (h *merchantHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantRequest{
@@ -156,8 +151,6 @@ func (h *merchantHandleApi) FindAll(c echo.Context) error {
 	res, err := h.merchant.FindAllMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve merchant data", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllMerchants(c)
@@ -185,28 +178,22 @@ func (h *merchantHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/merchants/transaction [get]
 func (h *merchantHandleApi) FindAllTransactions(c echo.Context) error {
-	const method = "FindAllTransactions"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllTransactions"
+	)
 
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantRequest{
@@ -218,8 +205,6 @@ func (h *merchantHandleApi) FindAllTransactions(c echo.Context) error {
 	res, err := h.merchant.FindAllTransactionMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllTransactions(c)
@@ -247,35 +232,29 @@ func (h *merchantHandleApi) FindAllTransactions(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/merchants/transactions/:merchant_id [get]
 func (h *merchantHandleApi) FindAllTransactionByMerchant(c echo.Context) error {
-	const method = "FindAllTransactionByMerchant"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllTransactionByMerchant"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantID, err := strconv.Atoi(c.Param("merchant_id"))
-	if err != nil || merchantID <= 0 {
-		status = "error"
 
+	if err != nil || merchantID <= 0 {
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantTransaction{
@@ -288,8 +267,6 @@ func (h *merchantHandleApi) FindAllTransactionByMerchant(c echo.Context) error {
 	res, err := h.merchant.FindAllTransactionByMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve transaction data", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllTransactionByMerchant(c)
@@ -320,17 +297,13 @@ func (h *merchantHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve merchant data", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
@@ -343,8 +316,6 @@ func (h *merchantHandleApi) FindById(c echo.Context) error {
 	res, err := h.merchant.FindByIdMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve merchant data", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindByIdMerchant(c)
@@ -375,20 +346,14 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodsMerchant(c echo.Context) er
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to retrieve monthly payment methods", err, zap.Error(err))
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -396,9 +361,8 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodsMerchant(c echo.Context) er
 	}
 
 	res, err := h.merchant.FindMonthlyPaymentMethodsMerchant(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve monthly payment methods", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodsMerchant(c)
@@ -429,21 +393,14 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodMerchant(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to retrieve yearly payment methods", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -453,8 +410,6 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodMerchant(c echo.Context) erro
 	res, err := h.merchant.FindYearlyPaymentMethodMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to retrieve yearly payment methods", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodMerchant(c)
@@ -485,21 +440,14 @@ func (h *merchantHandleApi) FindMonthlyAmountMerchant(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to retrieve monthly transaction amounts", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -507,9 +455,8 @@ func (h *merchantHandleApi) FindMonthlyAmountMerchant(c echo.Context) error {
 	}
 
 	res, err := h.merchant.FindMonthlyAmountMerchant(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve monthly transaction amounts", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyAmountMerchant(c)
@@ -540,21 +487,14 @@ func (h *merchantHandleApi) FindYearlyAmountMerchant(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to retrieve yearly transaction amounts", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -562,9 +502,8 @@ func (h *merchantHandleApi) FindYearlyAmountMerchant(c echo.Context) error {
 	}
 
 	res, err := h.merchant.FindYearlyAmountMerchant(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve yearly transaction amounts", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyAmountMerchant(c)
@@ -595,22 +534,14 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountMerchant(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
-
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to retrieve monthly transaction amounts", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -618,9 +549,8 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountMerchant(c echo.Context) error
 	}
 
 	res, err := h.merchant.FindMonthlyTotalAmountMerchant(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve monthly transaction amounts", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyTotalAmountMerchant(c)
@@ -651,20 +581,14 @@ func (h *merchantHandleApi) FindYearlyTotalAmountMerchant(c echo.Context) error 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to retrieve yearly transaction amounts", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchant{
@@ -672,9 +596,8 @@ func (h *merchantHandleApi) FindYearlyTotalAmountMerchant(c echo.Context) error 
 	}
 
 	res, err := h.merchant.FindYearlyTotalAmountMerchant(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to retrieve yearly transaction amounts", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyTotalAmountMerchant(c)
@@ -706,31 +629,24 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodByMerchants(c echo.Context) 
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
-	if err != nil || merchantID <= 0 {
-		status = "error"
 
+	if err != nil || merchantID <= 0 {
 		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -739,9 +655,8 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodByMerchants(c echo.Context) 
 	}
 
 	res, err := h.merchant.FindMonthlyPaymentMethodByMerchants(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodByMerchants(c)
@@ -773,31 +688,23 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodByMerchants(c echo.Context) e
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
 	if err != nil || merchantID <= 0 {
-		status = "error"
-
 		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -806,9 +713,8 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodByMerchants(c echo.Context) e
 	}
 
 	res, err := h.merchant.FindYearlyPaymentMethodByMerchants(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodByMerchants(c)
@@ -840,31 +746,24 @@ func (h *merchantHandleApi) FindMonthlyAmountByMerchants(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
-	if err != nil || merchantID <= 0 {
-		status = "error"
 
+	if err != nil || merchantID <= 0 {
 		logError("failed to find monthly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -873,9 +772,8 @@ func (h *merchantHandleApi) FindMonthlyAmountByMerchants(c echo.Context) error {
 	}
 
 	res, err := h.merchant.FindMonthlyAmountByMerchants(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyAmountByMerchants(c)
@@ -907,33 +805,24 @@ func (h *merchantHandleApi) FindYearlyAmountByMerchants(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
 
 	if err != nil || merchantID <= 0 {
-		status = "error"
-
 		logError("failed to find yearly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
 
-	if err != nil || year <= 0 {
-		status = "error"
-
-		logError("failed to find yearly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -944,8 +833,6 @@ func (h *merchantHandleApi) FindYearlyAmountByMerchants(c echo.Context) error {
 	res, err := h.merchant.FindYearlyAmountByMerchants(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find yearly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyAmountByMerchants(c)
@@ -977,31 +864,24 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountByMerchants(c echo.Context) er
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
-	if err != nil || merchantID <= 0 {
-		status = "error"
 
+	if err != nil || merchantID <= 0 {
 		logError("failed to find monthly total amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly total amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -1010,9 +890,8 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountByMerchants(c echo.Context) er
 	}
 
 	res, err := h.merchant.FindMonthlyTotalAmountByMerchants(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly total amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyTotalAmountMerchant(c)
@@ -1044,31 +923,24 @@ func (h *merchantHandleApi) FindYearlyTotalAmountByMerchants(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	merchantIDStr := c.QueryParam("merchant_id")
-	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
-	if err != nil || merchantID <= 0 {
-		status = "error"
 
+	if err != nil || merchantID <= 0 {
 		logError("failed to find yearly total amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find yearly total amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantById{
@@ -1077,9 +949,8 @@ func (h *merchantHandleApi) FindYearlyTotalAmountByMerchants(c echo.Context) err
 	}
 
 	res, err := h.merchant.FindYearlyTotalAmountByMerchants(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find yearly total amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyTotalAmountMerchant(c)
@@ -1107,29 +978,24 @@ func (h *merchantHandleApi) FindYearlyTotalAmountByMerchants(c echo.Context) err
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/merchants/transactions/api-key/:api_key [get]
 func (h *merchantHandleApi) FindAllTransactionByApikey(c echo.Context) error {
-	const method = "FindAllTransactionByApikey"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllTransactionByApikey"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.Param("api_key")
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantApikey{
@@ -1142,8 +1008,6 @@ func (h *merchantHandleApi) FindAllTransactionByApikey(c echo.Context) error {
 	res, err := h.merchant.FindAllTransactionByApikey(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find all transaction by api key", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllTransactionByApikey(c)
@@ -1175,22 +1039,16 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodByApikeys(c echo.Context) er
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1199,9 +1057,8 @@ func (h *merchantHandleApi) FindMonthlyPaymentMethodByApikeys(c echo.Context) er
 	}
 
 	res, err := h.merchant.FindMonthlyPaymentMethodByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodsMerchant(c)
@@ -1233,22 +1090,16 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodByApikeys(c echo.Context) err
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1257,9 +1108,8 @@ func (h *merchantHandleApi) FindYearlyPaymentMethodByApikeys(c echo.Context) err
 	}
 
 	res, err := h.merchant.FindYearlyPaymentMethodByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodMerchant(c)
@@ -1291,22 +1141,16 @@ func (h *merchantHandleApi) FindMonthlyAmountByApikeys(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1315,9 +1159,8 @@ func (h *merchantHandleApi) FindMonthlyAmountByApikeys(c echo.Context) error {
 	}
 
 	res, err := h.merchant.FindMonthlyAmountByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyAmountMerchant(c)
@@ -1349,21 +1192,16 @@ func (h *merchantHandleApi) FindYearlyAmountByApikeys(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
+
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find yearly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1372,9 +1210,8 @@ func (h *merchantHandleApi) FindYearlyAmountByApikeys(c echo.Context) error {
 	}
 
 	res, err := h.merchant.FindYearlyAmountByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find yearly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyAmountMerchant(c)
@@ -1406,22 +1243,16 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountByApikeys(c echo.Context) erro
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find monthly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1430,9 +1261,8 @@ func (h *merchantHandleApi) FindMonthlyTotalAmountByApikeys(c echo.Context) erro
 	}
 
 	res, err := h.merchant.FindMonthlyTotalAmountByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find monthly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindMonthlyTotalAmountMerchant(c)
@@ -1464,22 +1294,16 @@ func (h *merchantHandleApi) FindYearlyTotalAmountByApikeys(c echo.Context) error
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	api_key := c.QueryParam("api_key")
-	yearStr := c.QueryParam("year")
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil || year <= 0 {
-		status = "error"
+	year, err := parseQueryYear(c, h.logger)
 
-		logError("failed to find yearly amount by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidYear(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindYearMerchantByApikey{
@@ -1488,9 +1312,8 @@ func (h *merchantHandleApi) FindYearlyTotalAmountByApikeys(c echo.Context) error
 	}
 
 	res, err := h.merchant.FindYearlyTotalAmountByApikey(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("failed to find yearly amount by merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindYearlyTotalAmountMerchant(c)
@@ -1522,17 +1345,13 @@ func (h *merchantHandleApi) FindByApiKey(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	apiKey := c.QueryParam("api_key")
 
 	if apiKey == "" {
-		status = "error"
-
 		err := errors.New("api key is empty")
 		logError("failed to find merchant by api key", err, zap.Error(err))
 
@@ -1546,8 +1365,6 @@ func (h *merchantHandleApi) FindByApiKey(c echo.Context) error {
 	res, err := h.merchant.FindByApiKey(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find merchant by api key", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindByApiKeyMerchant(c)
@@ -1578,17 +1395,13 @@ func (h *merchantHandleApi) FindByMerchantUserId(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, ok := c.Get("user_id").(int32)
 
 	if !ok {
-		status = "error"
-
 		err := errors.New("user id not found in context")
 		logError("failed to find merchant by user id", err, zap.Error(err))
 
@@ -1602,8 +1415,6 @@ func (h *merchantHandleApi) FindByMerchantUserId(c echo.Context) error {
 	res, err := h.merchant.FindByMerchantUserId(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find merchant by user id", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindByUserId(c)
@@ -1630,27 +1441,22 @@ func (h *merchantHandleApi) FindByMerchantUserId(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant data"
 // @Router /api/merchants/active [get]
 func (h *merchantHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantRequest{
@@ -1662,8 +1468,6 @@ func (h *merchantHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.merchant.FindByActive(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find merchant by active", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllMerchantsActive(c)
@@ -1690,27 +1494,22 @@ func (h *merchantHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant data"
 // @Router /api/merchants/trashed [get]
 func (h *merchantHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllMerchantRequest{
@@ -1722,8 +1521,6 @@ func (h *merchantHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.merchant.FindByTrashed(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("failed to find merchant by trashed", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedFindAllMerchantsTrashed(c)
@@ -1754,25 +1551,19 @@ func (h *merchantHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateMerchantRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateMerchant request", err, zap.Error(err))
 
 		return merchant_errors.ErrApiBindCreateMerchant(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Validation Error", err, zap.Error(err))
 
 		return merchant_errors.ErrApiValidateCreateMerchant(c)
@@ -1786,8 +1577,6 @@ func (h *merchantHandleApi) Create(c echo.Context) error {
 	res, err := h.merchant.CreateMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to create merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedCreateMerchant(c)
@@ -1818,17 +1607,13 @@ func (h *merchantHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid merchant ID", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
@@ -1837,16 +1622,12 @@ func (h *merchantHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateMerchantRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind UpdateMerchant request", err, zap.Error(err))
 
 		return merchant_errors.ErrApiBindUpdateMerchant(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Validation Error", err, zap.Error(err))
 
 		return merchant_errors.ErrApiValidateUpdateMerchant(c)
@@ -1862,8 +1643,6 @@ func (h *merchantHandleApi) Update(c echo.Context) error {
 	res, err := h.merchant.UpdateMerchant(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to update merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedUpdateMerchant(c)
@@ -1895,33 +1674,27 @@ func (h *merchantHandleApi) UpdateStatus(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Invalid merchant ID", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
 	}
 
 	var body requests.UpdateMerchantStatusRequest
-	if err := c.Bind(&body); err != nil {
-		status = "error"
 
+	if err := c.Bind(&body); err != nil {
 		logError("Failed to bind UpdateMerchantStatus request", err, zap.Error(err))
 
 		return merchant_errors.ErrApiBindUpdateMerchantStatus(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Validation Error", err, zap.Error(err))
 
 		return merchant_errors.ErrApiValidateUpdateMerchantStatus(c)
@@ -1933,9 +1706,8 @@ func (h *merchantHandleApi) UpdateStatus(c echo.Context) error {
 	}
 
 	res, err := h.merchant.UpdateMerchantStatus(ctx, req)
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to update merchant status", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedUpdateMerchantStatus(c)
@@ -1966,10 +1738,8 @@ func (h *merchantHandleApi) TrashedMerchant(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -1977,8 +1747,6 @@ func (h *merchantHandleApi) TrashedMerchant(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid merchant ID", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
@@ -1989,8 +1757,6 @@ func (h *merchantHandleApi) TrashedMerchant(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to trashed merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedTrashMerchant(c)
@@ -2021,10 +1787,8 @@ func (h *merchantHandleApi) RestoreMerchant(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2032,8 +1796,6 @@ func (h *merchantHandleApi) RestoreMerchant(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid merchant ID", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
@@ -2044,8 +1806,6 @@ func (h *merchantHandleApi) RestoreMerchant(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedRestoreMerchant(c)
@@ -2076,10 +1836,8 @@ func (h *merchantHandleApi) Delete(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -2087,8 +1845,6 @@ func (h *merchantHandleApi) Delete(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid merchant ID", err, zap.Error(err))
 
 		return merchant_errors.ErrApiInvalidMerchantID(c)
@@ -2099,8 +1855,6 @@ func (h *merchantHandleApi) Delete(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedDeleteMerchantPermanent(c)
@@ -2129,17 +1883,13 @@ func (h *merchantHandleApi) RestoreAllMerchant(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.merchant.RestoreAllMerchant(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore all merchant", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedRestoreAllMerchant(c)
@@ -2166,11 +1916,9 @@ func (h *merchantHandleApi) DeleteAllMerchantPermanent(c echo.Context) error {
 	const method = "DeleteAllMerchantPermanent"
 
 	end, logSuccess, logError := h.startTracingAndLogging(c.Request().Context(), method)
-	status := "success"
-
 	defer func() {
 
-		end(status)
+		end()
 	}()
 
 	ctx := c.Request().Context()
@@ -2178,8 +1926,6 @@ func (h *merchantHandleApi) DeleteAllMerchantPermanent(c echo.Context) error {
 	res, err := h.merchant.DeleteAllMerchantPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete all merchant permanently", err, zap.Error(err))
 
 		return merchant_errors.ErrApiFailedDeleteAllMerchantPermanent(c)
@@ -2196,7 +1942,11 @@ func (s *merchantHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -2207,7 +1957,9 @@ func (s *merchantHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -2217,12 +1969,14 @@ func (s *merchantHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

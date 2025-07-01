@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -98,27 +97,22 @@ func NewHandlerSaldo(client pb.SaldoServiceClient, router *echo.Echo, logger log
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldos [get]
 func (h *saldoHandleApi) FindAll(c echo.Context) error {
-	const method = "FindAll"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAll"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllSaldoRequest{
@@ -130,8 +124,6 @@ func (h *saldoHandleApi) FindAll(c echo.Context) error {
 	res, err := h.saldo.FindAllSaldo(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve saldo data", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindAllSaldo(c)
@@ -161,17 +153,13 @@ func (h *saldoHandleApi) FindById(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Invalid saldo ID", err, zap.Error(err))
 
 		return saldo_errors.ErrApiInvalidSaldoID(c)
@@ -184,8 +172,6 @@ func (h *saldoHandleApi) FindById(c echo.Context) error {
 	res, err := h.saldo.FindByIdSaldo(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve saldo data", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindByIdSaldo(c)
@@ -217,40 +203,28 @@ func (h *saldoHandleApi) FindMonthlyTotalSaldoBalance(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	monthStr := c.QueryParam("month")
+	year, err := parseQueryYear(c, h.logger)
 
-	year, err := strconv.Atoi(yearStr)
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
-	month, err := strconv.Atoi(monthStr)
+	month, err := parseQueryMonth(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid month parameter", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidMonth(c)
+		return err
 	}
 
 	res, err := h.saldo.FindMonthlyTotalSaldoBalance(ctx, &pb.FindMonthlySaldoTotalBalance{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly total saldo balance", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindMonthlyTotalSaldoBalance(c)
@@ -281,28 +255,21 @@ func (h *saldoHandleApi) FindYearTotalSaldoBalance(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.saldo.FindYearTotalSaldoBalance(ctx, &pb.FindYearlySaldo{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly total saldo balance", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindYearTotalSaldoBalance(c)
@@ -333,28 +300,21 @@ func (h *saldoHandleApi) FindMonthlySaldoBalances(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.saldo.FindMonthlySaldoBalances(ctx, &pb.FindYearlySaldo{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve monthly saldo balances", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindMonthlySaldoBalances(c)
@@ -385,28 +345,21 @@ func (h *saldoHandleApi) FindYearlySaldoBalances(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	year, err := parseQueryYear(c, h.logger)
+
 	if err != nil {
-		status = "error"
-
-		logError("Invalid year parameter", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidYear(c)
+		return err
 	}
 
 	res, err := h.saldo.FindYearlySaldoBalances(ctx, &pb.FindYearlySaldo{
 		Year: int32(year),
 	})
-	if err != nil {
-		status = "error"
 
+	if err != nil {
 		logError("Failed to retrieve yearly saldo balances", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindYearlySaldoBalances(c)
@@ -435,21 +388,14 @@ func (h *saldoHandleApi) FindByCardNumber(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	cardNumber := c.Param("card_number")
+	cardNumber, err := parseQueryCard(c, h.logger)
 
-	if cardNumber == "" {
-		status = "error"
-		err := errors.New("invalid card number")
-
-		logError("Invalid card number", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidCardNumber(c)
+	if err != nil {
+		return err
 	}
 
 	req := &pb.FindByCardNumberRequest{
@@ -459,8 +405,6 @@ func (h *saldoHandleApi) FindByCardNumber(c echo.Context) error {
 	res, err := h.saldo.FindByCardNumber(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve saldo data", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindByCardNumberSaldo(c)
@@ -486,27 +430,22 @@ func (h *saldoHandleApi) FindByCardNumber(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldos/active [get]
 func (h *saldoHandleApi) FindByActive(c echo.Context) error {
-	const method = "FindByActive"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllSaldoRequest{
@@ -518,8 +457,6 @@ func (h *saldoHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.saldo.FindByActive(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve saldo data", err, zap.Error(err))
 		return saldo_errors.ErrApiFailedFindAllSaldoActive(c)
 	}
@@ -544,27 +481,22 @@ func (h *saldoHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldos/trashed [get]
 func (h *saldoHandleApi) FindByTrashed(c echo.Context) error {
-	const method = "FindByTrashed"
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
+
 	ctx := c.Request().Context()
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
-
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	req := &pb.FindAllSaldoRequest{
@@ -576,8 +508,6 @@ func (h *saldoHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.saldo.FindByTrashed(ctx, req)
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to retrieve trashed saldo data", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedFindAllSaldoTrashed(c)
@@ -607,25 +537,19 @@ func (h *saldoHandleApi) Create(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	var body requests.CreateSaldoRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind CreateSaldo request", err, zap.Error(err))
 
 		return saldo_errors.ErrApiBindCreateSaldo(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate CreateSaldo request", err, zap.Error(err))
 
 		return saldo_errors.ErrApiValidateCreateSaldo(c)
@@ -637,8 +561,6 @@ func (h *saldoHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to create saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedCreateSaldo(c)
@@ -669,17 +591,13 @@ func (h *saldoHandleApi) Update(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	idint, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return saldo_errors.ErrApiInvalidSaldoID(c)
@@ -688,16 +606,12 @@ func (h *saldoHandleApi) Update(c echo.Context) error {
 	var body requests.UpdateSaldoRequest
 
 	if err := c.Bind(&body); err != nil {
-		status = "error"
-
 		logError("Failed to bind UpdateSaldo request", err, zap.Error(err))
 
 		return saldo_errors.ErrApiBindUpdateSaldo(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		status = "error"
-
 		logError("Failed to validate UpdateSaldo request", err, zap.Error(err))
 
 		return saldo_errors.ErrApiValidateUpdateSaldo(c)
@@ -710,8 +624,6 @@ func (h *saldoHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to update saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedUpdateSaldo(c)
@@ -741,10 +653,8 @@ func (h *saldoHandleApi) TrashSaldo(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -752,8 +662,6 @@ func (h *saldoHandleApi) TrashSaldo(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return saldo_errors.ErrApiInvalidSaldoID(c)
@@ -764,8 +672,6 @@ func (h *saldoHandleApi) TrashSaldo(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to trashed saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedTrashSaldo(c)
@@ -795,10 +701,8 @@ func (h *saldoHandleApi) RestoreSaldo(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -806,8 +710,6 @@ func (h *saldoHandleApi) RestoreSaldo(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return saldo_errors.ErrApiInvalidSaldoID(c)
@@ -818,8 +720,6 @@ func (h *saldoHandleApi) RestoreSaldo(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedRestoreSaldo(c)
@@ -849,10 +749,8 @@ func (h *saldoHandleApi) Delete(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	id := c.Param("id")
@@ -860,8 +758,6 @@ func (h *saldoHandleApi) Delete(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		status = "error"
-
 		logError("Bad Request: Invalid ID", err, zap.Error(err))
 
 		return saldo_errors.ErrApiInvalidSaldoID(c)
@@ -872,8 +768,6 @@ func (h *saldoHandleApi) Delete(c echo.Context) error {
 	})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedDeleteSaldoPermanent(c)
@@ -902,17 +796,13 @@ func (h *saldoHandleApi) RestoreAllSaldo(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.saldo.RestoreAllSaldo(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to restore all saldo", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedRestoreAllSaldo(c)
@@ -940,17 +830,13 @@ func (h *saldoHandleApi) DeleteAllSaldoPermanent(c echo.Context) error {
 
 	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
 
-	status := "success"
-
 	defer func() {
-		end(status)
+		end()
 	}()
 
 	res, err := h.saldo.DeleteAllSaldoPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		status = "error"
-
 		logError("Failed to delete all saldo permanently", err, zap.Error(err))
 
 		return saldo_errors.ErrApiFailedDeleteAllSaldoPermanent(c)
@@ -967,7 +853,11 @@ func (s *saldoHandleApi) startTracingAndLogging(
 	ctx context.Context,
 	method string,
 	attrs ...attribute.KeyValue,
-) (func(string), func(string, ...zap.Field), func(string, error, ...zap.Field)) {
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
 	start := time.Now()
 	_, span := s.trace.Start(ctx, method)
 
@@ -978,7 +868,9 @@ func (s *saldoHandleApi) startTracingAndLogging(
 	span.AddEvent("Start: " + method)
 	s.logger.Debug("Start: " + method)
 
-	end := func(status string) {
+	status := "success"
+
+	end = func() {
 		s.recordMetrics(method, status, start)
 		code := otelcode.Ok
 		if status != "success" {
@@ -988,12 +880,14 @@ func (s *saldoHandleApi) startTracingAndLogging(
 		span.End()
 	}
 
-	logSuccess := func(msg string, fields ...zap.Field) {
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
 		span.AddEvent(msg)
 		s.logger.Debug(msg, fields...)
 	}
 
-	logError := func(msg string, err error, fields ...zap.Field) {
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
 		span.RecordError(err)
 		span.SetStatus(otelcode.Error, msg)
 		span.AddEvent(msg)

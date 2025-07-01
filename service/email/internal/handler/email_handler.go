@@ -107,6 +107,9 @@ func (h *emailHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sara
 
 		sess.MarkMessage(msg, "")
 	}
+
+	h.logger.Info("ConsumeClaim finished", zap.Int("messages", len(claim.Messages())))
+
 	return nil
 }
 
