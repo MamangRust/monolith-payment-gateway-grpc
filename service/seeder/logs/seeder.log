@@ -10,3 +10,15 @@
 {"level":"debug","ts":"2025-06-24T18:59:03.780+0700","caller":"seeder/merchant.go:78","msg":"merchant seeded successfully","totalMerchants":40,"activeMerchants":20,"trashedMerchants":20}
 {"level":"info","ts":"2025-06-24T18:59:33.933+0700","caller":"seeder/transaction.go:112","msg":"transaction seeded successfully"}
 {"level":"info","ts":"2025-06-24T19:00:03.962+0700","caller":"seeder/main.go:54","msg":"Database seeded successfully"}
+{"level":"debug","ts":"2025-07-23T06:22:31.493+0700","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-07-23T06:22:31.494+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"info","ts":"2025-07-23T06:22:37.099+0700","caller":"seeder/user.go:65","msg":"user seeded successfully"}
+{"level":"debug","ts":"2025-07-23T06:23:07.164+0700","caller":"seeder/role.go:64","msg":"role seeding completed","total_roles":20,"active_roles":10,"trashed_roles":10}
+{"level":"debug","ts":"2025-07-23T06:23:37.269+0700","caller":"seeder/card.go:80","msg":"card seeded successfully","totalCards":40,"activeCards":20,"trashedCards":20}
+{"level":"debug","ts":"2025-07-23T06:24:07.378+0700","caller":"seeder/saldo.go:73","msg":"saldo seeded successfully","totalSaldos":40,"activeSaldos":20,"trashedSaldos":20}
+{"level":"debug","ts":"2025-07-23T06:24:37.524+0700","caller":"seeder/topup.go:101","msg":"topup seeded successfully","totalTopups":40,"activeTopups":20,"trashedTopups":20}
+{"level":"info","ts":"2025-07-23T06:25:07.675+0700","caller":"seeder/withdraw.go:91","msg":"withdraw seeded successfully"}
+{"level":"info","ts":"2025-07-23T06:25:37.789+0700","caller":"seeder/transfer.go:92","msg":"transfer seeded successfully"}
+{"level":"debug","ts":"2025-07-23T06:26:07.934+0700","caller":"seeder/merchant.go:78","msg":"merchant seeded successfully","totalMerchants":40,"activeMerchants":20,"trashedMerchants":20}
+{"level":"info","ts":"2025-07-23T06:26:38.145+0700","caller":"seeder/transaction.go:112","msg":"transaction seeded successfully"}
+{"level":"info","ts":"2025-07-23T06:27:08.173+0700","caller":"seeder/main.go:54","msg":"Database seeded successfully"}

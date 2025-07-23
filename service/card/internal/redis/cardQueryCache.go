@@ -1,13 +1,16 @@
 package mencache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+// cardQueryCache is a struct that represents the cache store
 const (
 	ttlDefault = 5 * time.Minute
 
@@ -19,28 +22,36 @@ const (
 	cardByCardNumCacheKey = "card:card_number:%s"
 )
 
+// cardCachedResponse is a struct that represents the cached response
 type cardCachedResponse struct {
 	Data         []*response.CardResponse `json:"data"`
 	TotalRecords *int                     `json:"total_records"`
 }
 
+// cardCachedResponseDeleteAt is a struct that represents the cached response
 type cardCachedResponseDeleteAt struct {
 	Data         []*response.CardResponseDeleteAt `json:"data"`
 	TotalRecords *int                             `json:"total_records"`
 }
 
+// cardQueryCache is a struct that represents the cache store
 type cardQueryCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewCardQueryCache(store *CacheStore) *cardQueryCache {
+// NewCardQueryCache creates a new cardQueryCache instance
+func NewCardQueryCache(store *sharedcachehelpers.CacheStore) CardQueryCache {
 	return &cardQueryCache{store: store}
 }
 
-func (c *cardQueryCache) GetByIdCache(cardID int) (*response.CardResponse, bool) {
+// GetByIdCache gets the card data from the cache store by card id.
+// It formats the cache key using the card id and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+func (c *cardQueryCache) GetByIdCache(ctx context.Context, cardID int) (*response.CardResponse, bool) {
 	key := fmt.Sprintf(cardByIdCacheKey, cardID)
 
-	result, found := GetFromCache[*response.CardResponse](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*response.CardResponse](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -49,10 +60,14 @@ func (c *cardQueryCache) GetByIdCache(cardID int) (*response.CardResponse, bool)
 	return *result, true
 }
 
-func (c *cardQueryCache) GetByUserIDCache(userID int) (*response.CardResponse, bool) {
+// GetByUserIDCache retrieves card data from the cache store by user ID.
+// It formats the cache key using the user ID and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+func (c *cardQueryCache) GetByUserIDCache(ctx context.Context, userID int) (*response.CardResponse, bool) {
 	key := fmt.Sprintf(cardByUserIdCacheKey, userID)
 
-	result, found := GetFromCache[*response.CardResponse](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*response.CardResponse](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -61,15 +76,23 @@ func (c *cardQueryCache) GetByUserIDCache(userID int) (*response.CardResponse, b
 	return *result, true
 }
 
-func (c *cardQueryCache) GetByCardNumberCache(cardNumber string) (*response.CardResponse, bool) {
+// GetByCardNumberCache retrieves card data from the cache store by card number.
+// It formats the cache key using the card number and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+func (c *cardQueryCache) GetByCardNumberCache(ctx context.Context, cardNumber string) (*response.CardResponse, bool) {
 	key := fmt.Sprintf(cardByCardNumCacheKey, cardNumber)
-	return GetFromCache[response.CardResponse](c.store, key)
+	return sharedcachehelpers.GetFromCache[response.CardResponse](ctx, c.store, key)
 }
 
-func (c *cardQueryCache) GetFindAllCache(req *requests.FindAllCards) ([]*response.CardResponse, *int, bool) {
+// GetFindAllCache retrieves card data from the cache store using the given request parameters.
+// It formats the cache key using the request parameters and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+func (c *cardQueryCache) GetFindAllCache(ctx context.Context, req *requests.FindAllCards) ([]*response.CardResponse, *int, bool) {
 	key := fmt.Sprintf(cardAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cardCachedResponse](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[cardCachedResponse](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -78,10 +101,14 @@ func (c *cardQueryCache) GetFindAllCache(req *requests.FindAllCards) ([]*respons
 	return result.Data, result.TotalRecords, true
 }
 
-func (c *cardQueryCache) GetByActiveCache(req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
+// GetByActiveCache retrieves card data from the cache store using the given request parameters.
+// It formats the cache key using the request parameters and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+func (c *cardQueryCache) GetByActiveCache(ctx context.Context, req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cardActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cardCachedResponseDeleteAt](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[cardCachedResponseDeleteAt](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -90,10 +117,15 @@ func (c *cardQueryCache) GetByActiveCache(req *requests.FindAllCards) ([]*respon
 	return result.Data, result.TotalRecords, true
 }
 
-func (c *cardQueryCache) GetByTrashedCache(req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
+// GetByTrashedCache retrieves trashed card data from the cache store using the given request parameters.
+// It formats the cache key using the request parameters and retrieves the data from the cache store.
+// If the data is not found or the cache is empty, it returns false.
+// Otherwise, it returns the data and true.
+
+func (c *cardQueryCache) GetByTrashedCache(ctx context.Context, req *requests.FindAllCards) ([]*response.CardResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cardTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cardCachedResponseDeleteAt](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[cardCachedResponseDeleteAt](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -102,30 +134,40 @@ func (c *cardQueryCache) GetByTrashedCache(req *requests.FindAllCards) ([]*respo
 	return result.Data, result.TotalRecords, true
 }
 
-func (c *cardQueryCache) SetByIdCache(cardID int, data *response.CardResponse) {
+// SetByIdCache sets the cached card data for a specific card ID.
+// If the data is nil, nothing will be set.
+func (c *cardQueryCache) SetByIdCache(ctx context.Context, cardID int, data *response.CardResponse) {
 	key := fmt.Sprintf(cardByIdCacheKey, cardID)
-	SetToCache(c.store, key, data, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, data, ttlDefault)
 }
 
-func (c *cardQueryCache) SetByUserIDCache(userID int, data *response.CardResponse) {
+// SetByUserIDCache sets the cached card data for a specific user ID.
+// If the data is nil, nothing will be set.
+func (c *cardQueryCache) SetByUserIDCache(ctx context.Context, userID int, data *response.CardResponse) {
 	if data == nil {
 		return
 	}
 
 	key := fmt.Sprintf(cardByUserIdCacheKey, userID)
-	SetToCache(c.store, key, data, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, data, ttlDefault)
 }
 
-func (c *cardQueryCache) SetByCardNumberCache(cardNumber string, data *response.CardResponse) {
+// SetByCardNumberCache sets the cached card data for a specific card number.
+// If the data is nil, nothing will be set.
+func (c *cardQueryCache) SetByCardNumberCache(ctx context.Context, cardNumber string, data *response.CardResponse) {
 	if data == nil {
 		return
 	}
 
 	key := fmt.Sprintf(cardByCardNumCacheKey, cardNumber)
-	SetToCache(c.store, key, data, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, data, ttlDefault)
 }
 
-func (c *cardQueryCache) SetFindAllCache(req *requests.FindAllCards, data []*response.CardResponse, total *int) {
+// SetFindAllCache sets the cached card data for a given request.
+// It formats the cache key using the request parameters and sets the data to the cache store.
+// If the data is nil, an empty list will be set.
+// If the total records is nil, 0 will be set.
+func (c *cardQueryCache) SetFindAllCache(ctx context.Context, req *requests.FindAllCards, data []*response.CardResponse, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -138,10 +180,14 @@ func (c *cardQueryCache) SetFindAllCache(req *requests.FindAllCards, data []*res
 	payload := &cardCachedResponse{Data: data, TotalRecords: total}
 
 	key := fmt.Sprintf(cardAllCacheKey, req.Page, req.PageSize, req.Search)
-	SetToCache(c.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-func (c *cardQueryCache) SetByActiveCache(req *requests.FindAllCards, data []*response.CardResponseDeleteAt, total *int) {
+// SetByActiveCache sets the cached card data for a given request.
+// It formats the cache key using the request parameters and sets the data to the cache store.
+// If the data is nil, an empty list will be set.
+// If the total records is nil, 0 will be set.
+func (c *cardQueryCache) SetByActiveCache(ctx context.Context, req *requests.FindAllCards, data []*response.CardResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -154,10 +200,14 @@ func (c *cardQueryCache) SetByActiveCache(req *requests.FindAllCards, data []*re
 	payload := &cardCachedResponseDeleteAt{Data: data, TotalRecords: total}
 
 	key := fmt.Sprintf(cardActiveCacheKey, req.Page, req.PageSize, req.Search)
-	SetToCache(c.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-func (c *cardQueryCache) SetByTrashedCache(req *requests.FindAllCards, data []*response.CardResponseDeleteAt, total *int) {
+// SetByTrashedCache sets the cached card data for a given request.
+// It formats the cache key using the request parameters and sets the data to the cache store.
+// If the data is nil, an empty list will be set.
+// If the total records is nil, 0 will be set.
+func (c *cardQueryCache) SetByTrashedCache(ctx context.Context, req *requests.FindAllCards, data []*response.CardResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -170,20 +220,26 @@ func (c *cardQueryCache) SetByTrashedCache(req *requests.FindAllCards, data []*r
 	payload := &cardCachedResponseDeleteAt{Data: data, TotalRecords: total}
 
 	key := fmt.Sprintf(cardTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	SetToCache(c.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-func (c *cardQueryCache) DeleteByIdCache(cardID int) {
+// DeleteByIdCache removes the cache entry associated with the specified card ID.
+// It formats the cache key using the card ID and deletes the entry from the cache store.
+func (c *cardQueryCache) DeleteByIdCache(ctx context.Context, cardID int) {
 	key := fmt.Sprintf(cardByIdCacheKey, cardID)
-	DeleteFromCache(c.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, c.store, key)
 }
 
-func (c *cardQueryCache) DeleteByUserIDCache(userID int) {
+// DeleteByUserIDCache removes the cache entry associated with the specified user ID.
+// It formats the cache key using the user ID and deletes the entry from the cache store.
+func (c *cardQueryCache) DeleteByUserIDCache(ctx context.Context, userID int) {
 	key := fmt.Sprintf(cardByUserIdCacheKey, userID)
-	DeleteFromCache(c.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, c.store, key)
 }
 
-func (c *cardQueryCache) DeleteByCardNumberCache(cardNumber string) {
+// DeleteByCardNumberCache removes the cache entry associated with the specified card number.
+// It formats the cache key using the card number and deletes the entry from the cache store.
+func (c *cardQueryCache) DeleteByCardNumberCache(ctx context.Context, cardNumber string) {
 	key := fmt.Sprintf(cardByCardNumCacheKey, cardNumber)
-	DeleteFromCache(c.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, c.store, key)
 }

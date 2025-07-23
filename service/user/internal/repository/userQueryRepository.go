@@ -8,25 +8,42 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
 )
 
+// userQueryRepository is a struct that implements the UserQueryRepository interface
 type userQueryRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.UserRecordMapping
+	db     *db.Queries
+	mapper recordmapper.UserQueryRecordMapper
 }
 
-func NewUserQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.UserRecordMapping) *userQueryRepository {
+// NewUserQueryRepository creates a new instance of userQueryRepository.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - mapper: A UserRecordMapping that provides methods to map database rows to User domain models.
+//
+// Returns:
+//   - A pointer to the newly created userQueryRepository instance.
+func NewUserQueryRepository(db *db.Queries, mapper recordmapper.UserQueryRecordMapper) UserQueryRepository {
 	return &userQueryRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *userQueryRepository) FindAllUsers(req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+// FindAllUsers retrieves all users with optional filters and pagination.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request containing filter and pagination information.
+//
+// Returns:
+//   - []*record.UserRecord: List of user records.
+//   - *int: Total count of records.
+//   - error: Error if retrieval fails.
+func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetUsersWithPaginationParams{
@@ -35,7 +52,7 @@ func (r *userQueryRepository) FindAllUsers(req *requests.FindAllUsers) ([]*recor
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetUsersWithPagination(r.ctx, reqDb)
+	res, err := r.db.GetUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, user_errors.ErrFindAllUsers
@@ -48,11 +65,22 @@ func (r *userQueryRepository) FindAllUsers(req *requests.FindAllUsers) ([]*recor
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordPagination(res), &totalCount, nil
+	so := r.mapper.ToUsersRecordPagination(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindById(user_id int) (*record.UserRecord, error) {
-	res, err := r.db.GetUserByID(r.ctx, int32(user_id))
+// FindById retrieves a user by their ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - user_id: The unique identifier of the user.
+//
+// Returns:
+//   - *record.UserRecord: The user record if found.
+//   - error: Error if retrieval fails.
+func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*record.UserRecord, error) {
+	res, err := r.db.GetUserByID(ctx, int32(user_id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -62,10 +90,22 @@ func (r *userQueryRepository) FindById(user_id int) (*record.UserRecord, error) 
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapping.ToUserRecord(res), nil
+	so := r.mapper.ToUserRecord(res)
+
+	return so, nil
 }
 
-func (r *userQueryRepository) FindByActive(req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+// FindByActive retrieves all active (non-deleted) users.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request containing filter and pagination information.
+//
+// Returns:
+//   - []*record.UserRecord: List of active user records.
+//   - *int: Total count of records.
+//   - error: Error if retrieval fails.
+func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetActiveUsersWithPaginationParams{
@@ -74,7 +114,7 @@ func (r *userQueryRepository) FindByActive(req *requests.FindAllUsers) ([]*recor
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetActiveUsersWithPagination(r.ctx, reqDb)
+	res, err := r.db.GetActiveUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, user_errors.ErrFindActiveUsers
@@ -87,10 +127,22 @@ func (r *userQueryRepository) FindByActive(req *requests.FindAllUsers) ([]*recor
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordActivePagination(res), &totalCount, nil
+	so := r.mapper.ToUsersRecordActivePagination(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindByTrashed(req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+// FindByTrashed retrieves all trashed (soft-deleted) users.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request containing filter and pagination information.
+//
+// Returns:
+//   - []*record.UserRecord: List of trashed user records.
+//   - *int: Total count of records.
+//   - error: Error if retrieval fails.
+func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetTrashedUsersWithPaginationParams{
@@ -99,7 +151,7 @@ func (r *userQueryRepository) FindByTrashed(req *requests.FindAllUsers) ([]*reco
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetTrashedUsersWithPagination(r.ctx, reqDb)
+	res, err := r.db.GetTrashedUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, user_errors.ErrFindTrashedUsers
@@ -112,11 +164,22 @@ func (r *userQueryRepository) FindByTrashed(req *requests.FindAllUsers) ([]*reco
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordTrashedPagination(res), &totalCount, nil
+	so := r.mapper.ToUsersRecordTrashedPagination(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindByEmail(email string) (*record.UserRecord, error) {
-	res, err := r.db.GetUserByEmail(r.ctx, email)
+// FindByEmail retrieves a user by their email address.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - email: The email address of the user.
+//
+// Returns:
+//   - *record.UserRecord: The user record if found.
+//   - error: Error if retrieval fails.
+func (r *userQueryRepository) FindByEmail(ctx context.Context, email string) (*record.UserRecord, error) {
+	res, err := r.db.GetUserByEmail(ctx, email)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -126,5 +189,6 @@ func (r *userQueryRepository) FindByEmail(email string) (*record.UserRecord, err
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapping.ToUserRecord(res), nil
+	so := r.mapper.ToUserRecord(res)
+	return so, nil
 }

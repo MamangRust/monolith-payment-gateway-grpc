@@ -1,47 +1,74 @@
-package myhandlerkafka
+package myhandlerkafka // Ganti dengan nama package yang sesuai
 
 import (
+	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-role/internal/service"
+	"github.com/MamangRust/monolith-payment-gateway-role/internal/service" // Sesuaikan path
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 	"go.uber.org/zap"
 )
 
+// roleKafkaHandler is a struct that implements the sarama.ConsumerGroupHandler interface
 type roleKafkaHandler struct {
 	logger      logger.LoggerInterface
-	roleService service.RoleQueryService
+	roleService service.RoleQueryService // Sesuaikan dengan interface service kamu
 	kafka       *kafka.Kafka
+	ctx         context.Context // Context untuk operasi service
 }
 
-func NewRoleKafkaHandler(roleService service.RoleQueryService, kafka *kafka.Kafka, logger logger.LoggerInterface) sarama.ConsumerGroupHandler {
+// NewRoleKafkaHandler creates a new Kafka consumer group handler for processing role validation responses.
+//
+// It takes a role query service, a Kafka producer, and a logger as parameters.
+// The handler is used to process incoming Kafka messages from the role validation response topic.
+// It implements the sarama.ConsumerGroupHandler interface to handle consumer group lifecycle events.
+func NewRoleKafkaHandler(roleService service.RoleQueryService, kafka *kafka.Kafka, logger logger.LoggerInterface, ctx context.Context) sarama.ConsumerGroupHandler {
 	return &roleKafkaHandler{
 		roleService: roleService,
 		kafka:       kafka,
 		logger:      logger,
+		ctx:         ctx, // Gunakan context dari aplikasi jika perlu
 	}
 }
 
+// Setup is a method that is called when the Kafka consumer group is set up
 func (h *roleKafkaHandler) Setup(session sarama.ConsumerGroupSession) error {
 	h.logger.Info("Role Kafka handler setup completed")
 	return nil
 }
 
+// Cleanup is a method that is called when the Kafka consumer group is cleaned up
 func (h *roleKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) error {
 	h.logger.Info("Role Kafka handler cleanup completed")
 	return nil
 }
 
+// ConsumeClaim is a method that is called when the Kafka consumer group has messages to process
+//
+// It processes incoming Kafka messages from the role validation request topic.
+// It unmarshals each message into a payload map and retrieves the correlation ID.
+// If a valid correlation ID is found, it sends the message value to the corresponding
+// response channel managed by the validator. Each message is marked as processed
+// in the consumer group session.
 func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	// Loop untuk menerima pesan dari Kafka
 	for msg := range claim.Messages() {
-		h.logger.Debug("Received role validation request",
+		// Buat context timeout untuk operasi service
+		msgCtx, cancel := context.WithTimeout(h.ctx, 20*time.Second) // Timeout 20 detik untuk pemrosesan
+		defer cancel()                                               // Batalkan context setelah satu iterasi loop selesai
+
+		// Log penerimaan pesan
+		h.logger.Info("Received role validation request",
 			zap.String("topic", msg.Topic),
+			// Key Kafka kemungkinan besar adalah correlationID yang dikirim oleh apigateway
 			zap.String("key", string(msg.Key)))
 
+		// Unmarshal payload permintaan
 		var payload requests.RoleRequestPayload
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {
 			h.logger.Error("Invalid role request payload", zap.Error(err))
@@ -49,6 +76,7 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
+		// Validasi field wajib
 		if payload.CorrelationID == "" || payload.ReplyTopic == "" {
 			h.logger.Error("Missing required fields in role request",
 				zap.String("correlation_id", payload.CorrelationID),
@@ -57,18 +85,22 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
+		// Log pemrosesan
 		h.logger.Info("Processing role validation request",
 			zap.Int("user_id", payload.UserID),
 			zap.String("correlation_id", payload.CorrelationID))
 
-		roles, errResp := h.roleService.FindByUserId(payload.UserID)
+		// Panggil service untuk mendapatkan role
+		roles, errResp := h.roleService.FindByUserId(msgCtx, payload.UserID)
 
+		// Siapkan payload respons
 		resp := response.RoleResponsePayload{
 			CorrelationID: payload.CorrelationID,
 			Valid:         errResp == nil && len(roles) > 0,
 			RoleNames:     make([]string, 0),
 		}
 
+		// Isi nama role jika valid
 		if errResp == nil && len(roles) > 0 {
 			for _, r := range roles {
 				resp.RoleNames = append(resp.RoleNames, r.Name)
@@ -80,10 +112,11 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 		} else {
 			h.logger.Debug("Role validation failed",
 				zap.Int("user_id", payload.UserID),
-				zap.Any("error", errResp),
+				zap.Any("error", errResp), // Log error jika ada
 				zap.String("correlation_id", payload.CorrelationID))
 		}
 
+		// Marshal payload respons ke JSON
 		respBytes, err := json.Marshal(resp)
 		if err != nil {
 			h.logger.Error("Failed to marshal role response",
@@ -93,6 +126,9 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
+		// Kirim respons ke topik yang ditentukan dalam payload permintaan
+		// Gunakan payload.CorrelationID sebagai key Kafka untuk memastikan
+		// konsistensi dengan yang diharapkan oleh apigateway
 		err = h.kafka.SendMessage(payload.ReplyTopic, payload.CorrelationID, respBytes)
 		if err != nil {
 			h.logger.Error("Failed to send Kafka role response",
@@ -105,6 +141,7 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 				zap.String("correlation_id", payload.CorrelationID))
 		}
 
+		// Tandai pesan sebagai telah diproses
 		session.MarkMessage(msg, "")
 	}
 	return nil

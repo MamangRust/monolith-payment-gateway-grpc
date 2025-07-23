@@ -1,35 +1,53 @@
 package repository
 
 import (
-	"context"
-
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	mappercard "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/card"
+	mappersaldo "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/topup"
+	topupstatsrepository "github.com/MamangRust/monolith-payment-gateway-topup/internal/repository/stats"
+	topupstatsbycardrepository "github.com/MamangRust/monolith-payment-gateway-topup/internal/repository/statsbycard"
 )
 
-type Repositories struct {
-	TopupQuery           TopupQueryRepository
-	TopupStatistic       TopupStatisticRepository
-	TopupStatistisByCard TopupStatisticByCardRepository
-	TopupCommand         TopupCommandRepository
-
-	Card  CardRepository
-	Saldo SaldoRepository
+type Repositories interface {
+	TopupQueryRepository
+	TopupCommandRepository
+	CardRepository
+	SaldoRepository
+	topupstatsrepository.TopupStatsRepository
+	topupstatsbycardrepository.TopupStatsByCardRepository
 }
 
-type Deps struct {
-	DB           *db.Queries
-	Ctx          context.Context
-	MapperRecord *recordmapper.RecordMapper
+// Repositories is a struct that contains all the repositories for the topup service
+type repositories struct {
+	TopupQueryRepository
+	TopupCommandRepository
+	CardRepository
+	SaldoRepository
+	topupstatsrepository.TopupStatsRepository
+	topupstatsbycardrepository.TopupStatsByCardRepository
 }
 
-func NewRepositories(deps *Deps) *Repositories {
-	return &Repositories{
-		TopupQuery:           NewTopupQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),
-		TopupStatistic:       NewTopupStatisticRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),
-		TopupStatistisByCard: NewTopupStatisticByCardRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),
-		TopupCommand:         NewTopupCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.TopupRecordMapper),
-		Saldo:                NewSaldoRepository(deps.DB, deps.Ctx, deps.MapperRecord.SaldoRecordMapper),
-		Card:                 NewCardRepository(deps.DB, deps.Ctx, deps.MapperRecord.CardRecordMapper),
+// NewRepositories creates a new instance of Repositories with the provided database
+// queries, context, and record mappers. This repository is responsible for
+// executing command and query operations related to topup records in the database.
+//
+// Parameters:
+//   - deps: A pointer to Deps containing the required dependencies.
+//
+// Returns:
+//   - A pointer to the newly created Repositories instance.
+func NewRepositories(db *db.Queries) Repositories {
+	mapper := recordmapper.NewTopupRecordMapper()
+	mappersaldo := mappersaldo.NewSaldoQueryRecordMapper()
+	mappercard := mappercard.NewCardQueryRecordMapper()
+
+	return &repositories{
+		TopupQueryRepository:       NewTopupQueryRepository(db, mapper.QueryMapper()),
+		TopupCommandRepository:     NewTopupCommandRepository(db, mapper.CommandMapper()),
+		TopupStatsRepository:       topupstatsrepository.NewTopupStatsRepository(db, mapper.StatsMapper()),
+		TopupStatsByCardRepository: topupstatsbycardrepository.NewTopupStatsByCardRepository(db, mapper.StatsByCardMapper()),
+		CardRepository:             NewCardRepository(db, mappercard),
+		SaldoRepository:            NewSaldoRepository(db, mappersaldo),
 	}
 }

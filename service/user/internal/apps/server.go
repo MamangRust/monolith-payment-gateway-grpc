@@ -10,21 +10,21 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
-	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
+	redisclient "github.com/MamangRust/monolith-payment-gateway-pkg/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/handler"
+	"github.com/MamangRust/monolith-payment-gateway-user/internal/middleware"
 	mencache "github.com/MamangRust/monolith-payment-gateway-user/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/service"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -36,6 +36,10 @@ var (
 	port int
 )
 
+// init initializes the gRPC server port for the user service.
+// It retrieves the port number from the environment configuration using Viper.
+// If the port is not specified, it defaults to 50055.
+// The port can also be overridden via a command-line flag.
 func init() {
 	port = viper.GetInt("GRPC_USER_PORT")
 	if port == 0 {
@@ -45,14 +49,22 @@ func init() {
 	flag.IntVar(&port, "port", port, "gRPC server port")
 }
 
+// Server represents the gRPC server for the user service.
 type Server struct {
 	Logger   logger.LoggerInterface
 	DB       *db.Queries
-	Services *service.Service
-	Handlers *handler.Handler
+	Services service.Service
+	Handlers handler.Handler
 	Ctx      context.Context
 }
 
+// NewServer initializes and returns a new instance of the Server struct,
+// along with a shutdown function for the OpenTelemetry tracer provider and an error.
+// It sets up the logger, loads environment configurations using Viper, establishes
+// a database connection, initializes the password hashing utility, record mapper,
+// and repositories. It also initializes the Redis client, tracer provider, cache,
+// error handler, services, and handlers for the user service. If any of the
+// initialization steps fail, it returns an error.
 func NewServer() (*Server, func(context.Context) error, error) {
 	logger, err := logger.NewLogger("user-service")
 	if err != nil {
@@ -75,15 +87,8 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	ctx := context.Background()
 
 	hash := hash.NewHashingPassword()
-	mapperRecord := recordmapper.NewRecordMapper()
 
-	depsRepo := &repository.Deps{
-		DB:           DB,
-		Ctx:          ctx,
-		MapperRecord: mapperRecord,
-	}
-
-	repositories := repository.NewRepositories(depsRepo)
+	repositories := repository.NewRepositories(DB)
 
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("user-service", ctx)
 	if err != nil {
@@ -91,8 +96,9 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		return nil, nil, err
 	}
 
-	myredis := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
+	myredis := redisclient.NewRedisClient(&redisclient.Config{
+		Host:         viper.GetString("REDIS_HOST"),
+		Port:         viper.GetString("REDIS_PORT"),
 		Password:     viper.GetString("REDIS_PASSWORD"),
 		DB:           viper.GetInt("REDIS_DB_USER"),
 		DialTimeout:  5 * time.Second,
@@ -102,13 +108,12 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		MinIdleConns: 3,
 	})
 
-	if err := myredis.Ping(ctx).Err(); err != nil {
+	if err := myredis.Client.Ping(ctx).Err(); err != nil {
 		logger.Fatal("Failed to ping redis", zap.Error(err))
 	}
 
 	mencache := mencache.NewMencache(&mencache.Deps{
-		Ctx:    ctx,
-		Redis:  myredis,
+		Redis:  myredis.Client,
 		Logger: logger,
 	})
 
@@ -123,9 +128,9 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		Logger:       logger,
 	})
 
-	handlers := handler.NewHandler(handler.Deps{
+	handlers := handler.NewHandler(&handler.Deps{
 		Logger:  logger,
-		Service: *services,
+		Service: services,
 	})
 
 	return &Server{
@@ -137,6 +142,14 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}, shutdownTracerProvider, nil
 }
 
+// Run starts the gRPC and metrics servers for the user service.
+// It sets up network listeners for the gRPC server and metrics server using ports
+// specified in the environment configuration. The function initializes and starts
+// a gRPC server with OpenTelemetry instrumentation and registers the user service handlers.
+// Additionally, it creates an HTTP server to serve Prometheus metrics for monitoring.
+// The function runs both servers concurrently and waits for them to finish using a wait group.
+// If any server encounters an error during execution, the error is logged, and the application
+// terminates with a fatal error.
 func (s *Server) Run() {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -157,9 +170,13 @@ func (s *Server) Run() {
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
 		),
+		grpc.ChainUnaryInterceptor(
+			middleware.RecoveryMiddleware(s.Logger),
+			middleware.ContextMiddleware(60*time.Second, s.Logger),
+		),
 	)
 
-	pb.RegisterUserServiceServer(grpcServer, s.Handlers.User)
+	s.RegisterHandleGrpc(grpcServer, s.Handlers)
 
 	metricsServer := http.NewServeMux()
 	metricsServer.Handle("/metrics", promhttp.Handler())
@@ -186,4 +203,9 @@ func (s *Server) Run() {
 	}()
 
 	wg.Wait()
+}
+
+func (s *Server) RegisterHandleGrpc(grpcServer *grpc.Server, handler handler.Handler) {
+	pb.RegisterUserQueryServiceServer(grpcServer, handler)
+	pb.RegisterUserCommandServiceServer(grpcServer, handler)
 }

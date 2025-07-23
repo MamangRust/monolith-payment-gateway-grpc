@@ -30,7 +30,6 @@ services:
     networks:
       - app_network
 
-
   node-exporter:
     image: quay.io/prometheus/node-exporter
     container_name: node-exporter
@@ -42,22 +41,6 @@ services:
     command:
       - '--path.rootfs=/host'
 
-  migrate:
-    image: migrate-service:1.0
-    container_name: migrate
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ../../pkg/database/migrations:/app/pkg/database/migrations
-    env_file: ./docker.env
-    environment:
-      APP_ENV: docker
-      DB_URL: postgres://DRAGON:DRAGON@postgres/PAYMENT_GATEWAY
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-    
   zookeeper:
     image: bitnami/zookeeper:latest
     container_name: my-zookeeper
@@ -102,297 +85,6 @@ services:
       retries: 5
       start_period: 30s
 
-  auth:
-    image: auth-service:1.0
-    container_name: auth
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  merchant:
-    image: merchant-service:1.0
-    container_name: merchant
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  card:
-    image: card-service:1.0
-    container_name: card
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  saldo:
-    image: saldo-service:1.0
-    container_name: saldo
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  role:
-    image: role-service:1.0
-    container_name: role
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  topup:
-    image: topup-service:1.0
-    container_name: topup
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  transaction:
-    image: transaction-service:1.0
-    container_name: transaction
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  transfer:
-    image: transfer-service:1.0
-    container_name: transfer
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  user:
-    image: user-service:1.0
-    container_name: user
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - REDIS_PASSWORD=dragon_knight
-
-  email:
-    image: email-service:1.0
-    container_name: email
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  withdraw:
-    image: withdraw-service:1.0
-    container_name: withdraw
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
-  apigateway:
-    image: apigateway-service:1.0
-    container_name: apigateway
-    env_file: ./docker.env 
-    volumes:
-      - ./docker.env:/app/docker.env
-      - ./logs:/var/log/app
-    ports:
-      - "5000:5000"
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      auth:
-        condition: service_started
-      card:
-        condition: service_started
-      merchant:
-        condition: service_started
-      user:
-        condition: service_started
-      role:
-        condition: service_started
-      saldo:
-        condition: service_started
-      topup:
-        condition: service_started
-      transaction:
-        condition: service_started
-      transfer:
-        condition: service_started
-      withdraw:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
@@ -404,7 +96,6 @@ services:
       - "9093:9093"
     networks:
       - app_network
-
 
   prometheus:
     image: prom/prometheus:latest
@@ -420,7 +111,6 @@ services:
       - otel-collector
     restart: unless-stopped
 
-
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -429,7 +119,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - grafana-storage:/var/lib/grafana  
+      - grafana-storage:/var/lib/grafana
     networks:
       - app_network
     depends_on:
@@ -437,7 +127,6 @@ services:
       - jaeger
       - alertmanager
       - loki
-
 
   nginx:
     image: nginx:alpine
@@ -458,8 +147,8 @@ services:
     volumes:
       - ../../observability/otel-collector.yaml:/etc/otel-collector-config.yaml:ro
     ports:
-      - "4317:4317"     
-      - "4318:4318"      
+      - "4317:4317"
+      - "4318:4318"
       - "13133:13133"
       - "8889:8889"
     depends_on:
@@ -472,8 +161,8 @@ services:
     image: jaegertracing/all-in-one:1.62.0
     container_name: jaeger
     ports:
-      - "16686:16686"       
-      - "14250:14250"        
+      - "16686:16686"
+      - "14250:14250"
     networks:
       - app_network
     environment:
@@ -489,7 +178,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    command: 
+    command:
       - "--kafka.server=my-kafka:9092"
       - "--web.listen-address=0.0.0.0:9308"
       - "--log.level=debug"
@@ -521,6 +210,303 @@ services:
     command: -config.file=/etc/promtail/config.yaml
     networks:
       - app_network
+
+  apigateway:
+    image: apigateway-service:1.1
+    container_name: apigateway
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    ports:
+      - "5000:5000"
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      auth:
+        condition: service_started
+      card:
+        condition: service_started
+      merchant:
+        condition: service_started
+      user:
+        condition: service_started
+      role:
+        condition: service_started
+      saldo:
+        condition: service_started
+      topup:
+        condition: service_started
+      transaction:
+        condition: service_started
+      transfer:
+        condition: service_started
+      withdraw:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  migrate:
+    image: migrate-service:1.1
+    container_name: migrate
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    environment:
+      APP_ENV: docker
+      DB_URL: postgres://DRAGON:DRAGON@postgres/PAYMENT_GATEWAY
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  auth:
+    image: auth-service:1.1
+    container_name: auth
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  merchant:
+    image: merchant-service:1.1
+    container_name: merchant
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  card:
+    image: card-service:1.1
+    container_name: card
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  saldo:
+    image: saldo-service:1.1
+    container_name: saldo
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  role:
+    image: role-service:1.1
+    container_name: role
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  topup:
+    image: topup-service:1.1
+    container_name: topup
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  transaction:
+    image: transaction-service:1.1
+    container_name: transaction
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  transfer:
+    image: transfer-service:1.1
+    container_name: transfer
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  user:
+    image: user-service:1.1
+    container_name: user
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_PASSWORD=dragon_knight
+
+  email:
+    image: email-service:1.1
+    container_name: email
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
+  withdraw:
+    image: withdraw-service:1.1
+    container_name: withdraw
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+
 
 volumes:
   loki-data:

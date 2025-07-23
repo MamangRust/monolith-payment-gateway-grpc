@@ -3,39 +3,60 @@ package repository
 import (
 	"context"
 
+	merchantstatsrepository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/stats"
+	merchantstatsapikeyrepository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/statsbyapikey"
+	merchantstatsmerchantrepository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/statsbymerchant"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	mapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/merchant"
+	mapperdocument "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/merchantdocument"
+	mapperuser "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
 )
 
-type Repositories struct {
-	MerchantQuery           MerchantQueryRepository
-	MerchantTrans           MerchantTransactionRepository
-	MerchantStat            MerchantStatisticRepository
-	MerchantStatByApiKey    MerchantStatisticByApiKeyRepository
-	MerchantStatByMerchant  MerchantStatisticByMerchantRepository
-	MerchantCommand         MerchantCommandRepository
-	MerchantDocumentCommand MerchantDocumentCommandRepository
-	MerchantDocumentQuery   MerchantDocumentQueryRepository
-	User                    UserRepository
+type Repositories interface {
+	MerchantQueryRepository
+	MerchantCommandRepository
+	MerchantDocumentQueryRepository
+	MerchantDocumentCommandRepository
+	MerchantTransactionRepository
+	merchantstatsrepository.MerchantStatsRepository
+	merchantstatsapikeyrepository.MerchantStatsByApiKeyRepository
+	merchantstatsmerchantrepository.MerchantStatsByMerchantRepository
+	UserRepository
 }
 
+type repositories struct {
+	MerchantQueryRepository
+	MerchantCommandRepository
+	MerchantDocumentQueryRepository
+	MerchantDocumentCommandRepository
+	MerchantTransactionRepository
+	merchantstatsrepository.MerchantStatsRepository
+	merchantstatsapikeyrepository.MerchantStatsByApiKeyRepository
+	merchantstatsmerchantrepository.MerchantStatsByMerchantRepository
+	UserRepository
+}
+
+// Deps is a struct that contains all the dependencies needed to create the repositories
 type Deps struct {
-	DB           *db.Queries
-	Ctx          context.Context
-	MapperRecord *recordmapper.RecordMapper
+	DB  *db.Queries
+	Ctx context.Context
 }
 
-func NewRepositories(deps *Deps) *Repositories {
+// NewRepositories creates a new instance of the Repositories interface, which contains all the repositories used in the merchant service.
+func NewRepositories(db *db.Queries) Repositories {
+	mapper := mapper.NewMerchantRecordMapper()
+	mapperdocument := mapperdocument.NewMerchantDocumentRecordMapper()
+	mapperuser := mapperuser.NewUserQueryRecordMapper()
 
-	return &Repositories{
-		MerchantQuery:           NewMerchantQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantTrans:           NewMerchantTransactionRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantStat:            NewMerchantStatisticRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantStatByApiKey:    NewMerchantStatisticByApiKeyRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantStatByMerchant:  NewMerchantStatisticByMerchantRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantCommand:         NewMerchantCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantRecordMapper),
-		MerchantDocumentCommand: NewMerchantDocumentCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantDocumentRecordMapper),
-		MerchantDocumentQuery:   NewMerchantDocumentQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.MerchantDocumentRecordMapper),
-		User:                    NewUserRepository(deps.DB, deps.Ctx, deps.MapperRecord.UserRecordMapper),
+	return &repositories{
+		NewMerchantQueryRepository(db, mapper.QueryMapper()),
+		NewMerchantCommandRepository(db, mapper.CommandMapper()),
+		NewMerchantDocumentQueryRepository(db, mapperdocument.QueryMapper()),
+		NewMerchantDocumentCommandRepository(db, mapperdocument.CommandMapper()),
+		NewMerchantTransactionRepository(db, mapper.TransactionMapper()),
+		merchantstatsrepository.NewMerchantStatsRepository(db, mapper.StatisticMapper()),
+		merchantstatsapikeyrepository.NewMerchantStatsByApiKeyRepository(db, mapper.ByApiKeyMapper()),
+		merchantstatsmerchantrepository.NewMerchantStatsByMerchantRepository(db, mapper.ByMerchantMapper()),
+		NewUserRepository(db, mapperuser),
 	}
 }

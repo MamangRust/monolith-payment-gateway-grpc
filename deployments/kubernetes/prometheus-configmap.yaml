@@ -8,16 +8,15 @@ data:
     global:
       scrape_interval: 10s
       evaluation_interval: 10s
-    
-    rule_files:
-      - /etc/prometheus/rules/*.yaml
-    
+
     alerting:
       alertmanagers:
         - static_configs:
-            - targets:
-              - alertmanager:9093
-    
+            - targets: ["alertmanager.payment-gateway.svc.cluster.local:9093"]
+
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+
     scrape_configs:
       - job_name: 'prometheus'
         static_configs:
@@ -25,117 +24,135 @@ data:
             labels:
               application: 'Prometheus'
               environment: 'production'
-      
+
       - job_name: 'otel-collector'
         static_configs:
-          - targets: ['otel-collector.monitoring.svc.cluster.local:8889']
+          - targets: ['otel-collector.payment-gateway.svc.cluster.local:8889']
             labels:
               application: 'Otel Collector'
               environment: 'production'
-      
+
       - job_name: 'kafka-exporter'
         static_configs:
-          - targets: ['kafka-exporter.monitoring.svc.cluster.local:9308']
+          - targets: ['kafka-exporter.payment-gateway.svc.cluster.local:9308']
             labels:
               application: 'Kafka Exporter'
               environment: 'production'
-      
+
       - job_name: 'node-exporter'
         static_configs:
-          - targets: ['node-exporter.monitoring.svc.cluster.local:9100']
+          - targets: ['node-exporter.payment-gateway.svc.cluster.local:9100']
             labels:
               application: 'Node Exporter'
               environment: 'production'
-      
+
+      - job_name: 'apigateway'
+        metrics_path: '/metrics'
+        static_configs:
+          - targets: ['apigateway.payment-gateway.svc.cluster.local:8091']
+            labels:
+              application: 'API Gateway'
+              environment: 'production'
+
       - job_name: 'auth-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['auth-service.default.svc.cluster.local:8081']
+          - targets: ['auth.payment-gateway.svc.cluster.local:8081']
             labels:
               application: 'Auth Service'
               environment: 'production'
-      
+
       - job_name: 'merchant-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['merchant-service.default.svc.cluster.local:8084']
+          - targets: ['merchant.payment-gateway.svc.cluster.local:8084']
             labels:
               application: 'Merchant Service'
               environment: 'production'
-      
+
       - job_name: 'card-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['card-service.default.svc.cluster.local:8083']
+          - targets: ['card.payment-gateway.svc.cluster.local:8083']
             labels:
               application: 'Card Service'
               environment: 'production'
-      
+
       - job_name: 'saldo-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['saldo-service.default.svc.cluster.local:8086']
+          - targets: ['saldo.payment-gateway.svc.cluster.local:8086']
             labels:
               application: 'Saldo Service'
               environment: 'production'
-      
+
       - job_name: 'role-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['role-service.default.svc.cluster.local:8082']
+          - targets: ['role.payment-gateway.svc.cluster.local:8082']
             labels:
               application: 'Role Service'
               environment: 'production'
-      
+
       - job_name: 'topup-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['topup-service.default.svc.cluster.local:8087']
+          - targets: ['topup.payment-gateway.svc.cluster.local:8087']
             labels:
               application: 'Topup Service'
               environment: 'production'
-      
+
       - job_name: 'transaction-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['transaction-service.default.svc.cluster.local:8088']
+          - targets: ['transaction.payment-gateway.svc.cluster.local:8088']
             labels:
               application: 'Transaction Service'
               environment: 'production'
-      
+
       - job_name: 'transfer-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['transfer-service.default.svc.cluster.local:8089']
+          - targets: ['transfer.payment-gateway.svc.cluster.local:8089']
             labels:
               application: 'Transfer Service'
               environment: 'production'
-      
+
       - job_name: 'user-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['user-service.default.svc.cluster.local:8085']
+          - targets: ['user.payment-gateway.svc.cluster.local:8085']
             labels:
               application: 'User Service'
               environment: 'production'
-      
+
       - job_name: 'email-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['email-service.default.svc.cluster.local:8080']
+          - targets: ['email.payment-gateway.svc.cluster.local:8080']
             labels:
               application: 'Email Service'
               environment: 'production'
-      
+
       - job_name: 'withdraw-service'
         metrics_path: '/metrics'
         static_configs:
-          - targets: ['withdraw-service.default.svc.cluster.local:8090']
+          - targets: ['withdraw.payment-gateway.svc.cluster.local:8090']
             labels:
               application: 'Withdraw Service'
               environment: 'production'
-      
-      # Kubernetes service discovery untuk pods
+
+      - job_name: 'kubernetes-node-exporter'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: node-exporter
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:9100
+
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
           - role: pod
@@ -160,8 +177,7 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             action: replace
             target_label: kubernetes_pod_name
-      
-      # Kubernetes service discovery untuk services
+
       - job_name: 'kubernetes-services'
         kubernetes_sd_configs:
           - role: service

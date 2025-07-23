@@ -18,16 +18,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// emailHandler is a struct that implements the sarama.ConsumerGroupHandler interface
 type emailHandler struct {
 	ctx             context.Context
 	trace           trace.Tracer
 	logger          logger.LoggerInterface
-	Mailer          *mailer.Mailer
+	Mailer          mailer.MailerInterface
 	requestCounter  *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewEmailHandler(ctx context.Context, logger logger.LoggerInterface, mailer *mailer.Mailer) *emailHandler {
+// NewEmailHandler returns a new instance of the emailHandler struct.
+// It initializes the Prometheus metrics for counting and tracking request durations.
+// It takes a context.Context, a logger.LoggerInterface, and a pointer to mailer.Mailer as input.
+// The returned emailHandler instance is ready to be used for handling Kafka messages.
+func NewEmailHandler(ctx context.Context, logger logger.LoggerInterface, mailer mailer.MailerInterface) *emailHandler {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "email_service_requests_total",
@@ -60,6 +65,17 @@ func NewEmailHandler(ctx context.Context, logger logger.LoggerInterface, mailer 
 func (h *emailHandler) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
 func (h *emailHandler) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
 
+// ConsumeClaim processes incoming Kafka messages from the specified consumer group claim.
+//
+// It unmarshals each message into a payload map and extracts the email address, subject, and body.
+// It calls the Send method of the mailer.Mailer instance with the extracted data.
+// If the Send method returns an error, it logs the error and records the error in the span.
+// It also sets the status to "failed_send_email".
+// If the Send method succeeds, it increments the EmailSent metric.
+// Each message is marked as processed in the consumer group session.
+//
+// It also records the request duration and counts the total number of requests
+// to the EmailService using Prometheus metrics.
 func (h *emailHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	start := time.Now()
 	status := "success"
@@ -107,9 +123,15 @@ func (h *emailHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sara
 
 		sess.MarkMessage(msg, "")
 	}
+
+	h.logger.Info("ConsumeClaim finished", zap.Int("messages", len(claim.Messages())))
+
 	return nil
 }
 
+// recordMetrics records Prometheus metrics for the given method and status.
+// It increments the request counter and observes the request duration
+// for the given method and status, using the provided start time.
 func (s *emailHandler) recordMetrics(method string, status string, start time.Time) {
 	s.requestCounter.WithLabelValues(method, status).Inc()
 	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())

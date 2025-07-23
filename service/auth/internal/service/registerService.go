@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -17,43 +19,107 @@ import (
 	randomstring "github.com/MamangRust/monolith-payment-gateway-pkg/random_string"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/user"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type registerService struct {
-	ctx               context.Context
-	trace             trace.Tracer
-	errohandler       errorhandler.RegisterErrorHandler
-	errorPassword     errorhandler.PasswordErrorHandler
-	errorRandomString errorhandler.RandomStringErrorHandler
-	errorMarshal      errorhandler.MarshalErrorHandler
-	errorKafka        errorhandler.KafkaErrorHandler
-	mencache          mencache.RegisterCache
-	user              repository.UserRepository
-	role              repository.RoleRepository
-	userRole          repository.UserRoleRepository
-	hash              hash.HashPassword
-	kafka             *kafka.Kafka
-	logger            logger.LoggerInterface
-	mapping           responseservice.UserResponseMapper
-	requestCounter    *prometheus.CounterVec
-	requestDuration   *prometheus.HistogramVec
+// RegisterServiceDeps holds dependencies for constructing a registerService.
+type RegisterServiceDeps struct {
+	// ErrorHandler handles registration-related errors.
+	ErrorHandler errorhandler.RegisterErrorHandler
+
+	// ErrorPassword handles password hashing or validation errors.
+	ErrorPassword errorhandler.PasswordErrorHandler
+
+	// ErrorRandomString handles random string generation errors.
+	ErrorRandomString errorhandler.RandomStringErrorHandler
+
+	// ErrorMarshal handles marshalling (e.g., JSON) errors.
+	ErrorMarshal errorhandler.MarshalErrorHandler
+
+	// ErrorKafka handles Kafka publishing errors.
+	ErrorKafka errorhandler.KafkaErrorHandler
+
+	// Cache provides caching for registration flow.
+	Cache mencache.RegisterCache
+
+	// User is the repository for managing user data.
+	User repository.UserRepository
+
+	// Role is the repository for managing role definitions.
+	Role repository.RoleRepository
+
+	// UserRole is the repository for assigning roles to users.
+	UserRole repository.UserRoleRepository
+
+	// Hash handles password hashing logic.
+	Hash hash.HashPassword
+
+	// Kafka is the Kafka client for publishing registration events.
+	Kafka *kafka.Kafka
+
+	// Logger logs service operations and errors.
+	Logger logger.LoggerInterface
+
+	// Mapping maps user entities to response models.
+	Mapper responseservice.UserQueryResponseMapper
 }
 
-func NewRegisterService(ctx context.Context,
-	errorhandler errorhandler.RegisterErrorHandler,
-	errorPassword errorhandler.PasswordErrorHandler,
-	errorRandomString errorhandler.RandomStringErrorHandler,
-	errorMarshal errorhandler.MarshalErrorHandler,
-	errorKafka errorhandler.KafkaErrorHandler,
-	mencache mencache.RegisterCache,
-	user repository.UserRepository, role repository.RoleRepository, userRole repository.UserRoleRepository, hash hash.HashPassword, kafka *kafka.Kafka, logger logger.LoggerInterface, mapping responseservice.UserResponseMapper) *registerService {
+// registerService handles user registration logic, including role assignment,
+// password hashing, caching, and event publishing to Kafka.
+type registerService struct {
+	// Handles registration-specific errors.
+	errohandler errorhandler.RegisterErrorHandler
+
+	// Handles password validation and hashing.
+	errorPassword errorhandler.PasswordErrorHandler
+
+	// Handles errors during random string generation.
+	errorRandomString errorhandler.RandomStringErrorHandler
+
+	// Handles JSON or struct marshalling errors.
+	errorMarshal errorhandler.MarshalErrorHandler
+
+	// Handles Kafka-related errors.
+	errorKafka errorhandler.KafkaErrorHandler
+
+	// Caching layer for temporary registration data.
+	mencache mencache.RegisterCache
+
+	// User data repository.
+	user repository.UserRepository
+
+	// Role repository for looking up roles.
+	role repository.RoleRepository
+
+	// Repository for assigning roles to users.
+	userRole repository.UserRoleRepository
+
+	// Utility for password hashing.
+	hash hash.HashPassword
+
+	// Kafka publisher for registration events.
+	kafka *kafka.Kafka
+
+	// Logger for events and diagnostics.
+	logger logger.LoggerInterface
+
+	// Mapper to convert user data into response objects.
+	mapper responseservice.UserQueryResponseMapper
+
+	observability observability.TraceLoggerObservability
+}
+
+// NewRegisterService initializes and returns the RegisterService with the given parameters.
+// It sets up the prometheus metrics for request counters and durations, and registers them.
+// The function takes RegisterServiceDeps which includes context, error handlers, cache, logger,
+// user repository, role repository, user role repository, hash, kafka, and token service.
+// Returns a pointer to the initialized registerService.
+func NewRegisterService(params *RegisterServiceDeps) *registerService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "register_service_requests_total",
@@ -73,51 +139,64 @@ func NewRegisterService(ctx context.Context,
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(otel.Tracer("register-service"), params.Logger, requestCounter, requestDuration)
+
 	return &registerService{
-		ctx:               ctx,
-		errorPassword:     errorPassword,
-		errohandler:       errorhandler,
-		errorRandomString: errorRandomString,
-		errorMarshal:      errorMarshal,
-		errorKafka:        errorKafka,
-		mencache:          mencache,
-		trace:             otel.Tracer("register-service"),
-		user:              user,
-		role:              role,
-		userRole:          userRole,
-		hash:              hash,
-		kafka:             kafka,
-		logger:            logger,
-		mapping:           mapping,
-		requestCounter:    requestCounter,
-		requestDuration:   requestDuration,
+		errorPassword:     params.ErrorPassword,
+		errohandler:       params.ErrorHandler,
+		errorRandomString: params.ErrorRandomString,
+		errorMarshal:      params.ErrorMarshal,
+		errorKafka:        params.ErrorKafka,
+		mencache:          params.Cache,
+		user:              params.User,
+		role:              params.Role,
+		userRole:          params.UserRole,
+		hash:              params.Hash,
+		kafka:             params.Kafka,
+		logger:            params.Logger,
+		mapper:            params.Mapper,
+		observability:     observability,
 	}
 }
 
-func (s *registerService) Register(request *requests.RegisterRequest) (*response.UserResponse, *response.ErrorResponse) {
+// Register creates a new user account with the given registration request.
+//
+// Parameters:
+//   - ctx: the context for the operation (e.g., timeout, logging, tracing)
+//   - request: the registration request payload
+//
+// Returns:
+//   - A UserResponse if registration is successful, or an ErrorResponse if it fails.
+func (s *registerService) Register(ctx context.Context, request *requests.RegisterRequest) (*response.UserResponse, *response.ErrorResponse) {
 	const method = "Register"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("email", request.Email))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("email", request.Email))
 
 	defer func() {
 		end(status)
 	}()
 
-	existingUser, err := s.user.FindByEmail(request.Email)
-	if err == nil && existingUser != nil {
+	existingUser, err := s.user.FindByEmail(ctx, request.Email)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
+			zap.String("email", request.Email), zap.Error(err))
+	}
+
+	if existingUser != nil {
+		err := errors.New("user already exists")
 		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
 			zap.String("email", request.Email), zap.Error(err))
 	}
 
 	passwordHash, err := s.hash.HashPassword(request.Password)
 	if err != nil {
-		return s.errorPassword.HandleHashPasswordError(err, "Register", "REGISTER_ERR", span, &status)
+		return s.errorPassword.HandleHashPasswordError(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
 	request.Password = passwordHash
 
-	const defaultRoleName = "Admin_Admin_14"
+	const defaultRoleName = "Admin_Role_10"
 
-	role, err := s.role.FindByName(defaultRoleName)
+	role, err := s.role.FindByName(ctx, defaultRoleName)
 
 	if err != nil || role == nil {
 		return s.errohandler.HandleFindRoleError(err, "Register", "REGISTER_ERR", span, &status,
@@ -132,7 +211,7 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	request.VerifiedCode = random
 	request.IsVerified = false
 
-	newUser, err := s.user.CreateUser(request)
+	newUser, err := s.user.CreateUser(ctx, request)
 	if err != nil {
 		return s.errohandler.HandleCreateUserError(err, "Register", "REGISTER_ERR", span, &status, zap.Error(err))
 	}
@@ -160,7 +239,7 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 		return s.errorKafka.HandleSendEmailRegister(err, "Register", "SEND_EMAIL_ERR", span, &status, zap.Error(err))
 	}
 
-	_, err = s.userRole.AssignRoleToUser(&requests.CreateUserRoleRequest{
+	_, err = s.userRole.AssignRoleToUser(ctx, &requests.CreateUserRoleRequest{
 		UserId: newUser.ID,
 		RoleId: role.ID,
 	})
@@ -168,9 +247,9 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 		return s.errohandler.HandleAssignRoleError(err, "Register", "ASSIGN_ROLE_ERR", span, &status, zap.Error(err))
 	}
 
-	s.mencache.SetVerificationCodeCache(request.Email, random, 15*time.Minute)
+	s.mencache.SetVerificationCodeCache(ctx, request.Email, random, 15*time.Minute)
 
-	userResponse := s.mapping.ToUserResponse(newUser)
+	userResponse := s.mapper.ToUserResponse(newUser)
 
 	logSuccess("User registered successfully",
 		zap.String("email", request.Email),
@@ -179,46 +258,4 @@ func (s *registerService) Register(request *requests.RegisterRequest) (*response
 	)
 
 	return userResponse, nil
-}
-
-func (s *registerService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *registerService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

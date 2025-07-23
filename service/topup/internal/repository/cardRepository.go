@@ -6,45 +6,80 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/card"
 )
 
+// cardRepository is a struct that implements the CardRepository interface
 type cardRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.CardRecordMapping
+	db     *db.Queries
+	mapper recordmapper.CardQueryRecordMapper
 }
 
-func NewCardRepository(db *db.Queries, ctx context.Context, mapping recordmapper.CardRecordMapping) *cardRepository {
+// NewCardRepository creates a new instance of cardRepository.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - ctx: The context to be used for database operations, allowing for cancellation and timeout.
+//   - mapper: A CardRecordMapping that provides methods to map database rows to Card domain models.
+//
+// Returns:
+//   - A new instance of cardRepository
+func NewCardRepository(db *db.Queries, mapper recordmapper.CardQueryRecordMapper) CardRepository {
 	return &cardRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *cardRepository) FindCardByCardNumber(card_number string) (*record.CardRecord, error) {
-	res, err := r.db.GetCardByCardNumber(r.ctx, card_number)
+// FindUserCardByCardNumber retrieves card data with user email by card number.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number to search.
+//
+// Returns:
+//   - *record.CardEmailRecord: The card record including associated user email.
+//   - error: Error if retrieval fails.
+func (r *cardRepository) FindCardByCardNumber(ctx context.Context, card_number string) (*record.CardRecord, error) {
+	res, err := r.db.GetCardByCardNumber(ctx, card_number)
 
 	if err != nil {
 		return nil, card_errors.ErrFindCardByCardNumberFailed
 	}
 
-	return r.mapping.ToCardRecord(res), nil
+	return r.mapper.ToCardRecord(res), nil
 }
 
-func (r *cardRepository) FindUserCardByCardNumber(card_number string) (*record.CardEmailRecord, error) {
-	res, err := r.db.GetUserEmailByCardNumber(r.ctx, card_number)
+// FindCardByCardNumber retrieves a card record by its card number.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number to search.
+//
+// Returns:
+//   - *record.CardRecord: The card record data.
+//   - error: Error if retrieval fails.
+func (r *cardRepository) FindUserCardByCardNumber(ctx context.Context, card_number string) (*record.CardEmailRecord, error) {
+	res, err := r.db.GetUserEmailByCardNumber(ctx, card_number)
 
 	if err != nil {
 		return nil, card_errors.ErrFindCardByCardNumberFailed
 	}
 
-	return r.mapping.ToCardEmailRecord(res), nil
+	return r.mapper.ToCardEmailRecord(res), nil
 }
 
-func (r *cardRepository) UpdateCard(request *requests.UpdateCardRequest) (*record.CardRecord, error) {
+// UpdateCard updates an existing card's data.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The updated card information.
+//
+// Returns:
+//   - *record.CardRecord: The updated card record.
+//   - error: Error if update fails.
+func (r *cardRepository) UpdateCard(ctx context.Context, request *requests.UpdateCardRequest) (*record.CardRecord, error) {
 	req := db.UpdateCardParams{
 		CardID:       int32(request.CardID),
 		CardType:     request.CardType,
@@ -53,61 +88,11 @@ func (r *cardRepository) UpdateCard(request *requests.UpdateCardRequest) (*recor
 		CardProvider: request.CardProvider,
 	}
 
-	res, err := r.db.UpdateCard(r.ctx, req)
+	res, err := r.db.UpdateCard(ctx, req)
 
 	if err != nil {
 		return nil, card_errors.ErrUpdateCardFailed
 	}
 
-	return r.mapping.ToCardRecord(res), nil
-}
-
-func (r *cardRepository) TrashedCard(card_id int) (*record.CardRecord, error) {
-	res, err := r.db.TrashCard(r.ctx, int32(card_id))
-
-	if err != nil {
-		return nil, card_errors.ErrTrashCardFailed
-	}
-
-	return r.mapping.ToCardRecord(res), nil
-}
-
-func (r *cardRepository) RestoreCard(card_id int) (*record.CardRecord, error) {
-	res, err := r.db.RestoreCard(r.ctx, int32(card_id))
-
-	if err != nil {
-		return nil, card_errors.ErrRestoreCardFailed
-	}
-
-	return r.mapping.ToCardRecord(res), nil
-}
-
-func (r *cardRepository) DeleteCardPermanent(card_id int) (bool, error) {
-	err := r.db.DeleteCardPermanently(r.ctx, int32(card_id))
-
-	if err != nil {
-		return false, card_errors.ErrDeleteCardPermanentFailed
-	}
-
-	return true, nil
-}
-
-func (r *cardRepository) RestoreAllCard() (bool, error) {
-	err := r.db.RestoreAllCards(r.ctx)
-
-	if err != nil {
-		return false, card_errors.ErrRestoreAllCardsFailed
-	}
-
-	return true, nil
-}
-
-func (r *cardRepository) DeleteAllCardPermanent() (bool, error) {
-	err := r.db.DeleteAllPermanentCards(r.ctx)
-
-	if err != nil {
-		return false, card_errors.ErrDeleteAllCardsPermanentFailed
-	}
-
-	return true, nil
+	return r.mapper.ToCardRecord(res), nil
 }

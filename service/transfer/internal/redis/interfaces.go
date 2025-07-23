@@ -1,76 +1,139 @@
 package mencache
 
 import (
+	"context"
+
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+// TransferQueryCache defines cache operations for transfer-related queries.
 type TransferQueryCache interface {
-	GetCachedTransfersCache(req *requests.FindAllTranfers) ([]*response.TransferResponse, *int, bool)
-	SetCachedTransfersCache(req *requests.FindAllTranfers, data []*response.TransferResponse, total *int)
+	// GetCachedTransfersCache retrieves cached list of transfers.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter for transfer data.
+	//
+	// Returns:
+	//   - []*response.TransferResponse: List of transfers.
+	//   - *int: Total count of transfers.
+	//   - bool: Whether the cache was found.
+	GetCachedTransfersCache(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponse, *int, bool)
 
-	GetCachedTransferActiveCache(req *requests.FindAllTranfers) ([]*response.TransferResponseDeleteAt, *int, bool)
-	SetCachedTransferActiveCache(req *requests.FindAllTranfers, data []*response.TransferResponseDeleteAt, total *int)
+	// SetCachedTransfersCache stores list of transfers into the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter used to cache the data.
+	//   - data: List of transfers to cache.
+	//   - total: Total count of transfers.
+	SetCachedTransfersCache(ctx context.Context, req *requests.FindAllTransfers, data []*response.TransferResponse, total *int)
 
-	GetCachedTransferTrashedCache(req *requests.FindAllTranfers) ([]*response.TransferResponseDeleteAt, *int, bool)
-	SetCachedTransferTrashedCache(req *requests.FindAllTranfers, data []*response.TransferResponseDeleteAt, total *int)
+	// GetCachedTransferActiveCache retrieves cached list of active (non-trashed) transfers.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter for active transfers.
+	//
+	// Returns:
+	//   - []*response.TransferResponseDeleteAt: List of active transfers.
+	//   - *int: Total count of active transfers.
+	//   - bool: Whether the cache was found.
+	GetCachedTransferActiveCache(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponseDeleteAt, *int, bool)
 
-	GetCachedTransferCache(id int) (*response.TransferResponse, bool)
-	SetCachedTransferCache(data *response.TransferResponse)
+	// SetCachedTransferActiveCache stores list of active (non-trashed) transfers into the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter used to cache the data.
+	//   - data: List of active transfers to cache.
+	//   - total: Total count of active transfers.
+	SetCachedTransferActiveCache(ctx context.Context, req *requests.FindAllTransfers, data []*response.TransferResponseDeleteAt, total *int)
 
-	GetCachedTransferByFrom(from string) ([]*response.TransferResponse, bool)
-	SetCachedTransferByFrom(from string, data []*response.TransferResponse)
+	// GetCachedTransferTrashedCache retrieves cached list of trashed transfers.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter for trashed transfers.
+	//
+	// Returns:
+	//   - []*response.TransferResponseDeleteAt: List of trashed transfers.
+	//   - *int: Total count of trashed transfers.
+	//   - bool: Whether the cache was found.
+	GetCachedTransferTrashedCache(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponseDeleteAt, *int, bool)
 
-	GetCachedTransferByTo(to string) ([]*response.TransferResponse, bool)
-	SetCachedTransferByTo(to string, data []*response.TransferResponse)
-}
+	// SetCachedTransferTrashedCache stores list of trashed transfers into the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request filter used to cache the data.
+	//   - data: List of trashed transfers to cache.
+	//   - total: Total count of trashed transfers.
+	SetCachedTransferTrashedCache(ctx context.Context, req *requests.FindAllTransfers, data []*response.TransferResponseDeleteAt, total *int)
 
-type TransferStatisticCache interface {
-	GetCachedMonthTransferStatusSuccess(req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusSuccess, bool)
-	SetCachedMonthTransferStatusSuccess(req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusSuccess)
+	// GetCachedTransferCache retrieves a specific transfer by ID from the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The ID of the transfer to retrieve.
+	//
+	// Returns:
+	//   - *response.TransferResponse: Transfer response.
+	//   - bool: Whether the cache was found.
+	GetCachedTransferCache(ctx context.Context, id int) (*response.TransferResponse, bool)
 
-	GetCachedYearlyTransferStatusSuccess(year int) ([]*response.TransferResponseYearStatusSuccess, bool)
-	SetCachedYearlyTransferStatusSuccess(year int, data []*response.TransferResponseYearStatusSuccess)
+	// SetCachedTransferCache stores a specific transfer into the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - data: The transfer data to cache.
+	SetCachedTransferCache(ctx context.Context, data *response.TransferResponse)
 
-	GetCachedMonthTransferStatusFailed(req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusFailed, bool)
-	SetCachedMonthTransferStatusFailed(req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusFailed)
+	// GetCachedTransferByFrom retrieves cached transfers filtered by source card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - from: The card number from which the transfer was made.
+	//
+	// Returns:
+	//   - []*response.TransferResponse: List of transfers.
+	//   - bool: Whether the cache was found.
+	GetCachedTransferByFrom(ctx context.Context, from string) ([]*response.TransferResponse, bool)
 
-	GetCachedYearlyTransferStatusFailed(year int) ([]*response.TransferResponseYearStatusFailed, bool)
-	SetCachedYearlyTransferStatusFailed(year int, data []*response.TransferResponseYearStatusFailed)
+	// SetCachedTransferByFrom stores cached transfers by source card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - from: The card number from which the transfer was made.
+	//   - data: List of transfers to cache.
+	SetCachedTransferByFrom(ctx context.Context, from string, data []*response.TransferResponse)
 
-	GetCachedMonthTransferAmounts(year int) ([]*response.TransferMonthAmountResponse, bool)
-	SetCachedMonthTransferAmounts(year int, data []*response.TransferMonthAmountResponse)
+	// GetCachedTransferByTo retrieves cached transfers filtered by destination card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - to: The card number to which the transfer was made.
+	//
+	// Returns:
+	//   - []*response.TransferResponse: List of transfers.
+	//   - bool: Whether the cache was found.
+	GetCachedTransferByTo(ctx context.Context, to string) ([]*response.TransferResponse, bool)
 
-	GetCachedYearlyTransferAmounts(year int) ([]*response.TransferYearAmountResponse, bool)
-	SetCachedYearlyTransferAmounts(year int, data []*response.TransferYearAmountResponse)
-}
-
-type TransferStatisticByCardCache interface {
-	GetMonthTransferStatusSuccessByCard(req *requests.MonthStatusTransferCardNumber) ([]*response.TransferResponseMonthStatusSuccess, bool)
-	SetMonthTransferStatusSuccessByCard(req *requests.MonthStatusTransferCardNumber, data []*response.TransferResponseMonthStatusSuccess)
-
-	GetYearlyTransferStatusSuccessByCard(req *requests.YearStatusTransferCardNumber) ([]*response.TransferResponseYearStatusSuccess, bool)
-	SetYearlyTransferStatusSuccessByCard(req *requests.YearStatusTransferCardNumber, data []*response.TransferResponseYearStatusSuccess)
-
-	GetMonthTransferStatusFailedByCard(req *requests.MonthStatusTransferCardNumber) ([]*response.TransferResponseMonthStatusFailed, bool)
-	SetMonthTransferStatusFailedByCard(req *requests.MonthStatusTransferCardNumber, data []*response.TransferResponseMonthStatusFailed)
-
-	GetYearlyTransferStatusFailedByCard(req *requests.YearStatusTransferCardNumber) ([]*response.TransferResponseYearStatusFailed, bool)
-	SetYearlyTransferStatusFailedByCard(req *requests.YearStatusTransferCardNumber, data []*response.TransferResponseYearStatusFailed)
-
-	GetMonthlyTransferAmountsBySenderCard(req *requests.MonthYearCardNumber) ([]*response.TransferMonthAmountResponse, bool)
-	SetMonthlyTransferAmountsBySenderCard(req *requests.MonthYearCardNumber, data []*response.TransferMonthAmountResponse)
-
-	GetMonthlyTransferAmountsByReceiverCard(req *requests.MonthYearCardNumber) ([]*response.TransferMonthAmountResponse, bool)
-	SetMonthlyTransferAmountsByReceiverCard(req *requests.MonthYearCardNumber, data []*response.TransferMonthAmountResponse)
-
-	GetYearlyTransferAmountsBySenderCard(req *requests.MonthYearCardNumber) ([]*response.TransferYearAmountResponse, bool)
-	SetYearlyTransferAmountsBySenderCard(req *requests.MonthYearCardNumber, data []*response.TransferYearAmountResponse)
-
-	GetYearlyTransferAmountsByReceiverCard(req *requests.MonthYearCardNumber) ([]*response.TransferYearAmountResponse, bool)
-	SetYearlyTransferAmountsByReceiverCard(req *requests.MonthYearCardNumber, data []*response.TransferYearAmountResponse)
+	// SetCachedTransferByTo stores cached transfers by destination card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - to: The card number to which the transfer was made.
+	//   - data: List of transfers to cache.
+	SetCachedTransferByTo(ctx context.Context, to string, data []*response.TransferResponse)
 }
 
 type TransferCommandCache interface {
-	DeleteTransferCache(id int)
+	// DeleteTransferCache removes a cached transfer by its ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The transfer ID.
+	DeleteTransferCache(ctx context.Context, id int)
 }

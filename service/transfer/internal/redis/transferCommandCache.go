@@ -1,15 +1,27 @@
 package mencache
 
-import "fmt"
+import (
+	"context"
+	"fmt"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
+)
+
+// transferCommandCache represents a cache store for transfer commands.
 type transferCommandCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewTransferCommandCache(store *CacheStore) *transferCommandCache {
+// NewTransferCommandCache creates a new instance of transferCommandCache using the provided cache store.
+func NewTransferCommandCache(store *sharedcachehelpers.CacheStore) TransferCommandCache {
 	return &transferCommandCache{store: store}
 }
 
-func (t *transferCommandCache) DeleteTransferCache(id int) {
-	DeleteFromCache(t.store, fmt.Sprintf(transferByIdCacheKey, id))
+// DeleteTransferCache removes a cached transfer by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - id: The transfer ID.
+func (t *transferCommandCache) DeleteTransferCache(ctx context.Context, id int) {
+	sharedcachehelpers.DeleteFromCache(ctx, t.store, fmt.Sprintf(transferByIdCacheKey, id))
 }

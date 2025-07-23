@@ -6,22 +6,35 @@ import (
 	"fmt"
 	"net/smtp"
 
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
+// Mailer is a struct that implements the Mailer interface
 type Mailer struct {
 	ctx      context.Context
 	server   string
 	port     int
 	user     string
 	password string
+	logger   logger.LoggerInterface
 	tracer   trace.Tracer
 }
 
-func NewMailer(ctx context.Context, server string, port int, user string, password string) *Mailer {
+type MailerInterface interface {
+	Send(to, subject, body string) error
+}
+
+// NewMailer returns a new instance of Mailer with the given server, port, user,
+// password, and logger.
+//
+// The context is used to create a new tracer that is stored in the Mailer
+// instance. The Mailer instance is used to send emails.
+func NewMailer(ctx context.Context, server string, port int, user string, password string, logger logger.LoggerInterface) MailerInterface {
 	return &Mailer{
 		ctx:      ctx,
 		server:   server,
@@ -29,10 +42,23 @@ func NewMailer(ctx context.Context, server string, port int, user string, passwo
 		user:     user,
 		password: password,
 		tracer:   otel.Tracer("mailer"),
+		logger:   logger,
 	}
 }
 
+// Send sends an email to the given recipient with the given subject and body.
+//
+// This function starts a new span named "SendEmail" with the following attributes:
+// - email.recipient: The recipient of the email.
+// - email.subject: The subject of the email.
+// - smtp.server: The SMTP server to use.
+// - smtp.port: The SMTP port to use.
+//
+// If the email fails to send, this function logs the error and sets the span
+// status to Error with the message "Failed to send email".
 func (m *Mailer) Send(to, subject, body string) error {
+	m.logger.Info("Sending email", zap.String("to", to), zap.String("subject", subject))
+
 	_, span := m.tracer.Start(m.ctx, "SendEmail",
 		trace.WithAttributes(
 			attribute.String("email.recipient", to),
@@ -64,9 +90,13 @@ func (m *Mailer) Send(to, subject, body string) error {
 
 	err := smtp.SendMail(addr, auth, m.user, []string{to}, msg.Bytes())
 	if err != nil {
+		m.logger.Error("Failed to send email", zap.Error(err))
+
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to send email")
 	}
+
+	m.logger.Info("Email sent", zap.String("to", to), zap.String("subject", subject))
 
 	return err
 }

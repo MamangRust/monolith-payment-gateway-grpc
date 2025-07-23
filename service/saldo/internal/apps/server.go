@@ -9,22 +9,22 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
+	redisclient "github.com/MamangRust/monolith-payment-gateway-pkg/redis"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/handler"
 	myhandlerkafka "github.com/MamangRust/monolith-payment-gateway-saldo/internal/kafka"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/middleware"
 	mencache "github.com/MamangRust/monolith-payment-gateway-saldo/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/service"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
-	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -36,6 +36,10 @@ var (
 	port int
 )
 
+// init initializes the gRPC server port for the saldo service.
+// It retrieves the port number from the environment configuration using Viper.
+// If the port is not specified, it defaults to 50056.
+// The port can also be overridden via a command-line flag.
 func init() {
 	port = viper.GetInt("GRPC_SALDO_PORT")
 	if port == 0 {
@@ -45,15 +49,21 @@ func init() {
 	flag.IntVar(&port, "port", port, "gRPC server port")
 }
 
+// Server represents the gRPC server for the saldo service.
 type Server struct {
 	Logger   logger.LoggerInterface
 	DB       *db.Queries
-	Services *service.Service
-	Handlers *handler.Handler
+	Services service.Service
+	Handlers handler.Handler
 	Ctx      context.Context
 }
 
-func NewServer() (*Server, func(context.Context) error, error) {
+// NewServer creates a new instance of Server, which is the gRPC server for the saldo service.
+// It initializes the logger, database connection, OpenTelemetry tracer provider, Redis connection,
+// and Kafka consumer. It also initializes the service and handler for the saldo service.
+// The function returns the Server instance, a shutdown function for the OpenTelemetry tracer provider,
+// and an error if any of the initialization steps fail.
+func NewServer(ctx context.Context) (*Server, func(context.Context) error, error) {
 	flag.Parse()
 
 	logger, err := logger.NewLogger("saldo-service")
@@ -73,17 +83,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}
 	DB := db.New(conn)
 
-	ctx := context.Background()
-
-	mapperRecord := recordmapper.NewRecordMapper()
-
-	depsRepo := &repository.Deps{
-		DB:           DB,
-		Ctx:          ctx,
-		MapperRecord: mapperRecord,
-	}
-
-	repositories := repository.NewRepositories(depsRepo)
+	repositories := repository.NewRepositories(DB)
 
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("saldo-service", ctx)
 	if err != nil {
@@ -91,8 +91,9 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		return nil, nil, err
 	}
 
-	myredis := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
+	myredis := redisclient.NewRedisClient(&redisclient.Config{
+		Host:         viper.GetString("REDIS_HOST"),
+		Port:         viper.GetString("REDIS_PORT"),
 		Password:     viper.GetString("REDIS_PASSWORD"),
 		DB:           viper.GetInt("REDIS_DB_SALDO"),
 		DialTimeout:  5 * time.Second,
@@ -102,14 +103,13 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		MinIdleConns: 3,
 	})
 
-	if err := myredis.Ping(ctx).Err(); err != nil {
-		logger.Fatal("Failed to connect to Redis", zap.Error(err))
-		return nil, nil, err
+	if err := myredis.Client.Ping(ctx).Err(); err != nil {
+		logger.Fatal("Failed to ping redis", zap.Error(err))
 	}
 
 	mencache := mencache.NewMencache(&mencache.Deps{
 		Ctx:    ctx,
-		Redis:  myredis,
+		Redis:  myredis.Client,
 		Logger: logger,
 	})
 
@@ -118,15 +118,13 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	services := service.NewService(&service.Deps{
 		Mencache:     mencache,
 		ErrorHandler: errorhandler,
-		Ctx:          ctx,
-		Redis:        myredis,
 		Repositories: repositories,
 		Logger:       logger,
 	})
 
 	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
-	handler_kafka_saldo := myhandlerkafka.NewSaldoKafkaHandler(services.SaldoCommand, logger)
+	handler_kafka_saldo := myhandlerkafka.NewSaldoKafkaHandler(services, logger)
 
 	err = myKafka.StartConsumers([]string{
 		"saldo-service-topic-create-saldo",
@@ -151,6 +149,9 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}, shutdownTracerProvider, nil
 }
 
+// Run starts the gRPC server and a metrics server. It serves the gRPC server
+// on port 50056 and the metrics server on port 8086. It blocks until the
+// server is stopped.
 func (s *Server) Run() {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -169,9 +170,13 @@ func (s *Server) Run() {
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
 		),
+		grpc.ChainUnaryInterceptor(
+			middleware.RecoveryMiddleware(s.Logger),
+			middleware.ContextMiddleware(60*time.Second, s.Logger),
+		),
 	)
 
-	pb.RegisterSaldoServiceServer(grpcServer, s.Handlers.Saldo)
+	s.RegisterHandleGrpc(grpcServer, s.Handlers)
 
 	metricsServer := http.NewServeMux()
 	metricsServer.Handle("/metrics", promhttp.Handler())
@@ -198,4 +203,11 @@ func (s *Server) Run() {
 	}()
 
 	wg.Wait()
+}
+
+func (s *Server) RegisterHandleGrpc(grpcServer *grpc.Server, handler handler.Handler) {
+	pb.RegisterSaldoQueryServiceServer(grpcServer, handler)
+	pb.RegisterSaldoCommandServiceServer(grpcServer, handler)
+	pb.RegisterSaldoStatsBalanceServiceServer(grpcServer, handler)
+	pb.RegisterSaldoStatsTotalBalanceServer(grpcServer, handler)
 }

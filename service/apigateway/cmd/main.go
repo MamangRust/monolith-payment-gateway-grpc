@@ -8,6 +8,10 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/app"
 )
 
+// main starts the API Gateway service.
+//
+// It sets up the gRPC clients for other monolith-stack and starts the HTTP server.
+// When an interrupt signal is received, it gracefully shuts down the service.
 func main() {
 	client, shutdown, err := app.RunClient()
 	if err != nil {

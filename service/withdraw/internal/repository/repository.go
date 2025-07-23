@@ -1,34 +1,43 @@
 package repository
 
 import (
-	"context"
-
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	mappercard "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/card"
+	mappersaldo "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
+	mapperwithdraw "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/withdraw"
+	withdrawstatsrepository "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/repository/stats"
+	withdrawstatsbycardrepository "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/repository/statsbycard"
 )
 
-type Repositories struct {
-	Card                CardRepository
-	Saldo               SaldoRepository
-	WithdrawQuery       WithdrawQueryRepository
-	WithdrawStats       WithdrawStatisticRepository
-	WithdrawCommand     WithdrawCommandRepository
-	WIthdrawStatsByCard WithdrawStatisticByCardRepository
+type Repositories interface {
+	CardRepository
+	SaldoRepository
+	WithdrawQueryRepository
+	WithdrawCommandRepository
+	withdrawstatsrepository.WithdrawStatsRepository
+	withdrawstatsbycardrepository.WithdrawStatsByCardRepository
 }
 
-type Deps struct {
-	DB           *db.Queries
-	Ctx          context.Context
-	MapperRecord *recordmapper.RecordMapper
+type repositories struct {
+	CardRepository
+	SaldoRepository
+	WithdrawQueryRepository
+	WithdrawCommandRepository
+	withdrawstatsrepository.WithdrawStatsRepository
+	withdrawstatsbycardrepository.WithdrawStatsByCardRepository
 }
 
-func NewRepositories(deps *Deps) *Repositories {
-	return &Repositories{
-		Card:                NewCardRepository(deps.DB, deps.Ctx, deps.MapperRecord.CardRecordMapper),
-		Saldo:               NewSaldoRepository(deps.DB, deps.Ctx, deps.MapperRecord.SaldoRecordMapper),
-		WithdrawQuery:       NewWithdrawQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.WithdrawRecordMapper),
-		WithdrawStats:       NewWithdrawStatisticRepository(deps.DB, deps.Ctx, deps.MapperRecord.WithdrawRecordMapper),
-		WithdrawCommand:     NewWithdrawCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.WithdrawRecordMapper),
-		WIthdrawStatsByCard: NewWithdrawStatisticByCardRepository(deps.DB, deps.Ctx, deps.MapperRecord.WithdrawRecordMapper),
+func NewRepositories(db *db.Queries) Repositories {
+	mapperwithdraw := mapperwithdraw.NewWithdrawRecordMapper()
+	mappersaldo := mappersaldo.NewSaldoQueryRecordMapper()
+	mappercard := mappercard.NewCardQueryRecordMapper()
+
+	return &repositories{
+		CardRepository:                NewCardRepository(db, mappercard),
+		SaldoRepository:               NewSaldoRepository(db, mappersaldo),
+		WithdrawQueryRepository:       NewWithdrawQueryRepository(db, mapperwithdraw.QueryMapper()),
+		WithdrawCommandRepository:     NewWithdrawCommandRepository(db, mapperwithdraw.CommandMapper()),
+		WithdrawStatsRepository:       withdrawstatsrepository.NewWithdrawStatsRepository(db, mapperwithdraw.StatsMapper()),
+		WithdrawStatsByCardRepository: withdrawstatsbycardrepository.NewWithdrawStatsByCardRepository(db, mapperwithdraw.StatsByCardMapper()),
 	}
 }

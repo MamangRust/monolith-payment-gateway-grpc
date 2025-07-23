@@ -1,37 +1,88 @@
 package service
 
 import (
-	"context"
-
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-saldo/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
-	"github.com/redis/go-redis/v9"
+	saldostatsservice "github.com/MamangRust/monolith-payment-gateway-saldo/internal/service/stats"
+	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/saldo"
 )
 
-type Service struct {
-	SaldoQuery   SaldoQueryService
-	SaldoStats   SaldoStatisticService
-	SaldoCommand SaldoCommandService
+// service struct groups all saldo-related domain services.
+type service struct {
+	SaldoQueryService
+	SaldoCommandService
+	saldostatsservice.SaldoStatsService
 }
 
+// Service interface defines the contract for saldo-related services,
+// including query, command, and statistics operations.
+type Service interface {
+	SaldoQueryService
+	SaldoCommandService
+	saldostatsservice.SaldoStatsService
+}
+
+// Deps holds the external dependencies required to construct the saldo services.
 type Deps struct {
-	Ctx          context.Context
+	// ErrorHandler provides domain-specific error handlers for saldo operations.
 	ErrorHandler *errorhandler.ErrorHandler
-	Mencache     *mencache.Mencache
-	Redis        *redis.Client
-	Repositories *repository.Repositories
-	Logger       logger.LoggerInterface
+
+	// Mencache provides in-memory caching for query, stats, and command services.
+	Mencache mencache.Mencache
+
+	// Repositories provides access to saldo-related data persistence layers.
+	Repositories repository.Repositories
+
+	// Logger provides structured and leveled logging support.
+	Logger logger.LoggerInterface
 }
 
-func NewService(deps *Deps) *Service {
+// NewService initializes and returns a new instance of the Service struct,
+// which provides a suite of saldo-related services including query, statistics,
+// and command services. It sets up these services using the provided dependencies
+// and response mapper.
+func NewService(deps *Deps) Service {
 	saldoMapper := responseservice.NewSaldoResponseMapper()
 
-	return &Service{
-		SaldoQuery:   NewSaldoQueryService(deps.Ctx, deps.ErrorHandler.SaldoQueryError, deps.Mencache.SaldoQueryCache, deps.Repositories.SaldoQuery, deps.Logger, saldoMapper),
-		SaldoStats:   NewSaldoStatisticsService(deps.Ctx, deps.ErrorHandler.SaldoStatisticError, deps.Mencache.SaldoStatisticCache, deps.Repositories.SaldoStats, deps.Logger, saldoMapper),
-		SaldoCommand: NewSaldoCommandService(deps.Ctx, deps.ErrorHandler.SaldoCommandError, deps.Mencache.SaldoCommandCache, deps.Repositories.SaldoCommand, deps.Repositories.Card, deps.Logger, saldoMapper),
+	return &service{
+		SaldoQueryService:   newSaldoQueryService(deps, saldoMapper.QueryMapper()),
+		SaldoCommandService: newSaldoCommandService(deps, saldoMapper.CommandMapper()),
+		SaldoStatsService: saldostatsservice.NewSaldoStatsService(&saldostatsservice.DepsStats{
+			Mencache:           deps.Mencache,
+			Errorhandler:       deps.ErrorHandler.SaldoStatisticError,
+			Logger:             deps.Logger,
+			Repository:         deps.Repositories,
+			MapperBalance:      saldoMapper.StatisticBalanceMapper(),
+			MapperTotalBalance: saldoMapper.TotalBalanceMapper(),
+		}),
 	}
+}
+
+// newSaldoQueryService creates a new instance of SaldoQueryService using the provided dependencies and mapper.
+// It initializes the service with the context, error handler, cache, repository, logger, and mapper
+// from the dependencies. This service handles read-only operations for saldo data.
+func newSaldoQueryService(deps *Deps, mapper responseservice.SaldoQueryResponseMapper) SaldoQueryService {
+	return NewSaldoQueryService(&saldoQueryParams{
+		ErrorHandler: deps.ErrorHandler.SaldoQueryError,
+		Cache:        deps.Mencache,
+		Repository:   deps.Repositories,
+		Logger:       deps.Logger,
+		Mapper:       mapper,
+	})
+}
+
+// newSaldoCommandService creates a new instance of SaldoCommandService using the provided dependencies and mapper.
+// It initializes the service with the context, error handler, cache, repository, logger, and mapper
+// from the dependencies. This service handles write operations for saldo data, such as top-up and adjustment.
+func newSaldoCommandService(deps *Deps, mapper responseservice.SaldoCommandResponseMapper) SaldoCommandService {
+	return NewSaldoCommandService(&saldoCommandParams{
+		ErrorHandler:    deps.ErrorHandler.SaldoCommandError,
+		Cache:           deps.Mencache,
+		SaldoRepository: deps.Repositories,
+		CardRepository:  deps.Repositories,
+		Logger:          deps.Logger,
+		Mapper:          mapper,
+	})
 }

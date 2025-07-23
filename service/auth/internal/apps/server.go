@@ -12,13 +12,13 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/handler"
+	"github.com/MamangRust/monolith-payment-gateway-auth/internal/middleware"
 	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
-	"github.com/redis/go-redis/v9"
-
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/service"
 
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/database"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -27,9 +27,7 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
+	redisclient "github.com/MamangRust/monolith-payment-gateway-pkg/redis"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
@@ -43,6 +41,10 @@ var (
 	port int
 )
 
+// init initializes the server port for the gRPC authentication service.
+// It retrieves the port number from the environment configuration using Viper.
+// If the port is not specified, it defaults to 50051.
+// The port can also be overridden via a command-line flag.
 func init() {
 	port = viper.GetInt("GRPC_AUTH_PORT")
 	if port == 0 {
@@ -52,6 +54,7 @@ func init() {
 	flag.IntVar(&port, "port", port, "gRPC server port")
 }
 
+// Server represents the gRPC server for the authentication service.
 type Server struct {
 	Logger       logger.LoggerInterface
 	DB           *db.Queries
@@ -61,7 +64,17 @@ type Server struct {
 	Ctx          context.Context
 }
 
-func NewServer() (*Server, func(context.Context) error, error) {
+// NewServer returns a new instance of the Server struct, along with a function
+// to be used to shut down the OpenTelemetry tracer provider and an error.
+// The function will be used to shut down the OpenTelemetry tracer provider
+// when the server is stopped.
+//
+// The function initializes the logger, configuration, database connection,
+// token manager, repositories, services, and handlers, and returns a new
+// instance of the Server struct.
+//
+// It also returns an error if any of the initialization steps fail.
+func NewServer(ctx context.Context) (*Server, func(context.Context) error, error) {
 	flag.Parse()
 
 	logger, err := logger.NewLogger("auth-service")
@@ -91,15 +104,10 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	DB := db.New(conn)
 
-	ctx := context.Background()
 	hash := hash.NewHashingPassword()
-	mapperRecord := recordmapper.NewRecordMapper()
-	mapperResponse := responseservice.NewResponseServiceMapper()
 
 	depsRepo := &repository.Deps{
-		DB:           DB,
-		Ctx:          ctx,
-		MapperRecord: mapperRecord,
+		DB: DB,
 	}
 	repositories := repository.NewRepositories(depsRepo)
 
@@ -111,8 +119,9 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
 	}
 
-	myredis := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
+	myredis := redisclient.NewRedisClient(&redisclient.Config{
+		Host:         viper.GetString("REDIS_HOST"),
+		Port:         viper.GetString("REDIS_PORT"),
 		Password:     viper.GetString("REDIS_PASSWORD"),
 		DB:           viper.GetInt("REDIS_DB_AUTH"),
 		DialTimeout:  5 * time.Second,
@@ -122,27 +131,24 @@ func NewServer() (*Server, func(context.Context) error, error) {
 		MinIdleConns: 3,
 	})
 
-	if err := myredis.Ping(ctx).Err(); err != nil {
+	if err := myredis.Client.Ping(ctx).Err(); err != nil {
 		logger.Fatal("Failed to ping redis", zap.Error(err))
 	}
 
 	mencache := mencache.NewMencache(&mencache.Deps{
-		Ctx:    ctx,
-		Redis:  myredis,
+		Redis:  myredis.Client,
 		Logger: logger,
 	})
 
 	errorhandler := errorhandler.NewErrorHandler(logger)
 
 	services := service.NewService(&service.Deps{
-		Context:      ctx,
 		ErrorHandler: errorhandler,
 		Mencache:     mencache,
 		Repositories: repositories,
 		Hash:         hash,
 		Token:        tokenManager,
 		Logger:       logger,
-		Mapper:       mapperResponse.UserResponseMapper,
 		Kafka:        kafka,
 	})
 
@@ -161,6 +167,14 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}, shutdownTracerProvider, nil
 }
 
+// Run starts the gRPC and metrics servers for the auth service.
+// It sets up network listeners for the gRPC server and metrics server using ports
+// specified in the environment configuration. The function initializes and starts
+// a gRPC server with OpenTelemetry instrumentation and registers the auth service handlers.
+// Additionally, it creates an HTTP server to serve Prometheus metrics for monitoring.
+// The function runs both servers concurrently and waits for them to finish using a wait group.
+// If any server encounters an error during execution, the error is logged, and the application
+// terminates with a fatal error.
 func (s *Server) Run() {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -183,6 +197,10 @@ func (s *Server) Run() {
 				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
+		),
+		grpc.ChainUnaryInterceptor(
+			middleware.RecoveryMiddleware(s.Logger),
+			middleware.ContextMiddleware(60*time.Second, s.Logger),
 		),
 	)
 

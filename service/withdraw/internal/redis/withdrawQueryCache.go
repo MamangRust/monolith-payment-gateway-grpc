@@ -1,13 +1,16 @@
 package mencache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+// Constants for cache keys
 const (
 	withdrawAllCacheKey     = "withdraws:all:page:%d:pageSize:%d:search:%s"
 	withdrawByCardCacheKey  = "withdraws:card_number:%s:page:%d:pageSize:%d:search:%s"
@@ -18,28 +21,49 @@ const (
 	ttlDefault = 5 * time.Minute
 )
 
+// withdrawCachedResponse represents the structure of the cached withdraw data.
 type withdrawCachedResponse struct {
 	Data         []*response.WithdrawResponse `json:"data"`
 	TotalRecords *int                         `json:"total_records"`
 }
 
+// withdrawCachedResponseDeleteAt represents the structure of the cached withdraw data.
 type withdrawCachedResponseDeleteAt struct {
 	Data         []*response.WithdrawResponseDeleteAt `json:"data"`
 	TotalRecords *int                                 `json:"total_records"`
 }
 
+// withdrawQueryCache is a struct that represents the withdraw query cache
 type withdrawQueryCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewWithdrawQueryCache(store *CacheStore) *withdrawQueryCache {
+// NewWithdrawQueryCache creates and returns a new instance of withdrawQueryCache
+// using the provided sharedcachehelpers.CacheStore.
+//
+// Parameters:
+//   - store: The cache store to be used for storing and retrieving cached data.
+//
+// Returns:
+//   - *withdrawQueryCache: A pointer to the newly created withdrawQueryCache instance.
+func NewWithdrawQueryCache(store *sharedcachehelpers.CacheStore) WithdrawQueryCache {
 	return &withdrawQueryCache{store: store}
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawsCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponse, *int, bool) {
+// GetCachedWithdrawsCache retrieves cached list of all withdraws.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for finding all withdraws.
+//
+// Returns:
+//   - []*response.WithdrawResponse: List of withdraws.
+//   - *int: Total number of records.
+//   - bool: Whether the cache was found.
+func (w *withdrawQueryCache) GetCachedWithdrawsCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponse, *int, bool) {
 	key := fmt.Sprintf(withdrawAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[withdrawCachedResponse](w.store, key)
+	result, found := sharedcachehelpers.GetFromCache[withdrawCachedResponse](ctx, w.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -48,7 +72,14 @@ func (w *withdrawQueryCache) GetCachedWithdrawsCache(req *requests.FindAllWithdr
 	return result.Data, result.TotalRecords, true
 }
 
-func (w *withdrawQueryCache) SetCachedWithdrawsCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponse, total *int) {
+// SetCachedWithdrawsCache stores a list of withdraws in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters used for caching.
+//   - data: The withdraw response data to cache.
+//   - total: Total number of records.
+func (w *withdrawQueryCache) SetCachedWithdrawsCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponse, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -62,13 +93,23 @@ func (w *withdrawQueryCache) SetCachedWithdrawsCache(req *requests.FindAllWithdr
 
 	payload := &withdrawCachedResponse{Data: data, TotalRecords: total}
 
-	SetToCache(w.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, w.store, key, payload, ttlDefault)
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawByCardCache(req *requests.FindAllWithdrawCardNumber) ([]*response.WithdrawResponse, *int, bool) {
+// GetCachedWithdrawByCardCache retrieves cached withdraws for a specific card number.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for finding withdraws by card number.
+//
+// Returns:
+//   - []*response.WithdrawResponse: List of withdraws.
+//   - *int: Total number of records.
+//   - bool: Whether the cache was found.
+func (w *withdrawQueryCache) GetCachedWithdrawByCardCache(ctx context.Context, req *requests.FindAllWithdrawCardNumber) ([]*response.WithdrawResponse, *int, bool) {
 	key := fmt.Sprintf(withdrawByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[withdrawCachedResponse](w.store, key)
+	result, found := sharedcachehelpers.GetFromCache[withdrawCachedResponse](ctx, w.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -77,7 +118,14 @@ func (w *withdrawQueryCache) GetCachedWithdrawByCardCache(req *requests.FindAllW
 	return result.Data, result.TotalRecords, true
 }
 
-func (w *withdrawQueryCache) SetCachedWithdrawByCardCache(req *requests.FindAllWithdrawCardNumber, data []*response.WithdrawResponse, total *int) {
+// SetCachedWithdrawByCardCache stores withdraws for a specific card number in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters used for caching.
+//   - data: The withdraw response data to cache.
+//   - total: Total number of records.
+func (w *withdrawQueryCache) SetCachedWithdrawByCardCache(ctx context.Context, req *requests.FindAllWithdrawCardNumber, data []*response.WithdrawResponse, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -90,12 +138,22 @@ func (w *withdrawQueryCache) SetCachedWithdrawByCardCache(req *requests.FindAllW
 	key := fmt.Sprintf(withdrawByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
 
 	payload := &withdrawCachedResponse{Data: data, TotalRecords: total}
-	SetToCache(w.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, w.store, key, payload, ttlDefault)
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawActiveCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
+// GetCachedWithdrawActiveCache retrieves cached active (non-deleted) withdraws.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for finding active withdraws.
+//
+// Returns:
+//   - []*response.WithdrawResponseDeleteAt: List of active withdraws.
+//   - *int: Total number of records.
+//   - bool: Whether the cache was found.
+func (w *withdrawQueryCache) GetCachedWithdrawActiveCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(withdrawActiveCacheKey, req.Page, req.PageSize, req.Search)
-	result, found := GetFromCache[withdrawCachedResponseDeleteAt](w.store, key)
+	result, found := sharedcachehelpers.GetFromCache[withdrawCachedResponseDeleteAt](ctx, w.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -104,7 +162,14 @@ func (w *withdrawQueryCache) GetCachedWithdrawActiveCache(req *requests.FindAllW
 	return result.Data, result.TotalRecords, true
 }
 
-func (w *withdrawQueryCache) SetCachedWithdrawActiveCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
+// SetCachedWithdrawActiveCache stores active withdraws in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters used for caching.
+//   - data: The active withdraw response data to cache.
+//   - total: Total number of records.
+func (w *withdrawQueryCache) SetCachedWithdrawActiveCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -116,12 +181,22 @@ func (w *withdrawQueryCache) SetCachedWithdrawActiveCache(req *requests.FindAllW
 
 	key := fmt.Sprintf(withdrawActiveCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &withdrawCachedResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(w.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, w.store, key, payload, ttlDefault)
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
+// GetCachedWithdrawTrashedCache retrieves cached trashed (soft-deleted) withdraws.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for finding trashed withdraws.
+//
+// Returns:
+//   - []*response.WithdrawResponseDeleteAt: List of trashed withdraws.
+//   - *int: Total number of records.
+//   - bool: Whether the cache was found.
+func (w *withdrawQueryCache) GetCachedWithdrawTrashedCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(withdrawTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	result, found := GetFromCache[withdrawCachedResponseDeleteAt](w.store, key)
+	result, found := sharedcachehelpers.GetFromCache[withdrawCachedResponseDeleteAt](ctx, w.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -130,7 +205,14 @@ func (w *withdrawQueryCache) GetCachedWithdrawTrashedCache(req *requests.FindAll
 	return result.Data, result.TotalRecords, true
 }
 
-func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
+// SetCachedWithdrawTrashedCache stores trashed withdraws in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters used for caching.
+//   - data: The trashed withdraw response data to cache.
+//   - total: Total number of records.
+func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 
@@ -143,12 +225,21 @@ func (w *withdrawQueryCache) SetCachedWithdrawTrashedCache(req *requests.FindAll
 
 	key := fmt.Sprintf(withdrawTrashedCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &withdrawCachedResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(w.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, w.store, key, payload, ttlDefault)
 }
 
-func (w *withdrawQueryCache) GetCachedWithdrawCache(id int) (*response.WithdrawResponse, bool) {
+// GetCachedWithdrawCache retrieves cached withdraw by ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - id: The ID of the withdraw to retrieve.
+//
+// Returns:
+//   - *response.WithdrawResponse: The withdraw response.
+//   - bool: Whether the cache was found.
+func (w *withdrawQueryCache) GetCachedWithdrawCache(ctx context.Context, id int) (*response.WithdrawResponse, bool) {
 	key := fmt.Sprintf(withdrawByIdCacheKey, id)
-	result, found := GetFromCache[*response.WithdrawResponse](w.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*response.WithdrawResponse](ctx, w.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -158,11 +249,16 @@ func (w *withdrawQueryCache) GetCachedWithdrawCache(id int) (*response.WithdrawR
 
 }
 
-func (w *withdrawQueryCache) SetCachedWithdrawCache(data *response.WithdrawResponse) {
+// SetCachedWithdrawCache stores a withdraw record in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - data: The withdraw response to cache.
+func (w *withdrawQueryCache) SetCachedWithdrawCache(ctx context.Context, data *response.WithdrawResponse) {
 	if data == nil {
 		return
 	}
 
 	key := fmt.Sprintf(withdrawByIdCacheKey, data.ID)
-	SetToCache(w.store, key, data, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, w.store, key, data, ttlDefault)
 }

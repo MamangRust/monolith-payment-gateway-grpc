@@ -1,10 +1,12 @@
 package repository
 
 import (
-	"context"
-
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	refreshtokenrecord "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/refreshtoken"
+	resettokenrecord "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/resettoken"
+	rolemapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/role"
+	userrecord "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
+	userrolerecord "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/userrole"
 )
 
 type Repositories struct {
@@ -16,17 +18,21 @@ type Repositories struct {
 }
 
 type Deps struct {
-	DB           *db.Queries
-	Ctx          context.Context
-	MapperRecord *recordmapper.RecordMapper
+	DB *db.Queries
 }
 
 func NewRepositories(deps *Deps) *Repositories {
+	mapperuser := userrecord.NewUserQueryRecordMapper()
+	mapperuserrole := userrolerecord.NewUserRoleRecordMapper()
+	mapperrefreshtoken := refreshtokenrecord.NewRefreshTokenRecordMapper()
+	mapperrole := rolemapper.NewRoleQueryRecordMapping()
+	mapperresettoken := resettokenrecord.NewResetTokenRecordMapper()
+
 	return &Repositories{
-		User:         NewUserRepository(deps.DB, deps.Ctx, deps.MapperRecord.UserRecordMapper),
-		UserRole:     NewUserRoleRepository(deps.DB, deps.Ctx, deps.MapperRecord.UserRoleRecordMapper),
-		RefreshToken: NewRefreshTokenRepository(deps.DB, deps.Ctx, deps.MapperRecord.RefreshTokenRecordMapper),
-		Role:         NewRoleRepository(deps.DB, deps.Ctx, deps.MapperRecord.RoleRecordMapper),
-		ResetToken:   NewResetTokenRepository(deps.DB, deps.Ctx, deps.MapperRecord.ResetTokenRecordMapper),
+		User:         NewUserRepository(deps.DB, mapperuser),
+		UserRole:     NewUserRoleRepository(deps.DB, mapperuserrole),
+		RefreshToken: NewRefreshTokenRepository(deps.DB, mapperrefreshtoken),
+		Role:         NewRoleRepository(deps.DB, mapperrole),
+		ResetToken:   NewResetTokenRepository(deps.DB, mapperresettoken),
 	}
 }

@@ -1,9 +1,11 @@
 package mencache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
@@ -13,54 +15,95 @@ var (
 )
 
 type identityCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewidentityCache(store *CacheStore) *identityCache {
+// NewidentityCache creates and returns a new instance of identityCache.
+// It initializes the cache with the provided CacheStore, which is used
+// for storing and retrieving cached identity-related data.
+func NewidentityCache(store *sharedcachehelpers.CacheStore) *identityCache {
 	return &identityCache{store: store}
 }
 
-func (c *identityCache) SetRefreshToken(token string, expiration time.Duration) {
+// SetRefreshToken stores a refresh token in the cache with expiration.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - token: the refresh token string
+//   - expiration: the duration until the token expires
+func (c *identityCache) SetRefreshToken(ctx context.Context, token string, expiration time.Duration) {
 	key := keyIdentityRefreshToken
 	key = fmt.Sprintf(key, token)
 
-	SetToCache(c.store, key, &token, expiration)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, &token, expiration)
 }
 
-func (c *identityCache) GetRefreshToken(token string) (string, bool) {
+// GetRefreshToken retrieves a refresh token from the cache.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - token: the refresh token string to retrieve
+//
+// Returns:
+//   - The stored token string and a boolean indicating whether it was found.
+func (c *identityCache) GetRefreshToken(ctx context.Context, token string) (string, bool) {
 	key := keyIdentityRefreshToken
 	key = fmt.Sprintf(key, token)
 
-	result, found := GetFromCache[string](c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[string](ctx, c.store, key)
 	if !found || result == nil {
 		return "", false
 	}
 	return *result, true
 }
 
-func (c *identityCache) DeleteRefreshToken(token string) {
+// DeleteRefreshToken removes a refresh token from the cache.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - token: the refresh token to delete
+func (c *identityCache) DeleteRefreshToken(ctx context.Context, token string) {
 	key := fmt.Sprintf(keyIdentityRefreshToken, token)
-	DeleteFromCache(c.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, c.store, key)
 }
 
-func (c *identityCache) SetCachedUserInfo(user *response.UserResponse, expiration time.Duration) {
+// SetCachedUserInfo stores user information in the cache with expiration.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - user: the user data to cache
+//   - expiration: the duration until the cache entry expires
+func (c *identityCache) SetCachedUserInfo(ctx context.Context, user *response.UserResponse, expiration time.Duration) {
 	if user == nil {
 		return
 	}
 
 	key := fmt.Sprintf(keyIdentityUserInfo, user.ID)
 
-	SetToCache(c.store, key, user, expiration)
+	sharedcachehelpers.SetToCache(ctx, c.store, key, user, expiration)
 }
 
-func (c *identityCache) GetCachedUserInfo(userId string) (*response.UserResponse, bool) {
+// GetCachedUserInfo retrieves cached user information by user ID.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - userId: the unique identifier of the user
+//
+// Returns:
+//   - The cached UserResponse and a boolean indicating whether it was found.
+func (c *identityCache) GetCachedUserInfo(ctx context.Context, userId string) (*response.UserResponse, bool) {
 	key := fmt.Sprintf(keyIdentityUserInfo, userId)
 
-	return GetFromCache[response.UserResponse](c.store, key)
+	return sharedcachehelpers.GetFromCache[response.UserResponse](ctx, c.store, key)
 }
 
-func (c *identityCache) DeleteCachedUserInfo(userId string) {
+// DeleteCachedUserInfo removes cached user information from the cache.
+//
+// Parameters:
+//   - ctx: the context for the caching operation
+//   - userId: the unique identifier of the user to remove from cache
+func (c *identityCache) DeleteCachedUserInfo(ctx context.Context, userId string) {
 	key := fmt.Sprintf(keyIdentityUserInfo, userId)
 
-	DeleteFromCache(c.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, c.store, key)
 }

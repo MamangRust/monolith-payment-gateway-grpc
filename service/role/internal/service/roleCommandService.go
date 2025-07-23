@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-role/internal/errorhandler"
@@ -10,29 +9,65 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-role/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	roleservicemapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/role"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type roleCommandService struct {
-	ctx             context.Context
-	errorhandler    errorhandler.RoleCommandErrorHandler
-	mencache        mencache.RoleCommandCache
-	trace           trace.Tracer
-	roleCommand     repository.RoleCommandRepository
-	logger          logger.LoggerInterface
-	mapping         responseservice.RoleResponseMapper
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+// roleCommandDeps contains the required dependencies to construct a roleCommandService.
+type roleCommandDeps struct {
+	// Ctx is the base context for the service.
+	Ctx context.Context
+
+	// ErrorHandler handles domain-specific errors for role commands.
+	ErrorHandler errorhandler.RoleCommandErrorHandler
+
+	// Cache provides in-memory caching for role command operations.
+	Cache mencache.RoleCommandCache
+
+	// Repository is the database layer for role command operations.
+	Repository repository.RoleCommandRepository
+
+	// Logger is used for logging service operations.
+	Logger logger.LoggerInterface
+
+	// Mapper maps domain models to response DTOs.
+	Mapper roleservicemapper.RoleCommandResponseMapper
 }
 
-func NewRoleCommandService(ctx context.Context, errorhandler errorhandler.RoleCommandErrorHandler,
-	mencache mencache.RoleCommandCache, roleCommand repository.RoleCommandRepository, logger logger.LoggerInterface, mapping responseservice.RoleResponseMapper) *roleCommandService {
+// roleCommandService handles write operations (create, update, delete) for roles.
+type roleCommandService struct {
+	// errorhandler handles domain-specific errors for role commands.
+	errorhandler errorhandler.RoleCommandErrorHandler
+
+	// mencache provides cache functionality for role command data.
+	mencache mencache.RoleCommandCache
+
+	// roleCommand is the repository that handles database operations for role commands.
+	roleCommand repository.RoleCommandRepository
+
+	// logger is used for structured logging.
+	logger logger.LoggerInterface
+
+	// mapper maps internal role entities to response DTOs.
+	mapper roleservicemapper.RoleCommandResponseMapper
+
+	// observability provides tracing and metrics for role command operations.
+	observability observability.TraceLoggerObservability
+}
+
+// NewRoleCommandService initializes a new RoleCommandService with the given parameters.
+// The function sets up the prometheus metrics for request counters and durations,
+// and returns a configured RoleCommandService ready for handling role-related commands.
+//
+// Parameters:
+// - params: A pointer to roleCommandDeps containing the necessary dependencies.
+//
+// Returns:
+// - A pointer to an initialized roleCommandService.
+func NewRoleCommandService(params *roleCommandDeps) RoleCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "role_command_service_request_total",
@@ -52,120 +87,165 @@ func NewRoleCommandService(ctx context.Context, errorhandler errorhandler.RoleCo
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(
+		otel.Tracer("role-command-service"), params.Logger, requestCounter, requestDuration)
+
 	return &roleCommandService{
-		ctx:             ctx,
-		errorhandler:    errorhandler,
-		mencache:        mencache,
-		trace:           otel.Tracer("role-command-service"),
-		roleCommand:     roleCommand,
-		logger:          logger,
-		mapping:         mapping,
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		errorhandler:  params.ErrorHandler,
+		mencache:      params.Cache,
+		roleCommand:   params.Repository,
+		logger:        params.Logger,
+		mapper:        params.Mapper,
+		observability: observability,
 	}
 }
 
-func (s *roleCommandService) CreateRole(request *requests.CreateRoleRequest) (*response.RoleResponse, *response.ErrorResponse) {
+// CreateRole creates a new role based on the given request.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The request payload containing the role details.
+//
+// Returns:
+//   - *response.RoleResponse: The created role.
+//   - *response.ErrorResponse: An error response if creation failed.
+func (s *roleCommandService) CreateRole(ctx context.Context, request *requests.CreateRoleRequest) (*response.RoleResponse, *response.ErrorResponse) {
 	const method = "CreateRole"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	role, err := s.roleCommand.CreateRole(request)
+	role, err := s.roleCommand.CreateRole(ctx, request)
 
 	if err != nil {
 		return s.errorhandler.HandleCreateRoleError(err, method, "FAILED_CREATE_ROLE", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToRoleResponse(role)
+	so := s.mapper.ToRoleResponse(role)
 
 	logSuccess("Successfully created role", zap.Int("role.id", role.ID))
 
 	return so, nil
 }
 
-func (s *roleCommandService) UpdateRole(request *requests.UpdateRoleRequest) (*response.RoleResponse, *response.ErrorResponse) {
+// UpdateRole updates an existing role based on the given request.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The request payload containing updated role details.
+//
+// Returns:
+//   - *response.RoleResponse: The updated role.
+//   - *response.ErrorResponse: An error response if update failed.
+func (s *roleCommandService) UpdateRole(ctx context.Context, request *requests.UpdateRoleRequest) (*response.RoleResponse, *response.ErrorResponse) {
 	const method = "UpdateRole"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	role, err := s.roleCommand.UpdateRole(request)
+	role, err := s.roleCommand.UpdateRole(ctx, request)
 	if err != nil {
 		return s.errorhandler.HandleUpdateRoleError(err, method, "FAILED_UPDATE_ROLE", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToRoleResponse(role)
+	so := s.mapper.ToRoleResponse(role)
 
-	s.mencache.DeleteCachedRole(*request.ID)
+	s.mencache.DeleteCachedRole(ctx, *request.ID)
 
 	logSuccess("Successfully updated role", zap.Int("role.id", role.ID))
 
 	return so, nil
 }
 
-func (s *roleCommandService) TrashedRole(id int) (*response.RoleResponse, *response.ErrorResponse) {
+// TrashedRole soft-deletes (moves to trash) a role by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - role_id: The ID of the role to be trashed.
+//
+// Returns:
+//   - *response.RoleResponse: The trashed role.
+//   - *response.ErrorResponse: An error response if the operation failed.
+func (s *roleCommandService) TrashedRole(ctx context.Context, id int) (*response.RoleResponseDeleteAt, *response.ErrorResponse) {
 	const method = "TrashedRole"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	role, err := s.roleCommand.TrashedRole(id)
+	role, err := s.roleCommand.TrashedRole(ctx, id)
 
 	if err != nil {
 		return s.errorhandler.HandleTrashedRoleError(err, method, "FAILED_TRASH_ROLE", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToRoleResponse(role)
+	so := s.mapper.ToRoleResponseDeleteAt(role)
 
-	s.mencache.DeleteCachedRole(id)
+	s.mencache.DeleteCachedRole(ctx, id)
 
 	logSuccess("Successfully trashed role", zap.Int("role.id", role.ID))
 
 	return so, nil
 }
 
-func (s *roleCommandService) RestoreRole(id int) (*response.RoleResponse, *response.ErrorResponse) {
+// RestoreRole restores a soft-deleted role by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - role_id: The ID of the role to be restored.
+//
+// Returns:
+//   - *response.RoleResponse: The restored role.
+//   - *response.ErrorResponse: An error response if the restoration failed.
+func (s *roleCommandService) RestoreRole(ctx context.Context, id int) (*response.RoleResponse, *response.ErrorResponse) {
 	const method = "RestoreRole"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	role, err := s.roleCommand.RestoreRole(id)
+	role, err := s.roleCommand.RestoreRole(ctx, id)
 
 	if err != nil {
 		return s.errorhandler.HandleRestoreRoleError(err, method, "FAILED_RESTORE_ROLE", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToRoleResponse(role)
+	so := s.mapper.ToRoleResponse(role)
 
 	logSuccess("Successfully restored role", zap.Int("role.id", role.ID))
 
 	return so, nil
 }
 
-func (s *roleCommandService) DeleteRolePermanent(id int) (bool, *response.ErrorResponse) {
+// DeleteRolePermanent permanently deletes a role by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - role_id: The ID of the role to be permanently deleted.
+//
+// Returns:
+//   - bool: True if deletion was successful.
+//   - *response.ErrorResponse: An error response if the deletion failed.
+func (s *roleCommandService) DeleteRolePermanent(ctx context.Context, id int) (bool, *response.ErrorResponse) {
 	const method = "DeleteRolePermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.roleCommand.DeleteRolePermanent(id)
+	_, err := s.roleCommand.DeleteRolePermanent(ctx, id)
 	if err != nil {
 		return s.errorhandler.HandleDeleteRolePermanentError(err, method, "FAILED_DELETE_ROLE_PERMANENT", span, &status, zap.Error(err))
 	}
@@ -175,16 +255,24 @@ func (s *roleCommandService) DeleteRolePermanent(id int) (bool, *response.ErrorR
 	return true, nil
 }
 
-func (s *roleCommandService) RestoreAllRole() (bool, *response.ErrorResponse) {
+// RestoreAllRole restores all trashed roles.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if restoration was successful.
+//   - *response.ErrorResponse: An error response if the operation failed.
+func (s *roleCommandService) RestoreAllRole(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "RestoreAllRole"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.roleCommand.RestoreAllRole()
+	_, err := s.roleCommand.RestoreAllRole(ctx)
 	if err != nil {
 		return s.errorhandler.HandleRestoreAllRoleError(err, method, "FAILED_RESTORE_ALL_ROLE", span, &status, zap.Error(err))
 	}
@@ -194,16 +282,24 @@ func (s *roleCommandService) RestoreAllRole() (bool, *response.ErrorResponse) {
 	return true, nil
 }
 
-func (s *roleCommandService) DeleteAllRolePermanent() (bool, *response.ErrorResponse) {
+// DeleteAllRolePermanent permanently deletes all trashed roles.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if deletion was successful.
+//   - *response.ErrorResponse: An error response if the operation failed.
+func (s *roleCommandService) DeleteAllRolePermanent(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "DeleteAllRolePermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.roleCommand.DeleteAllRolePermanent()
+	_, err := s.roleCommand.DeleteAllRolePermanent(ctx)
 
 	if err != nil {
 		return s.errorhandler.HandleDeleteAllRolePermanentError(err, method, "FAILED_DELETE_ALL_ROLE_PERMANENT", span, &status, zap.Error(err))
@@ -212,46 +308,4 @@ func (s *roleCommandService) DeleteAllRolePermanent() (bool, *response.ErrorResp
 	logSuccess("Successfully permanently deleted all roles", zap.Bool("success", true))
 
 	return true, nil
-}
-
-func (s *roleCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *roleCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

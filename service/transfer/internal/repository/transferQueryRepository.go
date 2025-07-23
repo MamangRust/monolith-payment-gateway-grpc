@@ -6,25 +6,44 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transfer"
 )
 
+// transferQueryRepository is a struct that implements the TransferQueryRepository interface
 type transferQueryRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.TransferRecordMapping
+	db     *db.Queries
+	mapper recordmapper.TransferQueryRecordMapper
 }
 
-func NewTransferQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.TransferRecordMapping) *transferQueryRepository {
+// NewTransferQueryRepository initializes a new instance of transferQueryRepository with the provided
+// database queries, context, and transfer record mapper. This repository is responsible for executing
+// query operations related to transfer records in the database.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - mapper: A TransferRecordMapping that provides methods to map database rows to TransferRecord domain models.
+//
+// Returns:
+//   - A pointer to the newly created transferQueryRepository instance.
+func NewTransferQueryRepository(db *db.Queries, mapper recordmapper.TransferQueryRecordMapper) TransferQueryRepository {
 	return &transferQueryRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *transferQueryRepository) FindAll(req *requests.FindAllTranfers) ([]*record.TransferRecord, *int, error) {
+// FindAll retrieves all transfer records with optional filtering and pagination.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for filtering and pagination.
+//
+// Returns:
+//   - []*record.TransferRecord: List of transfer records.
+//   - *int: Total number of records (for pagination).
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindAll(ctx context.Context, req *requests.FindAllTransfers) ([]*record.TransferRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetTransfersParams{
@@ -33,7 +52,7 @@ func (r *transferQueryRepository) FindAll(req *requests.FindAllTranfers) ([]*rec
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetTransfers(r.ctx, reqDb)
+	res, err := r.db.GetTransfers(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, transfer_errors.ErrFindAllTransfersFailed
@@ -46,10 +65,22 @@ func (r *transferQueryRepository) FindAll(req *requests.FindAllTranfers) ([]*rec
 		totalCount = 0
 	}
 
-	return r.mapping.ToTransfersRecordAll(res), &totalCount, nil
+	so := r.mapper.ToTransfersRecordAll(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *transferQueryRepository) FindByActive(req *requests.FindAllTranfers) ([]*record.TransferRecord, *int, error) {
+// FindByActive retrieves all active (non-trashed) transfer records.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for filtering and pagination.
+//
+// Returns:
+//   - []*record.TransferRecord: List of active transfer records.
+//   - *int: Total number of records (for pagination).
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllTransfers) ([]*record.TransferRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetActiveTransfersParams{
@@ -58,7 +89,7 @@ func (r *transferQueryRepository) FindByActive(req *requests.FindAllTranfers) ([
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetActiveTransfers(r.ctx, reqDb)
+	res, err := r.db.GetActiveTransfers(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, transfer_errors.ErrFindActiveTransfersFailed
@@ -71,10 +102,22 @@ func (r *transferQueryRepository) FindByActive(req *requests.FindAllTranfers) ([
 		totalCount = 0
 	}
 
-	return r.mapping.ToTransfersRecordActive(res), &totalCount, nil
+	so := r.mapper.ToTransfersRecordActive(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *transferQueryRepository) FindByTrashed(req *requests.FindAllTranfers) ([]*record.TransferRecord, *int, error) {
+// FindByTrashed retrieves all soft-deleted (trashed) transfer records.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request parameters for filtering and pagination.
+//
+// Returns:
+//   - []*record.TransferRecord: List of trashed transfer records.
+//   - *int: Total number of records (for pagination).
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllTransfers) ([]*record.TransferRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetTrashedTransfersParams{
@@ -83,7 +126,7 @@ func (r *transferQueryRepository) FindByTrashed(req *requests.FindAllTranfers) (
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetTrashedTransfers(r.ctx, reqDb)
+	res, err := r.db.GetTrashedTransfers(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, transfer_errors.ErrFindTrashedTransfersFailed
@@ -96,34 +139,70 @@ func (r *transferQueryRepository) FindByTrashed(req *requests.FindAllTranfers) (
 		totalCount = 0
 	}
 
-	return r.mapping.ToTransfersRecordTrashed(res), &totalCount, nil
+	so := r.mapper.ToTransfersRecordTrashed(res)
+
+	return so, &totalCount, nil
 }
 
-func (r *transferQueryRepository) FindById(id int) (*record.TransferRecord, error) {
-	transfer, err := r.db.GetTransferByID(r.ctx, int32(id))
+// FindById retrieves a single transfer record by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - id: The ID of the transfer record.
+//
+// Returns:
+//   - *record.TransferRecord: The transfer record, if found.
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindById(ctx context.Context, id int) (*record.TransferRecord, error) {
+	transfer, err := r.db.GetTransferByID(ctx, int32(id))
 
 	if err != nil {
 		return nil, transfer_errors.ErrFindTransferByIdFailed
 	}
 
-	return r.mapping.ToTransferRecord(transfer), nil
+	so := r.mapper.ToTransferRecord(transfer)
+
+	return so, nil
 }
 
-func (r *transferQueryRepository) FindTransferByTransferFrom(transfer_from string) ([]*record.TransferRecord, error) {
-	res, err := r.db.GetTransfersBySourceCard(r.ctx, transfer_from)
+// FindTransferByTransferFrom retrieves all transfer records where the given card is the sender.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - transfer_from: The sender card number.
+//
+// Returns:
+//   - []*record.TransferRecord: List of transfer records from the specified sender.
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindTransferByTransferFrom(ctx context.Context, transfer_from string) ([]*record.TransferRecord, error) {
+	res, err := r.db.GetTransfersBySourceCard(ctx, transfer_from)
 
 	if err != nil {
 		return nil, transfer_errors.ErrFindTransferByTransferFromFailed
 	}
 
-	return r.mapping.ToTransfersRecord(res), nil
+	so := r.mapper.ToTransfersRecord(res)
+
+	return so, nil
 }
 
-func (r *transferQueryRepository) FindTransferByTransferTo(transfer_to string) ([]*record.TransferRecord, error) {
-	res, err := r.db.GetTransfersByDestinationCard(r.ctx, transfer_to)
+// FindTransferByTransferTo retrieves all transfer records where the given card is the receiver.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - transfer_to: The receiver card number.
+//
+// Returns:
+//   - []*record.TransferRecord: List of transfer records to the specified receiver.
+//   - error: Any error encountered during the operation.
+func (r *transferQueryRepository) FindTransferByTransferTo(ctx context.Context, transfer_to string) ([]*record.TransferRecord, error) {
+	res, err := r.db.GetTransfersByDestinationCard(ctx, transfer_to)
 
 	if err != nil {
 		return nil, transfer_errors.ErrFindTransferByTransferToFailed
 	}
-	return r.mapping.ToTransfersRecord(res), nil
+
+	so := r.mapper.ToTransfersRecord(res)
+
+	return so, nil
 }

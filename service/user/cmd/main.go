@@ -5,6 +5,10 @@ import (
 	"go.uber.org/zap"
 )
 
+// main starts the gRPC server for the User Service.
+//
+// It sets up all required dependencies and handles graceful shutdown
+// when the service is interrupted.
 func main() {
 	server, shutdown, err := apps.NewServer()
 

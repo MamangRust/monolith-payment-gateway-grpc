@@ -13,44 +13,89 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type loginService struct {
-	ctx             context.Context
-	errorPassword   errorhandler.PasswordErrorHandler
-	errorToken      errorhandler.TokenErrorHandler
-	errorHandler    errorhandler.LoginErrorHandler
-	mencache        mencache.LoginCache
-	logger          logger.LoggerInterface
-	hash            hash.HashPassword
-	user            repository.UserRepository
-	refreshToken    repository.RefreshTokenRepository
-	token           auth.TokenManager
-	trace           trace.Tracer
-	tokenService    *tokenService
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+// LoginServiceDeps holds the parameters for the login service.
+type LoginServiceDeps struct {
+	// ErrorPassword handles password-related errors.
+	ErrorPassword errorhandler.PasswordErrorHandler
+
+	// ErrorToken handles token-related errors.
+	ErrorToken errorhandler.TokenErrorHandler
+
+	// ErrorHandler handles login-related errors.
+	ErrorHandler errorhandler.LoginErrorHandler
+
+	// Cache is the cache for login/session data.
+	Cache mencache.LoginCache
+
+	// Logger logs events and errors.
+	Logger logger.LoggerInterface
+
+	// Hash verifies and compares password hashes.
+	Hash hash.HashPassword
+
+	// UserRepository accesses user data from the database.
+	UserRepository repository.UserRepository
+
+	// RefreshToken manages refresh token storage.
+	RefreshToken repository.RefreshTokenRepository
+
+	// Token manages access and refresh token generation.
+	Token auth.TokenManager
+
+	// TokenService handles session token management.
+	TokenService *tokenService
 }
 
-func NewLoginService(
-	ctx context.Context,
-	errorPassword errorhandler.PasswordErrorHandler,
-	errorToken errorhandler.TokenErrorHandler,
-	errorHandler errorhandler.LoginErrorHandler,
-	mencache mencache.LoginCache,
-	logger logger.LoggerInterface,
-	hash hash.HashPassword,
-	userRepository repository.UserRepository,
-	refreshToken repository.RefreshTokenRepository,
-	token auth.TokenManager,
-	tokenService *tokenService,
-) *loginService {
+// loginService is the implementation of the LoginService interface.
+// It handles the logic for authenticating users, validating passwords,
+// issuing tokens, and caching login sessions.
+type loginService struct {
+	// Handles password-related errors.
+	errorPassword errorhandler.PasswordErrorHandler
+
+	// Handles token-related errors.
+	errorToken errorhandler.TokenErrorHandler
+
+	// Handles general login-related errors.
+	errorHandler errorhandler.LoginErrorHandler
+
+	// Cache for login attempts or user sessions.
+	mencache mencache.LoginCache
+
+	// Logging utility.
+	logger logger.LoggerInterface
+
+	// Responsible for comparing hashed passwords.
+	hash hash.HashPassword
+
+	// Repository for fetching user data.
+	user repository.UserRepository
+
+	// Repository for managing refresh tokens.
+	refreshToken repository.RefreshTokenRepository
+
+	// Token generator and validator.
+	token auth.TokenManager
+
+	// Token service used for managing session tokens.
+	tokenService *tokenService
+
+	observability observability.TraceLoggerObservability
+}
+
+// NewLoginService initializes and returns a new instance of loginService.
+// It sets up Prometheus metrics for tracking request counts and durations, and registers these metrics.
+// The function takes LoginServiceDeps which includes context, error handlers, cache, logger,
+// user repository, refresh token repository, token manager, and token service.
+// Returns a pointer to the initialized loginService.
+func NewLoginService(params *LoginServiceDeps) *loginService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "login_service_requests_total",
@@ -58,6 +103,7 @@ func NewLoginService(
 		},
 		[]string{"method", "status"},
 	)
+
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "login_service_request_duration_seconds",
@@ -69,39 +115,46 @@ func NewLoginService(
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(otel.Tracer("login-service"), params.Logger, requestCounter, requestDuration)
+
 	return &loginService{
-		ctx:             ctx,
-		errorPassword:   errorPassword,
-		errorToken:      errorToken,
-		errorHandler:    errorHandler,
-		mencache:        mencache,
-		logger:          logger,
-		hash:            hash,
-		user:            userRepository,
-		refreshToken:    refreshToken,
-		token:           token,
-		trace:           otel.Tracer("login-service"),
-		tokenService:    tokenService,
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		errorPassword: params.ErrorPassword,
+		errorToken:    params.ErrorToken,
+		errorHandler:  params.ErrorHandler,
+		mencache:      params.Cache,
+		logger:        params.Logger,
+		hash:          params.Hash,
+		user:          params.UserRepository,
+		refreshToken:  params.RefreshToken,
+		token:         params.Token,
+		tokenService:  params.TokenService,
+		observability: observability,
 	}
 }
 
-func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResponse, *response.ErrorResponse) {
+// Login authenticates a user using their credentials and returns a token upon success.
+//
+// Parameters:
+//   - ctx: the context for the operation
+//   - request: the authentication request payload containing email and password
+//
+// Returns:
+//   - A TokenResponse if authentication is successful, or an ErrorResponse if it fails.
+func (s *loginService) Login(ctx context.Context, request *requests.AuthRequest) (*response.TokenResponse, *response.ErrorResponse) {
 	const method = "Login"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("email", request.Email))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("email", request.Email))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedToken, found := s.mencache.GetCachedLogin(request.Email); found {
+	if cachedToken, found := s.mencache.GetCachedLogin(ctx, request.Email); found {
 		logSuccess("Successfully logged in", zap.String("email", request.Email))
 		return cachedToken, nil
 	}
 
-	res, err := s.user.FindByEmailAndVerify(request.Email)
+	res, err := s.user.FindByEmailAndVerify(ctx, request.Email)
 	if err != nil {
 		return s.errorHandler.HandleFindEmailError(err, method, "LOGIN_ERR", span, &status, zap.Error(err))
 	}
@@ -116,7 +169,7 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 		return s.errorToken.HandleCreateAccessTokenError(err, method, "CREATE_ACCESS_TOKEN_ERR", span, &status, zap.Error(err))
 	}
 
-	refreshToken, err := s.tokenService.createRefreshToken(res.ID)
+	refreshToken, err := s.tokenService.createRefreshToken(ctx, res.ID)
 	if err != nil {
 		return s.errorToken.HandleCreateRefreshTokenError(err, method, "CREATE_REFRESH_TOKEN_ERR", span, &status, zap.Error(err))
 	}
@@ -126,51 +179,9 @@ func (s *loginService) Login(request *requests.AuthRequest) (*response.TokenResp
 		RefreshToken: refreshToken,
 	}
 
-	s.mencache.SetCachedLogin(request.Email, tokenResp, time.Minute)
+	s.mencache.SetCachedLogin(ctx, request.Email, tokenResp, time.Minute)
 
 	logSuccess("Successfully logged in", zap.String("email", request.Email))
 
 	return tokenResp, nil
-}
-
-func (s *loginService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *loginService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

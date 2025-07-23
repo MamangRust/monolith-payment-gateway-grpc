@@ -6,25 +6,45 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/merchant"
 )
 
+// NewMerchantTransactionRepository creates a new instance of MerchantTransactionRepository
 type merchantTransactionRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.MerchantRecordMapping
+	db     *db.Queries
+	mapper recordmapper.MerchantTransactionRecordMapper
 }
 
-func NewMerchantTransactionRepository(db *db.Queries, ctx context.Context, mapping recordmapper.MerchantRecordMapping) *merchantTransactionRepository {
+// NewMerchantTransactionRepository initializes a new instance of merchantTransactionRepository
+// with the provided database queries, context, and merchant record mapper. This repository
+// is responsible for executing transaction-related operations on merchant records in the database.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - ctx: The context to be used for database operations, allowing for cancellation and timeout.
+//   - mapper: A MerchantRecordMapping that provides methods to map database rows to Merchant domain models.
+//
+// Returns:
+//   - A pointer to the newly created merchantTransactionRepository instance.
+func NewMerchantTransactionRepository(db *db.Queries, mapper recordmapper.MerchantTransactionRecordMapper) MerchantTransactionRepository {
 	return &merchantTransactionRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *merchantTransactionRepository) FindAllTransactions(req *requests.FindAllMerchantTransactions) ([]*record.MerchantTransactionsRecord, *int, error) {
+// FindAllTransactions retrieves a list of merchant transactions with pagination support.
+// It returns a list of MerchantTransactionsRecord objects, the total count of records, and an error.
+//
+// Parameters:
+//   - req: A FindAllMerchantTransactions object containing the search query, page number, and page size.
+//
+// Returns:
+//   - A list of MerchantTransactionsRecord objects, which contain the merchant transaction data.
+//   - The total count of records, which is used to calculate the number of pages.
+//   - An error, which is non-nil if the operation fails.
+func (r *merchantTransactionRepository) FindAllTransactions(ctx context.Context, req *requests.FindAllMerchantTransactions) ([]*record.MerchantTransactionsRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.FindAllTransactionsParams{
@@ -33,7 +53,7 @@ func (r *merchantTransactionRepository) FindAllTransactions(req *requests.FindAl
 		Offset:  int32(offset),
 	}
 
-	merchant, err := r.db.FindAllTransactions(r.ctx, reqDb)
+	merchant, err := r.db.FindAllTransactions(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindAllTransactionsFailed
@@ -45,10 +65,20 @@ func (r *merchantTransactionRepository) FindAllTransactions(req *requests.FindAl
 	} else {
 		totalCount = 0
 	}
-	return r.mapping.ToMerchantsTransactionRecord(merchant), &totalCount, nil
+	return r.mapper.ToMerchantsTransactionRecord(merchant), &totalCount, nil
 }
 
-func (r *merchantTransactionRepository) FindAllTransactionsByMerchant(req *requests.FindAllMerchantTransactionsById) ([]*record.MerchantTransactionsRecord, *int, error) {
+// FindAllTransactionsByMerchant retrieves a list of merchant transactions for a specific merchant ID with pagination support.
+// It returns a list of MerchantTransactionsRecord objects, the total count of records, and an error.
+//
+// Parameters:
+//   - req: A FindAllMerchantTransactionsById object containing the search query, page number, page size, and merchant ID.
+//
+// Returns:
+//   - A list of MerchantTransactionsRecord objects, which contain the merchant transaction data.
+//   - The total count of records, which is used to calculate the number of pages.
+//   - An error, which is non-nil if the operation fails.
+func (r *merchantTransactionRepository) FindAllTransactionsByMerchant(ctx context.Context, req *requests.FindAllMerchantTransactionsById) ([]*record.MerchantTransactionsRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.FindAllTransactionsByMerchantParams{
@@ -58,7 +88,7 @@ func (r *merchantTransactionRepository) FindAllTransactionsByMerchant(req *reque
 		Offset:     int32(offset),
 	}
 
-	merchant, err := r.db.FindAllTransactionsByMerchant(r.ctx, reqDb)
+	merchant, err := r.db.FindAllTransactionsByMerchant(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindAllTransactionsByMerchantFailed
@@ -71,10 +101,20 @@ func (r *merchantTransactionRepository) FindAllTransactionsByMerchant(req *reque
 		totalCount = 0
 	}
 
-	return r.mapping.ToMerchantsTransactionByMerchantRecord(merchant), &totalCount, nil
+	return r.mapper.ToMerchantsTransactionByMerchantRecord(merchant), &totalCount, nil
 }
 
-func (r *merchantTransactionRepository) FindAllTransactionsByApikey(req *requests.FindAllMerchantTransactionsByApiKey) ([]*record.MerchantTransactionsRecord, *int, error) {
+// FindAllTransactionsByApikey retrieves a list of merchant transactions filtered by API key with pagination support.
+// It returns a list of MerchantTransactionsRecord objects, the total count of records, and an error.
+//
+// Parameters:
+//   - req: A FindAllMerchantTransactionsByApiKey object containing the API key, search query, page number, and page size.
+//
+// Returns:
+//   - A list of MerchantTransactionsRecord objects, which contain the merchant transaction data.
+//   - The total count of records, which is used to calculate the number of pages.
+//   - An error, which is non-nil if the operation fails.
+func (r *merchantTransactionRepository) FindAllTransactionsByApikey(ctx context.Context, req *requests.FindAllMerchantTransactionsByApiKey) ([]*record.MerchantTransactionsRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.FindAllTransactionsByApikeyParams{
@@ -84,7 +124,7 @@ func (r *merchantTransactionRepository) FindAllTransactionsByApikey(req *request
 		Offset:  int32(offset),
 	}
 
-	merchant, err := r.db.FindAllTransactionsByApikey(r.ctx, reqDb)
+	merchant, err := r.db.FindAllTransactionsByApikey(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindAllTransactionsByApiKeyFailed
@@ -96,5 +136,5 @@ func (r *merchantTransactionRepository) FindAllTransactionsByApikey(req *request
 	} else {
 		totalCount = 0
 	}
-	return r.mapping.ToMerchantsTransactionByApikeyRecord(merchant), &totalCount, nil
+	return r.mapper.ToMerchantsTransactionByApikeyRecord(merchant), &totalCount, nil
 }

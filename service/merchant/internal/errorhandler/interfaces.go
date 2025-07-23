@@ -7,6 +7,8 @@ import (
 )
 
 type MerchantQueryErrorHandler interface {
+	// HandleRepositoryPaginationError is a function to handle error from repository pagination
+	// the error will be logged and wrapped with ErrorResponse, the response will be nil
 	HandleRepositoryPaginationError(
 		err error,
 		method, tracePrefix string,
@@ -87,7 +89,7 @@ type MerchantCommandErrorHandler interface {
 
 	HandleTrashedMerchantError(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
-	) (*response.MerchantResponse, *response.ErrorResponse)
+	) (*response.MerchantResponseDeleteAt, *response.ErrorResponse)
 
 	HandleRestoreMerchantError(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
@@ -121,7 +123,7 @@ type MerchantDocumentCommandErrorHandler interface {
 
 	HandleTrashedMerchantDocumentError(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,
-	) (*response.MerchantDocumentResponse, *response.ErrorResponse)
+	) (*response.MerchantDocumentResponseDeleteAt, *response.ErrorResponse)
 
 	HandleRestoreMerchantDocumentError(
 		err error, method, tracePrefix string, span trace.Span, status *string, fields ...zap.Field,

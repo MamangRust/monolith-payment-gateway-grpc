@@ -6,9 +6,14 @@ metadata:
 data:
   APP_ENV: "kubernetes"
   DB_DRIVER: "postgres"
-  DB_HOST: "postgres"
+  DB_HOST: "postgres.payment-gateway.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "PAYMENT_GATEWAY"
+
+  SMTP_SERVER: smtp.ethereal.email
+  SMTP_PORT: "587"
+  SMTP_USER: julius.davis@ethereal.email
+  SMTP_PASS: 4vWXpZfTMPAazhVZFU
 
   POSTGRES_DB: "PAYMENT_GATEWAY"
 
@@ -17,11 +22,11 @@ data:
   DB_CONN_MAX_LIFETIME: "30m"
 
   DB_SEEDER: "true"
-  APP_LOGGER: "production"
+  APP_LOGGER: "kubernetes"
 
   KAFKA_BROKERS: "kafka.payment-gateway.svc.cluster.local:9092"
 
-  REDIS_HOST: "redis"
+  REDIS_HOST: "redis.payment-gateway.svc.cluster.local"
   REDIS_PORT: "6379"
 
   REDIS_DB_AUTH: "0"
@@ -34,6 +39,7 @@ data:
   REDIS_DB_TOPUP: "7"
   REDIS_DB_TRANSFER: "8"
   REDIS_DB_WITHDRAW: "9"
+  REDIS_DB_APIGATEWAY: "10"
 
   OTEL_ENDPOINT: "otel-collector.payment-gateway.svc.cluster.local:4317"
 

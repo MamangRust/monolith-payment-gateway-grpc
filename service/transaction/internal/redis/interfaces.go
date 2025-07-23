@@ -1,80 +1,141 @@
 package mencache
 
 import (
+	"context"
+
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
-type TransactinQueryCache interface {
-	GetCachedTransactionsCache(req *requests.FindAllTransactions) ([]*response.TransactionResponse, *int, bool)
-	SetCachedTransactionsCache(req *requests.FindAllTransactions, data []*response.TransactionResponse, total *int)
-	GetCachedTransactionByCardNumberCache(req *requests.FindAllTransactionCardNumber) ([]*response.TransactionResponse, *int, bool)
-	SetCachedTransactionByCardNumberCache(req *requests.FindAllTransactionCardNumber, data []*response.TransactionResponse, total *int)
+// TransactionQueryCache defines methods for caching transaction query results.
+type TransactionQueryCache interface {
+	// GetCachedTransactionsCache retrieves cached paginated transactions.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Filter and pagination parameters.
+	//
+	// Returns:
+	//   - []*response.TransactionResponse: List of transactions.
+	//   - *int: Total number of matching records.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionsCache(ctx context.Context, req *requests.FindAllTransactions) ([]*response.TransactionResponse, *int, bool)
 
-	GetCachedTransactionActiveCache(req *requests.FindAllTransactions) ([]*response.TransactionResponseDeleteAt, *int, bool)
-	SetCachedTransactionActiveCache(req *requests.FindAllTransactions, data []*response.TransactionResponseDeleteAt, total *int)
-	GetCachedTransactionTrashedCache(req *requests.FindAllTransactions) ([]*response.TransactionResponseDeleteAt, *int, bool)
-	SetCachedTransactionTrashedCache(req *requests.FindAllTransactions, data []*response.TransactionResponseDeleteAt, total *int)
+	// SetCachedTransactionsCache stores paginated transaction results in cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Original request used as cache key.
+	//   - data: List of transaction responses to cache.
+	//   - total: Total number of records for pagination.
+	SetCachedTransactionsCache(ctx context.Context, req *requests.FindAllTransactions, data []*response.TransactionResponse, total *int)
 
-	GetCachedTransactionByMerchantIdCache(merchant_id int) ([]*response.TransactionResponse, bool)
-	SetCachedTransactionByMerchantIdCache(merchant_id int, data []*response.TransactionResponse)
+	// GetCachedTransactionByCardNumberCache retrieves cached transactions for a specific card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Request containing card number and filters.
+	//
+	// Returns:
+	//   - []*response.TransactionResponse: Transactions matching the card number.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionByCardNumberCache(ctx context.Context, req *requests.FindAllTransactionCardNumber) ([]*response.TransactionResponse, *int, bool)
 
-	GetCachedTransactionCache(id int) (*response.TransactionResponse, bool)
-	SetCachedTransactionCache(data *response.TransactionResponse)
-}
+	// SetCachedTransactionByCardNumberCache caches transactions by card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Request containing card number and filters.
+	//   - data: Transactions to cache.
+	//   - total: Total number of matching records.
+	SetCachedTransactionByCardNumberCache(ctx context.Context, req *requests.FindAllTransactionCardNumber, data []*response.TransactionResponse, total *int)
 
-type TransactonStatistcCache interface {
-	GetMonthTransactonStatusSuccessCache(req *requests.MonthStatusTransaction) ([]*response.TransactionResponseMonthStatusSuccess, bool)
-	SetMonthTransactonStatusSuccessCache(req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusSuccess)
+	// GetCachedTransactionActiveCache retrieves cached active transactions (not soft-deleted).
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Filter and pagination request.
+	//
+	// Returns:
+	//   - []*response.TransactionResponseDeleteAt: List of active transactions.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionActiveCache(ctx context.Context, req *requests.FindAllTransactions) ([]*response.TransactionResponseDeleteAt, *int, bool)
 
-	GetYearTransactonStatusSuccessCache(year int) ([]*response.TransactionResponseYearStatusSuccess, bool)
-	SetYearTransactonStatusSuccessCache(year int, data []*response.TransactionResponseYearStatusSuccess)
+	// SetCachedTransactionActiveCache caches active transactions.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Original filter request.
+	//   - data: Transactions to cache.
+	//   - total: Total number of records.
+	SetCachedTransactionActiveCache(ctx context.Context, req *requests.FindAllTransactions, data []*response.TransactionResponseDeleteAt, total *int)
 
-	GetMonthTransactonStatusFailedCache(req *requests.MonthStatusTransaction) ([]*response.TransactionResponseMonthStatusFailed, bool)
-	SetMonthTransactonStatusFailedCache(req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusFailed)
+	// GetCachedTransactionTrashedCache retrieves cached trashed (soft-deleted) transactions.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Filter and pagination request.
+	//
+	// Returns:
+	//   - []*response.TransactionResponseDeleteAt: List of trashed transactions.
+	//   - *int: Total records.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionTrashedCache(ctx context.Context, req *requests.FindAllTransactions) ([]*response.TransactionResponseDeleteAt, *int, bool)
 
-	GetYearTransactonStatusFailedCache(year int) ([]*response.TransactionResponseYearStatusFailed, bool)
-	SetYearTransactonStatusFailedCache(year int, data []*response.TransactionResponseYearStatusFailed)
+	// SetCachedTransactionTrashedCache stores trashed transactions in cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: Original request with filters.
+	//   - data: Trashed transactions to cache.
+	//   - total: Total number of records.
+	SetCachedTransactionTrashedCache(ctx context.Context, req *requests.FindAllTransactions, data []*response.TransactionResponseDeleteAt, total *int)
 
-	GetMonthlyPaymentMethodsCache(year int) ([]*response.TransactionMonthMethodResponse, bool)
-	SetMonthlyPaymentMethodsCache(year int, data []*response.TransactionMonthMethodResponse)
+	// GetCachedTransactionByMerchantIdCache retrieves cached transactions for a merchant ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - merchant_id: ID of the merchant.
+	//
+	// Returns:
+	//   - []*response.TransactionResponse: Transactions related to the merchant.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionByMerchantIdCache(ctx context.Context, merchant_id int) ([]*response.TransactionResponse, bool)
 
-	GetYearlyPaymentMethodsCache(year int) ([]*response.TransactionYearMethodResponse, bool)
-	SetYearlyPaymentMethodsCache(year int, data []*response.TransactionYearMethodResponse)
+	// SetCachedTransactionByMerchantIdCache caches transactions by merchant ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - merchant_id: ID of the merchant.
+	//   - data: Transactions to cache.
+	SetCachedTransactionByMerchantIdCache(ctx context.Context, merchant_id int, data []*response.TransactionResponse)
 
-	GetMonthlyAmountsCache(year int) ([]*response.TransactionMonthAmountResponse, bool)
-	SetMonthlyAmountsCache(year int, data []*response.TransactionMonthAmountResponse)
+	// GetCachedTransactionCache retrieves a transaction by ID from cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The transaction ID.
+	//
+	// Returns:
+	//   - *response.TransactionResponse: The transaction response.
+	//   - bool: Whether the cache was found.
+	GetCachedTransactionCache(ctx context.Context, id int) (*response.TransactionResponse, bool)
 
-	GetYearlyAmountsCache(year int) ([]*response.TransactionYearlyAmountResponse, bool)
-	SetYearlyAmountsCache(year int, data []*response.TransactionYearlyAmountResponse)
-}
-
-type TransactionStatisticByCardCache interface {
-	GetMonthTransactionStatusSuccessByCardCache(req *requests.MonthStatusTransactionCardNumber) ([]*response.TransactionResponseMonthStatusSuccess, bool)
-	SetMonthTransactionStatusSuccessByCardCache(req *requests.MonthStatusTransactionCardNumber, data []*response.TransactionResponseMonthStatusSuccess)
-
-	GetYearTransactionStatusSuccessByCardCache(req *requests.YearStatusTransactionCardNumber) ([]*response.TransactionResponseYearStatusSuccess, bool)
-	SetYearTransactionStatusSuccessByCardCache(req *requests.YearStatusTransactionCardNumber, data []*response.TransactionResponseYearStatusSuccess)
-
-	GetMonthTransactionStatusFailedByCardCache(req *requests.MonthStatusTransactionCardNumber) ([]*response.TransactionResponseMonthStatusFailed, bool)
-	SetMonthTransactionStatusFailedByCardCache(req *requests.MonthStatusTransactionCardNumber, data []*response.TransactionResponseMonthStatusFailed)
-
-	GetYearTransactionStatusFailedByCardCache(req *requests.YearStatusTransactionCardNumber) ([]*response.TransactionResponseYearStatusFailed, bool)
-	SetYearTransactionStatusFailedByCardCache(req *requests.YearStatusTransactionCardNumber, data []*response.TransactionResponseYearStatusFailed)
-
-	GetMonthlyPaymentMethodsByCardCache(req *requests.MonthYearPaymentMethod) ([]*response.TransactionMonthMethodResponse, bool)
-	SetMonthlyPaymentMethodsByCardCache(req *requests.MonthYearPaymentMethod, data []*response.TransactionMonthMethodResponse)
-
-	GetYearlyPaymentMethodsByCardCache(req *requests.MonthYearPaymentMethod) ([]*response.TransactionYearMethodResponse, bool)
-	SetYearlyPaymentMethodsByCardCache(req *requests.MonthYearPaymentMethod, data []*response.TransactionYearMethodResponse)
-
-	GetMonthlyAmountsByCardCache(req *requests.MonthYearPaymentMethod) ([]*response.TransactionMonthAmountResponse, bool)
-	SetMonthlyAmountsByCardCache(req *requests.MonthYearPaymentMethod, data []*response.TransactionMonthAmountResponse)
-
-	GetYearlyAmountsByCardCache(req *requests.MonthYearPaymentMethod) ([]*response.TransactionYearlyAmountResponse, bool)
-	SetYearlyAmountsByCardCache(req *requests.MonthYearPaymentMethod, data []*response.TransactionYearlyAmountResponse)
+	// SetCachedTransactionCache caches a transaction by ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - data: The transaction response to cache.
+	SetCachedTransactionCache(ctx context.Context, data *response.TransactionResponse)
 }
 
 type TransactionCommandCache interface {
-	DeleteTransactionCache(id int)
+	// DeleteTransactionCache removes a cached transaction entry by its ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The transaction ID whose cache entry should be deleted.
+	DeleteTransactionCache(ctx context.Context, id int)
 }

@@ -1,17 +1,29 @@
 package mencache
 
-import "fmt"
+import (
+	"context"
+	"fmt"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
+)
+
+// roleCommandCache is a struct that represents the cache store
 type roleCommandCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewRoleCommandCache(store *CacheStore) *roleCommandCache {
+// NewRoleCommandCache creates a new roleCommandCache instance
+func NewRoleCommandCache(store *sharedcachehelpers.CacheStore) *roleCommandCache {
 	return &roleCommandCache{store: store}
 }
 
-func (s *roleCommandCache) DeleteCachedRole(id int) {
+// DeleteCachedRole removes a cached role by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - id: The ID of the role to delete from cache.
+func (s *roleCommandCache) DeleteCachedRole(ctx context.Context, id int) {
 	key := fmt.Sprintf(roleByIdCacheKey, id)
 
-	DeleteFromCache(s.store, key)
+	sharedcachehelpers.DeleteFromCache(ctx, s.store, key)
 }

@@ -1,28 +1,40 @@
 package repository
 
 import (
-	"context"
-
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	rolemapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/role"
+	usermapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
 )
 
-type Repositories struct {
-	UserCommand UserCommandRepository
-	UserQuery   UserQueryRepository
-	Role        RoleRepository
+type Repositories interface {
+	UserQuery() UserQueryRepository
+	UserCommand() UserCommandRepository
+	Role() RoleRepository
 }
 
-type Deps struct {
-	DB           *db.Queries
-	Ctx          context.Context
-	MapperRecord *recordmapper.RecordMapper
+type repositories struct {
+	userQuery   UserQueryRepository
+	userCommand UserCommandRepository
+	role        RoleRepository
 }
 
-func NewRepositories(deps *Deps) *Repositories {
-	return &Repositories{
-		UserCommand: NewUserCommandRepository(deps.DB, deps.Ctx, deps.MapperRecord.UserRecordMapper),
-		UserQuery:   NewUserQueryRepository(deps.DB, deps.Ctx, deps.MapperRecord.UserRecordMapper),
-		Role:        NewRoleRepository(deps.DB, deps.Ctx, deps.MapperRecord.RoleRecordMapper),
+func NewRepositories(db *db.Queries) Repositories {
+	usermapper := usermapper.NewUserRecordMapper()
+	rolemapper := rolemapper.NewRoleQueryRecordMapping()
+
+	return &repositories{
+		userCommand: NewUserCommandRepository(db, usermapper.CommandMapper()),
+		userQuery:   NewUserQueryRepository(db, usermapper.QueryMapper()),
+		role:        NewRoleRepository(db, rolemapper),
 	}
+}
+
+func (r *repositories) UserQuery() UserQueryRepository {
+	return r.userQuery
+}
+func (r *repositories) UserCommand() UserCommandRepository {
+	return r.userCommand
+}
+func (r *repositories) Role() RoleRepository {
+	return r.role
 }

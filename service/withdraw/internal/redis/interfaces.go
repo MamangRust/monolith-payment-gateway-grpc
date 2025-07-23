@@ -1,67 +1,123 @@
 package mencache
 
 import (
+	"context"
+
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+// WithdrawQueryCache handles caching operations for withdraw query results.
 type WithdrawQueryCache interface {
-	GetCachedWithdrawsCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponse, *int, bool)
-	SetCachedWithdrawsCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponse, total *int)
+	// GetCachedWithdrawsCache retrieves cached list of all withdraws.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters for finding all withdraws.
+	//
+	// Returns:
+	//   - []*response.WithdrawResponse: List of withdraws.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedWithdrawsCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponse, *int, bool)
 
-	GetCachedWithdrawByCardCache(req *requests.FindAllWithdrawCardNumber) ([]*response.WithdrawResponse, *int, bool)
-	SetCachedWithdrawByCardCache(req *requests.FindAllWithdrawCardNumber, data []*response.WithdrawResponse, total *int)
+	// SetCachedWithdrawsCache stores a list of withdraws in the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters used for caching.
+	//   - data: The withdraw response data to cache.
+	//   - total: Total number of records.
+	SetCachedWithdrawsCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponse, total *int)
 
-	GetCachedWithdrawActiveCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool)
-	SetCachedWithdrawActiveCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int)
+	// GetCachedWithdrawByCardCache retrieves cached withdraws for a specific card number.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters for finding withdraws by card number.
+	//
+	// Returns:
+	//   - []*response.WithdrawResponse: List of withdraws.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedWithdrawByCardCache(ctx context.Context, req *requests.FindAllWithdrawCardNumber) ([]*response.WithdrawResponse, *int, bool)
 
-	GetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool)
-	SetCachedWithdrawTrashedCache(req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int)
+	// SetCachedWithdrawByCardCache stores withdraws for a specific card number in the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters used for caching.
+	//   - data: The withdraw response data to cache.
+	//   - total: Total number of records.
+	SetCachedWithdrawByCardCache(ctx context.Context, req *requests.FindAllWithdrawCardNumber, data []*response.WithdrawResponse, total *int)
 
-	GetCachedWithdrawCache(id int) (*response.WithdrawResponse, bool)
-	SetCachedWithdrawCache(data *response.WithdrawResponse)
+	// GetCachedWithdrawActiveCache retrieves cached active (non-deleted) withdraws.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters for finding active withdraws.
+	//
+	// Returns:
+	//   - []*response.WithdrawResponseDeleteAt: List of active withdraws.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedWithdrawActiveCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool)
+
+	// SetCachedWithdrawActiveCache stores active withdraws in the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters used for caching.
+	//   - data: The active withdraw response data to cache.
+	//   - total: Total number of records.
+	SetCachedWithdrawActiveCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int)
+
+	// GetCachedWithdrawTrashedCache retrieves cached trashed (soft-deleted) withdraws.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters for finding trashed withdraws.
+	//
+	// Returns:
+	//   - []*response.WithdrawResponseDeleteAt: List of trashed withdraws.
+	//   - *int: Total number of records.
+	//   - bool: Whether the cache was found.
+	GetCachedWithdrawTrashedCache(ctx context.Context, req *requests.FindAllWithdraws) ([]*response.WithdrawResponseDeleteAt, *int, bool)
+
+	// SetCachedWithdrawTrashedCache stores trashed withdraws in the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - req: The request parameters used for caching.
+	//   - data: The trashed withdraw response data to cache.
+	//   - total: Total number of records.
+	SetCachedWithdrawTrashedCache(ctx context.Context, req *requests.FindAllWithdraws, data []*response.WithdrawResponseDeleteAt, total *int)
+
+	// GetCachedWithdrawCache retrieves cached withdraw by ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The ID of the withdraw to retrieve.
+	//
+	// Returns:
+	//   - *response.WithdrawResponse: The withdraw response.
+	//   - bool: Whether the cache was found.
+	GetCachedWithdrawCache(ctx context.Context, id int) (*response.WithdrawResponse, bool)
+
+	// SetCachedWithdrawCache stores a withdraw record in the cache.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - data: The withdraw response to cache.
+	SetCachedWithdrawCache(ctx context.Context, data *response.WithdrawResponse)
 }
 
+// WithdrawCommandCache handles caching operations related to mutation of withdraw records.
 type WithdrawCommandCache interface {
-	DeleteCachedWithdrawCache(id int)
-}
-
-type WithdrawStatisticCache interface {
-	GetCachedMonthWithdrawStatusSuccessCache(req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusSuccess, bool)
-	SetCachedMonthWithdrawStatusSuccessCache(req *requests.MonthStatusWithdraw, data []*response.WithdrawResponseMonthStatusSuccess)
-
-	GetCachedYearlyWithdrawStatusSuccessCache(year int) ([]*response.WithdrawResponseYearStatusSuccess, bool)
-	SetCachedYearlyWithdrawStatusSuccessCache(year int, data []*response.WithdrawResponseYearStatusSuccess)
-
-	GetCachedMonthWithdrawStatusFailedCache(req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusFailed, bool)
-	SetCachedMonthWithdrawStatusFailedCache(req *requests.MonthStatusWithdraw, data []*response.WithdrawResponseMonthStatusFailed)
-
-	GetCachedYearlyWithdrawStatusFailedCache(year int) ([]*response.WithdrawResponseYearStatusFailed, bool)
-	SetCachedYearlyWithdrawStatusFailedCache(year int, data []*response.WithdrawResponseYearStatusFailed)
-
-	GetCachedMonthlyWithdraws(year int) ([]*response.WithdrawMonthlyAmountResponse, bool)
-	SetCachedMonthlyWithdraws(year int, data []*response.WithdrawMonthlyAmountResponse)
-
-	GetCachedYearlyWithdraws(year int) ([]*response.WithdrawYearlyAmountResponse, bool)
-	SetCachedYearlyWithdraws(year int, data []*response.WithdrawYearlyAmountResponse)
-}
-
-type WithdrawStasticByCardCache interface {
-	GetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusSuccess, bool)
-	SetCachedMonthWithdrawStatusSuccessByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusSuccess)
-
-	GetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusSuccess, bool)
-	SetCachedYearlyWithdrawStatusSuccessByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusSuccess)
-
-	GetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber) ([]*response.WithdrawResponseMonthStatusFailed, bool)
-	SetCachedMonthWithdrawStatusFailedByCardNumber(req *requests.MonthStatusWithdrawCardNumber, data []*response.WithdrawResponseMonthStatusFailed)
-
-	GetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber) ([]*response.WithdrawResponseYearStatusFailed, bool)
-	SetCachedYearlyWithdrawStatusFailedByCardNumber(req *requests.YearStatusWithdrawCardNumber, data []*response.WithdrawResponseYearStatusFailed)
-
-	GetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawMonthlyAmountResponse, bool)
-	SetCachedMonthlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawMonthlyAmountResponse)
-
-	GetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber) ([]*response.WithdrawYearlyAmountResponse, bool)
-	SetCachedYearlyWithdrawsByCardNumber(req *requests.YearMonthCardNumber, data []*response.WithdrawYearlyAmountResponse)
+	// DeleteCachedWithdrawCache deletes a cached withdraw entry by ID.
+	//
+	// Parameters:
+	//   - ctx: The context for timeout and cancellation.
+	//   - id: The ID of the withdraw cache to delete.
+	DeleteCachedWithdrawCache(ctx context.Context, id int)
 }

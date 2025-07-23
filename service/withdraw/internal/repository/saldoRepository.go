@@ -7,50 +7,90 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
 )
 
+// saldoRepository is a struct that implements the SaldoRepository interface
 type saldoRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.SaldoRecordMapping
+	db     *db.Queries
+	mapper recordmapper.SaldoQueryRecordMapping
 }
 
-func NewSaldoRepository(db *db.Queries, ctx context.Context, mapping recordmapper.SaldoRecordMapping) *saldoRepository {
+// NewSaldoRepository initializes a new instance of saldoRepository with the provided
+// database queries, context, and saldo record mapper. This repository is responsible for
+// executing operations related to saldo records in the database.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - mapper: A SaldoRecordMapping that provides methods to map database rows to SaldoRecord domain models.
+//
+// Returns:
+//   - A pointer to the newly created saldoRepository instance.
+func NewSaldoRepository(db *db.Queries, mapper recordmapper.SaldoQueryRecordMapping) SaldoRepository {
 	return &saldoRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *saldoRepository) FindByCardNumber(card_number string) (*record.SaldoRecord, error) {
-	res, err := r.db.GetSaldoByCardNumber(r.ctx, card_number)
+// FindByCardNumber retrieves a saldo record by card number.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number to search for.
+//
+// Returns:
+//   - *record.SaldoRecord: The found saldo record.
+//   - error: An error if the operation fails.
+func (r *saldoRepository) FindByCardNumber(ctx context.Context, card_number string) (*record.SaldoRecord, error) {
+	res, err := r.db.GetSaldoByCardNumber(ctx, card_number)
 
 	if err != nil {
 		return nil, saldo_errors.ErrFindSaldoByCardNumberFailed
 	}
 
-	return r.mapping.ToSaldoRecord(res), nil
+	so := r.mapper.ToSaldoRecord(res)
+
+	return so, nil
 }
 
-func (r *saldoRepository) UpdateSaldoBalance(request *requests.UpdateSaldoBalance) (*record.SaldoRecord, error) {
+// UpdateSaldoBalance updates the saldo balance for a specific card.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The update request containing balance data.
+//
+// Returns:
+//   - *record.SaldoRecord: The updated saldo record.
+//   - error: An error if the update fails.
+func (r *saldoRepository) UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*record.SaldoRecord, error) {
 	req := db.UpdateSaldoBalanceParams{
 		CardNumber:   request.CardNumber,
 		TotalBalance: int32(request.TotalBalance),
 	}
 
-	res, err := r.db.UpdateSaldoBalance(r.ctx, req)
+	res, err := r.db.UpdateSaldoBalance(ctx, req)
 
 	if err != nil {
 		return nil, saldo_errors.ErrUpdateSaldoBalanceFailed
 	}
 
-	return r.mapping.ToSaldoRecord(res), nil
+	so := r.mapper.ToSaldoRecord(res)
+
+	return so, nil
 }
 
-func (r *saldoRepository) UpdateSaldoWithdraw(request *requests.UpdateSaldoWithdraw) (*record.SaldoRecord, error) {
+// UpdateSaldoWithdraw updates the saldo balance after a withdrawal.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The update request related to withdrawal.
+//
+// Returns:
+//   - *record.SaldoRecord: The updated saldo record.
+//   - error: An error if the update fails.
+func (r *saldoRepository) UpdateSaldoWithdraw(ctx context.Context, request *requests.UpdateSaldoWithdraw) (*record.SaldoRecord, error) {
 	withdrawAmount := sql.NullInt32{
 		Int32: int32(*request.WithdrawAmount),
 		Valid: request.WithdrawAmount != nil,
@@ -69,11 +109,13 @@ func (r *saldoRepository) UpdateSaldoWithdraw(request *requests.UpdateSaldoWithd
 		WithdrawTime:   withdrawTime,
 	}
 
-	res, err := r.db.UpdateSaldoWithdraw(r.ctx, req)
+	res, err := r.db.UpdateSaldoWithdraw(ctx, req)
 
 	if err != nil {
 		return nil, saldo_errors.ErrUpdateSaldoWithdrawFailed
 	}
 
-	return r.mapping.ToSaldoRecord(res), nil
+	so := r.mapper.ToSaldoRecord(res)
+
+	return so, nil
 }

@@ -22,6 +22,9 @@ var (
 	)
 )
 
+// Register registers the Prometheus metrics: EmailSent, EmailFailed, and EmailRequests.
+// These metrics track the total number of emails sent successfully, failed emails,
+// and total email send attempts with their results, respectively.
 func Register() {
 	prometheus.MustRegister(EmailSent, EmailFailed, EmailRequests)
 }

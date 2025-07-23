@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis"
@@ -15,43 +14,91 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/service"
+	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/service"
+	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/merchantdocument"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type merchantDocumentCommandService struct {
-	kafka                             *kafka.Kafka
-	ctx                               context.Context
-	mencache                          mencache.MerchantDocumentCommandCache
-	errorMerchantDocumentCommand      errorhandler.MerchantDocumentCommandErrorHandler
-	trace                             trace.Tracer
-	merchantQueryRepository           repository.MerchantQueryRepository
-	merchantDocumentCommandRepository repository.MerchantDocumentCommandRepository
-	userRepository                    repository.UserRepository
-	logger                            logger.LoggerInterface
-	mapping                           responseservice.MerchantDocumentResponseMapper
-	requestCounter                    *prometheus.CounterVec
-	requestDuration                   *prometheus.HistogramVec
+// merchantDocumentCommandDeps contains the dependencies required to
+// construct a merchantDocumentCommandService.
+type merchantDocumentCommandDeps struct {
+	// Kafka is the Kafka client used to produce events.
+	Kafka *kafka.Kafka
+
+	// Ctx is the base context used in the service.
+	Ctx context.Context
+
+	// Cache is the cache layer for merchant document commands.
+	Cache mencache.MerchantDocumentCommandCache
+
+	// ErrorHandler handles errors for merchant document commands.
+	ErrorHandler errorhandler.MerchantDocumentCommandErrorHandler
+
+	// CommandRepository handles write operations on merchant documents.
+	CommandRepository repository.MerchantDocumentCommandRepository
+
+	// MerchantQueryRepository provides access to merchant query data.
+	MerchantQueryRepository repository.MerchantQueryRepository
+
+	// UserRepository provides access to user-related data.
+	UserRepository repository.UserRepository
+
+	// Logger is used for structured logging.
+	Logger logger.LoggerInterface
+
+	// Mapper maps internal data to response formats.
+	Mapper responseservice.MerchantDocumentCommandResponseMapper
 }
 
+// merchantDocumentCommandService handles merchant document command operations,
+// including creation, update, deletion, and restoration.
+type merchantDocumentCommandService struct {
+	// kafka is the Kafka client used to produce events.
+	kafka *kafka.Kafka
+
+	// ctx is the base context used throughout the service.
+	ctx context.Context
+
+	// mencache is the cache layer for merchant document commands.
+	mencache mencache.MerchantDocumentCommandCache
+
+	// errorMerchantDocumentCommand handles errors for merchant document commands.
+	errorMerchantDocumentCommand errorhandler.MerchantDocumentCommandErrorHandler
+
+	// merchantQueryRepository provides access to merchant query data.
+	merchantQueryRepository repository.MerchantQueryRepository
+
+	// merchantDocumentCommandRepository handles write operations on merchant documents.
+	merchantDocumentCommandRepository repository.MerchantDocumentCommandRepository
+
+	// userRepository provides access to user-related data.
+	userRepository repository.UserRepository
+
+	// logger is used for logging within the service.
+	logger logger.LoggerInterface
+
+	// mapper maps internal data to response formats.
+	mapper responseservice.MerchantDocumentCommandResponseMapper
+
+	observability observability.TraceLoggerObservability
+}
+
+// NewMerchantDocumentCommandService initializes a new instance of merchantDocumentCommandService with the provided parameters.
+// It sets up Prometheus metrics for tracking request counts and durations and returns a configured
+// merchantDocumentCommandService ready for handling merchant document-related commands.
+//
+// Parameters:
+// - params: A pointer to merchantDocumentCommandDeps containing the necessary dependencies.
+//
+// Returns:
+// - A pointer to an initialized merchantDocumentCommandService.
 func NewMerchantDocumentCommandService(
-	kafka *kafka.Kafka,
-	ctx context.Context,
-	mencache mencache.MerchantDocumentCommandCache,
-	errorMerchantDocumentCommand errorhandler.MerchantDocumentCommandErrorHandler,
-	merchantDocumentCommandRepository repository.MerchantDocumentCommandRepository,
-	merchantQueryRepository repository.MerchantQueryRepository,
-	userRepository repository.UserRepository,
-	logger logger.LoggerInterface,
-	mapping responseservice.MerchantDocumentResponseMapper,
-) *merchantDocumentCommandService {
+	params *merchantDocumentCommandDeps,
+) MerchantDocumentCommandService {
 	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "merchant_document_command_request_count",
 		Help: "Number of merchant document command requests MerchantDocumentCommandService",
@@ -65,44 +112,53 @@ func NewMerchantDocumentCommandService(
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(otel.Tracer("merchant-document-command-service"), params.Logger, requestCounter, requestDuration)
+
 	return &merchantDocumentCommandService{
-		kafka:                             kafka,
-		ctx:                               ctx,
-		mencache:                          mencache,
-		trace:                             otel.Tracer("merchant-document-command-service"),
-		errorMerchantDocumentCommand:      errorMerchantDocumentCommand,
-		merchantQueryRepository:           merchantQueryRepository,
-		merchantDocumentCommandRepository: merchantDocumentCommandRepository,
-		userRepository:                    userRepository,
-		logger:                            logger,
-		mapping:                           mapping,
-		requestCounter:                    requestCounter,
-		requestDuration:                   requestDuration,
+		kafka:                             params.Kafka,
+		ctx:                               params.Ctx,
+		mencache:                          params.Cache,
+		errorMerchantDocumentCommand:      params.ErrorHandler,
+		merchantQueryRepository:           params.MerchantQueryRepository,
+		merchantDocumentCommandRepository: params.CommandRepository,
+		userRepository:                    params.UserRepository,
+		logger:                            params.Logger,
+		mapper:                            params.Mapper,
+		observability:                     observability,
 	}
 }
 
-func (s *merchantDocumentCommandService) CreateMerchantDocument(request *requests.CreateMerchantDocumentRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+// CreateMerchantDocument creates a new merchant document.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The merchant document creation request payload.
+//
+// Returns:
+//   - *response.MerchantDocumentResponse: The created merchant document.
+//   - *response.ErrorResponse: An error if creation fails.
+func (s *merchantDocumentCommandService) CreateMerchantDocument(ctx context.Context, request *requests.CreateMerchantDocumentRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
 	const method = "CreateMerchantDocument"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	merchant, err := s.merchantQueryRepository.FindById(request.MerchantID)
+	merchant, err := s.merchantQueryRepository.FindById(ctx, request.MerchantID)
 
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_FIND_MERCHANT_BY_ID", span, &status, merchant_errors.ErrMerchantNotFoundRes, zap.Error(err))
 	}
 
-	user, err := s.userRepository.FindById(merchant.UserID)
+	user, err := s.userRepository.FindByUserId(ctx, merchant.UserID)
 
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_FIND_USER_BY_ID", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
 	}
 
-	merchantDocument, err := s.merchantDocumentCommandRepository.CreateMerchantDocument(request)
+	merchantDocument, err := s.merchantDocumentCommandRepository.CreateMerchantDocument(ctx, request)
 
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleCreateMerchantDocumentError(err, method, "FAILED_CREATE_MERCHANT_DOCUMENT", span, &status, zap.Error(err))
@@ -131,58 +187,76 @@ func (s *merchantDocumentCommandService) CreateMerchantDocument(request *request
 		return errorhandler.HandleSendEmailError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
-	so := s.mapping.ToMerchantDocumentResponse(merchantDocument)
+	so := s.mapper.ToMerchantDocumentResponse(merchantDocument)
 
 	logSuccess("Successfully created merchant document", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *merchantDocumentCommandService) UpdateMerchantDocument(request *requests.UpdateMerchantDocumentRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+// UpdateMerchantDocument updates an existing merchant document.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The update request containing new document data.
+//
+// Returns:
+//   - *response.MerchantDocumentResponse: The updated merchant document.
+//   - *response.ErrorResponse: An error if update fails.
+func (s *merchantDocumentCommandService) UpdateMerchantDocument(ctx context.Context, request *requests.UpdateMerchantDocumentRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
 	const method = "UpdateMerchantDocument"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	merchantDocument, err := s.merchantDocumentCommandRepository.UpdateMerchantDocument(request)
+	merchantDocument, err := s.merchantDocumentCommandRepository.UpdateMerchantDocument(ctx, request)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleUpdateMerchantDocumentError(err, method, "FAILED_UPDATE_MERCHANT_DOCUMENT", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToMerchantDocumentResponse(merchantDocument)
+	so := s.mapper.ToMerchantDocumentResponse(merchantDocument)
 
-	s.mencache.DeleteCachedMerchantDocuments(merchantDocument.ID)
+	s.mencache.DeleteCachedMerchantDocuments(ctx, merchantDocument.ID)
 
 	logSuccess("Successfully updated merchant document", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *merchantDocumentCommandService) UpdateMerchantDocumentStatus(request *requests.UpdateMerchantDocumentStatusRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+// UpdateMerchantDocumentStatus updates the status (e.g., verified, rejected) of a merchant document.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The request containing status update data.
+//
+// Returns:
+//   - *response.MerchantDocumentResponse: The updated merchant document.
+//   - *response.ErrorResponse: An error if status update fails.
+func (s *merchantDocumentCommandService) UpdateMerchantDocumentStatus(ctx context.Context, request *requests.UpdateMerchantDocumentStatusRequest) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
 	const method = "UpdateMerchantDocumentStatus"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	merchant, err := s.merchantQueryRepository.FindById(request.MerchantID)
+	merchant, err := s.merchantQueryRepository.FindById(ctx, request.MerchantID)
 
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_FIND_MERCHANT", span, &status, merchant_errors.ErrMerchantNotFoundRes, zap.Error(err))
 	}
 
-	user, err := s.userRepository.FindById(merchant.UserID)
+	user, err := s.userRepository.FindByUserId(ctx, merchant.UserID)
 
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
 	}
 
-	merchantDocument, err := s.merchantDocumentCommandRepository.UpdateMerchantDocumentStatus(request)
+	merchantDocument, err := s.merchantDocumentCommandRepository.UpdateMerchantDocumentStatus(ctx, request)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleUpdateMerchantDocumentStatusError(err, method, "FAILED_UPDATE_MERCHANT_DOCUMENT_STATUS", span, &status, zap.Error(err))
 	}
@@ -239,69 +313,96 @@ func (s *merchantDocumentCommandService) UpdateMerchantDocumentStatus(request *r
 		return errorhandler.HandleSendEmailError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_SEND_EMAIL", span, &status, merchant_errors.ErrFailedSendEmail, zap.Error(err))
 	}
 
-	so := s.mapping.ToMerchantDocumentResponse(merchantDocument)
+	so := s.mapper.ToMerchantDocumentResponse(merchantDocument)
 
-	s.mencache.DeleteCachedMerchantDocuments(merchantDocument.ID)
+	s.mencache.DeleteCachedMerchantDocuments(ctx, merchantDocument.ID)
 
 	logSuccess("Successfully updated merchant document status", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *merchantDocumentCommandService) TrashedMerchantDocument(documentID int) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+// TrashedMerchantDocument soft-deletes a merchant document by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - document_id: The ID of the document to be soft-deleted.
+//
+// Returns:
+//   - *response.MerchantDocumentResponse: The trashed document.
+//   - *response.ErrorResponse: An error if the operation fails.
+func (s *merchantDocumentCommandService) TrashedMerchantDocument(ctx context.Context, documentID int) (*response.MerchantDocumentResponseDeleteAt, *response.ErrorResponse) {
 	const method = "TrashedMerchantDocument"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.merchantDocumentCommandRepository.TrashedMerchantDocument(documentID)
+	res, err := s.merchantDocumentCommandRepository.TrashedMerchantDocument(ctx, documentID)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleTrashedMerchantDocumentError(err, method, "FAILED_TRASH_DOCUMENT", span, &status, zap.Error(err))
 	}
 
-	s.mencache.DeleteCachedMerchantDocuments(documentID)
+	s.mencache.DeleteCachedMerchantDocuments(ctx, documentID)
 
-	so := s.mapping.ToMerchantDocumentResponse(res)
+	so := s.mapper.ToMerchantDocumentResponseDeleteAt(res)
 
 	logSuccess("Successfully trashed document", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *merchantDocumentCommandService) RestoreMerchantDocument(documentID int) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+// RestoreMerchantDocument restores a soft-deleted merchant document by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - document_id: The ID of the document to restore.
+//
+// Returns:
+//   - *response.MerchantDocumentResponse: The restored document.
+//   - *response.ErrorResponse: An error if restoration fails.
+func (s *merchantDocumentCommandService) RestoreMerchantDocument(ctx context.Context, documentID int) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
 	const method = "RestoreMerchantDocument"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.merchantDocumentCommandRepository.RestoreMerchantDocument(documentID)
+	res, err := s.merchantDocumentCommandRepository.RestoreMerchantDocument(ctx, documentID)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleRestoreMerchantDocumentError(err, method, "FAILED_RESTORE_DOCUMENT", span, &status, zap.Int("document_id", documentID))
 	}
 
-	so := s.mapping.ToMerchantDocumentResponse(res)
+	so := s.mapper.ToMerchantDocumentResponse(res)
 
 	logSuccess("Successfully restored document", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *merchantDocumentCommandService) DeleteMerchantDocumentPermanent(documentID int) (bool, *response.ErrorResponse) {
+// DeleteMerchantDocumentPermanent permanently deletes a merchant document by its ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - document_id: The ID of the document to delete.
+//
+// Returns:
+//   - bool: True if the deletion was successful.
+//   - *response.ErrorResponse: An error if the deletion fails.
+func (s *merchantDocumentCommandService) DeleteMerchantDocumentPermanent(ctx context.Context, documentID int) (bool, *response.ErrorResponse) {
 	const method = "DeleteMerchantDocumentPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.merchantDocumentCommandRepository.DeleteMerchantDocumentPermanent(documentID)
+	_, err := s.merchantDocumentCommandRepository.DeleteMerchantDocumentPermanent(ctx, documentID)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleDeleteMerchantDocumentPermanentError(err, method, "FAILED_DELETE_DOCUMENT_PERMANENT", span, &status, zap.Int("document_id", documentID))
 	}
@@ -311,16 +412,24 @@ func (s *merchantDocumentCommandService) DeleteMerchantDocumentPermanent(documen
 	return true, nil
 }
 
-func (s *merchantDocumentCommandService) RestoreAllMerchantDocument() (bool, *response.ErrorResponse) {
+// RestoreAllMerchantDocument restores all soft-deleted merchant documents.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if all documents were restored successfully.
+//   - *response.ErrorResponse: An error if restoration fails.
+func (s *merchantDocumentCommandService) RestoreAllMerchantDocument(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "RestoreAllMerchantDocument"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.merchantDocumentCommandRepository.RestoreAllMerchantDocument()
+	_, err := s.merchantDocumentCommandRepository.RestoreAllMerchantDocument(ctx)
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleRestoreAllMerchantDocumentError(err, method, "FAILED_RESTORE_ALL_DOCUMENTS", span, &status, zap.Error(err))
 	}
@@ -330,16 +439,24 @@ func (s *merchantDocumentCommandService) RestoreAllMerchantDocument() (bool, *re
 	return true, nil
 }
 
-func (s *merchantDocumentCommandService) DeleteAllMerchantDocumentPermanent() (bool, *response.ErrorResponse) {
+// DeleteAllMerchantDocumentPermanent permanently deletes all soft-deleted merchant documents.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if all documents were deleted successfully.
+//   - *response.ErrorResponse: An error if deletion fails.
+func (s *merchantDocumentCommandService) DeleteAllMerchantDocumentPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "DeleteAllMerchantDocumentPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.merchantDocumentCommandRepository.DeleteAllMerchantDocumentPermanent()
+	_, err := s.merchantDocumentCommandRepository.DeleteAllMerchantDocumentPermanent(ctx)
 
 	if err != nil {
 		return s.errorMerchantDocumentCommand.HandleDeleteAllMerchantDocumentPermanentError(err, method, "FAILED_DELETE_ALL_DOCUMENTS_PERMANENT", span, &status, zap.Error(err))
@@ -348,46 +465,4 @@ func (s *merchantDocumentCommandService) DeleteAllMerchantDocumentPermanent() (b
 	logSuccess("Successfully deleted all documents", zap.Bool("success", true))
 
 	return true, nil
-}
-
-func (s *merchantDocumentCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *merchantDocumentCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

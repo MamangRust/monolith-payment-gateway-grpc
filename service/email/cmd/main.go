@@ -19,6 +19,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// main initializes and starts the email service. It sets up the logger, loads
+// environment configurations, initializes the tracer provider, registers the
+// metrics endpoint, and starts the Kafka consumers for various topics related
+// to email notifications. The function will block indefinitely after starting
+// the service.
 func main() {
 	logger, err := logger.NewLogger("email-service")
 	if err != nil {
@@ -66,6 +71,7 @@ func main() {
 		cfg.SMTPPort,
 		cfg.SMTPUser,
 		cfg.SMTPPass,
+		logger,
 	)
 
 	h := handler.NewEmailHandler(ctx, logger, m)
@@ -89,5 +95,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error starting consumer: %v", err)
 	}
+
+	logger.Info("Email service started", zap.String("service", "email-service"))
+
 	select {}
+
 }

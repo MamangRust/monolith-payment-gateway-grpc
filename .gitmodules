@@ -4,3 +4,9 @@
 [submodule "pkg"]
 	path = pkg
 	url = https://github.com/MamangRust/monolith-payment-gateway-pkg.git
+[submodule "proto"]
+	path = proto
+	url = https://github.com/MamangRust/monolith-payment-gateway-pb.git
+[submodule "pb"]
+	path = pb
+	url = https://github.com/MamangRust/monolith-payment-gateway-pb.git

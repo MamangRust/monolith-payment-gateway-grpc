@@ -1,12 +1,13 @@
 module github.com/MamangRust/monolith-payment-gateway-auth
 
-go 1.23.4
+go 1.24.3
 
 require (
-	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.10
-	github.com/MamangRust/monolith-payment-gateway-shared v1.0.4
+	github.com/MamangRust/monolith-payment-gateway-pb v0.0.4
+	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.16
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.13
 	github.com/prometheus/client_golang v1.22.0
-	github.com/redis/go-redis/v9 v9.9.0
+	github.com/redis/go-redis/v9 v9.11.0
 	github.com/spf13/viper v1.20.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 	go.opentelemetry.io/otel v1.35.0

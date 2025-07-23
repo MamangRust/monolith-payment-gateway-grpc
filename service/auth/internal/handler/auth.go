@@ -7,12 +7,13 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"go.uber.org/zap"
 
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/auth"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto"
-	"github.com/MamangRust/monolith-payment-gateway-shared/pb"
+	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/auth"
 )
 
+// authHandleGrpc represents the authentication service handler for the gRPC API.
 type authHandleGrpc struct {
 	pb.UnimplementedAuthServiceServer
 	registerService      service.RegistrationService
@@ -20,9 +21,17 @@ type authHandleGrpc struct {
 	passwordResetService service.PasswordResetService
 	identifyService      service.IdentifyService
 	logger               logger.LoggerInterface
-	mapping              protomapper.AuthProtoMapper
+	mapper               protomapper.AuthProtoMapper
 }
 
+// NewAuthHandleGrpc creates a new instance of the authentication service handler
+// for the gRPC API. It takes a pointer to the authentication service and a logger
+// as arguments and returns a pointer to the handler struct.
+//
+// The handler wraps the authentication service and provides methods for the
+// various authentication-related operations.
+//
+// The logger is used to log errors and other important events.
 func NewAuthHandleGrpc(authService *service.Service, logger logger.LoggerInterface) pb.AuthServiceServer {
 	return &authHandleGrpc{
 		registerService:      authService.Register,
@@ -30,40 +39,85 @@ func NewAuthHandleGrpc(authService *service.Service, logger logger.LoggerInterfa
 		passwordResetService: authService.PasswordReset,
 		identifyService:      authService.Identify,
 		logger:               logger,
-		mapping:              protomapper.NewAuthProtoMapper(),
+		mapper:               protomapper.NewAuthProtoMapper(),
 	}
 }
 
+// VerifyCode validates a password reset verification code.
+// It logs the operation's start and end, and utilizes the passwordResetService
+// to perform the verification. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful verification.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to VerifyCodeRequest containing the verification code to be validated.
+//
+// Returns:
+//   - A pointer to ApiResponseVerifyCode containing the verification result on success.
+//   - An error if the verification process fails.
 func (s *authHandleGrpc) VerifyCode(ctx context.Context, req *pb.VerifyCodeRequest) (*pb.ApiResponseVerifyCode, error) {
-	s.logger.Debug("VerifyCode called", zap.String("code", req.Code))
+	s.logger.Info("VerifyCode called", zap.String("code", req.Code))
 
-	_, err := s.passwordResetService.VerifyCode(req.Code)
+	_, err := s.passwordResetService.VerifyCode(ctx, req.Code)
 	if err != nil {
 		s.logger.Error("VerifyCode failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("VerifyCode successful")
-	return s.mapping.ToProtoResponseVerifyCode("success", "Verify code successful"), nil
+	so := s.mapper.ToProtoResponseVerifyCode("success", "Verification successful")
+
+	s.logger.Info("VerifyCode success", zap.String("code", req.Code))
+
+	return so, nil
 }
 
+// ForgotPassword initiates the password reset process.
+// It logs the operation's start and end, and utilizes the passwordResetService
+// to perform the password reset. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful password reset initiation.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to ForgotPasswordRequest containing the email address of the user to reset.
+//
+// Returns:
+//   - A pointer to ApiResponseForgotPassword containing the password reset result on success.
+//   - An error if the password reset process fails.
 func (s *authHandleGrpc) ForgotPassword(ctx context.Context, req *pb.ForgotPasswordRequest) (*pb.ApiResponseForgotPassword, error) {
-	s.logger.Debug("ForgotPassword called", zap.String("email", req.Email))
+	s.logger.Info("ForgotPassword called", zap.String("email", req.Email))
 
-	_, err := s.passwordResetService.ForgotPassword(req.Email)
+	_, err := s.passwordResetService.ForgotPassword(ctx, req.Email)
 	if err != nil {
 		s.logger.Error("ForgotPassword failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("ForgotPassword successful")
-	return s.mapping.ToProtoResponseForgotPassword("success", "Forgot password successful"), nil
+	so := s.mapper.ToProtoResponseForgotPassword("success", "Forgot password successful")
+
+	s.logger.Info("ForgotPassword successful", zap.Bool("success", true))
+
+	return so, nil
 }
 
+// ResetPassword completes the password reset process.
+// It logs the operation's start and end, and utilizes the passwordResetService
+// to perform the password reset. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful password reset completion.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to ResetPasswordRequest containing the new password and reset token.
+//
+// Returns:
+//   - A pointer to ApiResponseResetPassword containing the password reset result on success.
+//   - An error if the password reset process fails.
 func (s *authHandleGrpc) ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) (*pb.ApiResponseResetPassword, error) {
-	s.logger.Debug("ResetPassword called", zap.String("reset_token", req.ResetToken))
+	s.logger.Info("ResetPassword called", zap.String("reset_token", req.ResetToken))
 
-	_, err := s.passwordResetService.ResetPassword(&requests.CreateResetPasswordRequest{
+	_, err := s.passwordResetService.ResetPassword(ctx, &requests.CreateResetPasswordRequest{
 		ResetToken:      req.ResetToken,
 		Password:        req.Password,
 		ConfirmPassword: req.ConfirmPassword,
@@ -73,56 +127,123 @@ func (s *authHandleGrpc) ResetPassword(ctx context.Context, req *pb.ResetPasswor
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("ResetPassword successful")
-	return s.mapping.ToProtoResponseResetPassword("success", "Reset password successful"), nil
+	so := s.mapper.ToProtoResponseResetPassword("success", "Reset password successful")
+
+	s.logger.Info("ResetPassword successful", zap.Bool("success", true))
+
+	return so, nil
 }
 
+// LoginUser authenticates a user and returns access tokens.
+// It logs the operation's start and end, and utilizes the loginService
+// to perform the authentication. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful authentication and containing
+// tokens.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to LoginRequest containing the user email and password.
+//
+// Returns:
+//   - A pointer to ApiResponseLogin containing the authentication result on success.
+//   - An error if the authentication process fails.
 func (s *authHandleGrpc) LoginUser(ctx context.Context, req *pb.LoginRequest) (*pb.ApiResponseLogin, error) {
-	s.logger.Debug("LoginUser called", zap.String("email", req.Email))
+	s.logger.Info("LoginUser called", zap.String("email", req.Email))
 
 	request := &requests.AuthRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}
 
-	res, err := s.loginService.Login(request)
+	res, err := s.loginService.Login(ctx, request)
 	if err != nil {
 		s.logger.Error("LoginUser failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("LoginUser successful")
-	return s.mapping.ToProtoResponseLogin("success", "Login successful", res), nil
+	so := s.mapper.ToProtoResponseLogin("success", "Login successful", res)
+
+	s.logger.Info("LoginUser successful", zap.Bool("success", true))
+
+	return so, nil
 }
 
+// RefreshToken generates new access tokens using a refresh token.
+// It logs the operation's start and end, and utilizes the identifyService
+// to perform the token refresh. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful token refresh and containing
+// the new tokens.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to RefreshTokenRequest containing the refresh token.
+//
+// Returns:
+//   - A pointer to ApiResponseRefreshToken containing the token refresh result on success.
+//   - An error if the token refresh process fails.
 func (s *authHandleGrpc) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.ApiResponseRefreshToken, error) {
-	s.logger.Debug("RefreshToken called")
+	s.logger.Info("RefreshToken called")
 
-	res, err := s.identifyService.RefreshToken(req.RefreshToken)
+	res, err := s.identifyService.RefreshToken(ctx, req.RefreshToken)
 	if err != nil {
 		s.logger.Error("RefreshToken failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("RefreshToken successful")
-	return s.mapping.ToProtoResponseRefreshToken("success", "Refresh token successful", res), nil
+	so := s.mapper.ToProtoResponseRefreshToken("success", "Refresh token successful", res)
+
+	s.logger.Info("RefreshToken successful", zap.Bool("success", true))
+
+	return so, nil
 }
 
+// GetMe retrieves the current authenticated user's details.
+// It logs the operation's start and end, and utilizes the identifyService
+// to perform the user retrieval. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful user retrieval and containing
+// the user's information.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to GetMeRequest containing the access token.
+//
+// Returns:
+//   - A pointer to ApiResponseGetMe containing the user retrieval result on success.
+//   - An error if the user retrieval process fails.
 func (s *authHandleGrpc) GetMe(ctx context.Context, req *pb.GetMeRequest) (*pb.ApiResponseGetMe, error) {
-	s.logger.Debug("GetMe called")
+	s.logger.Info("GetMe called")
 
-	res, err := s.identifyService.GetMe(req.AccessToken)
+	res, err := s.identifyService.GetMe(ctx, req.AccessToken)
 	if err != nil {
 		s.logger.Error("GetMe failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("GetMe successful")
-	return s.mapping.ToProtoResponseGetMe("success", "GetMe successful", res), nil
+	so := s.mapper.ToProtoResponseGetMe("success", "Get me successful", res)
+
+	s.logger.Info("GetMe successful", zap.Bool("success", true))
+
+	return so, nil
 }
 
+// RegisterUser creates a new user account.
+// It logs the operation's start and end, and utilizes the registerService
+// to perform the registration. If the service indicates a failure, an error
+// is logged and returned. On success, a success message is logged, and a
+// protobuf response is returned indicating successful registration.
+//
+// Parameters:
+//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
+//   - req: A pointer to RegisterRequest containing the user registration details.
+//
+// Returns:
+//   - A pointer to ApiResponseRegister containing the registration result on success.
+//   - An error if the registration process fails.
 func (s *authHandleGrpc) RegisterUser(ctx context.Context, req *pb.RegisterRequest) (*pb.ApiResponseRegister, error) {
-	s.logger.Debug("RegisterUser called", zap.String("email", req.Email))
+	s.logger.Info("RegisterUser called", zap.String("email", req.Email))
 
 	request := &requests.RegisterRequest{
 		FirstName:       req.Firstname,
@@ -132,12 +253,14 @@ func (s *authHandleGrpc) RegisterUser(ctx context.Context, req *pb.RegisterReque
 		ConfirmPassword: req.ConfirmPassword,
 	}
 
-	res, err := s.registerService.Register(request)
+	res, err := s.registerService.Register(ctx, request)
 	if err != nil {
 		s.logger.Error("RegisterUser failed", zap.Any("error", err))
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
 
-	s.logger.Debug("RegisterUser successful")
-	return s.mapping.ToProtoResponseRegister("success", "Registration successful", res), nil
+	so := s.mapper.ToProtoResponseRegister("success", "Registration successful", res)
+
+	s.logger.Info("RegisterUser successful", zap.Bool("success", true))
+	return so, nil
 }

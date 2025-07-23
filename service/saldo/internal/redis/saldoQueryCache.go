@@ -1,13 +1,16 @@
 package mencache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
+// cache keys
 const (
 	saldoAllCacheKey     = "saldo:all:page:%d:pageSize:%d:search:%s"
 	saldoActiveCacheKey  = "saldo:active:page:%d:pageSize:%d:search:%s"
@@ -18,28 +21,48 @@ const (
 	ttlDefault = 5 * time.Minute
 )
 
+// saldoCachedResponse is a struct that represents the cached response
 type saldoCachedResponse struct {
 	Data         []*response.SaldoResponse `json:"data"`
 	TotalRecords *int                      `json:"total_records"`
 }
 
+// saldoCachedResponseDeleteAt is a struct that represents the cached response
 type saldoCachedResponseDeleteAt struct {
 	Data         []*response.SaldoResponseDeleteAt `json:"data"`
 	TotalRecords *int                              `json:"total_records"`
 }
 
+// saldoQueryCache is a struct that represents the cache store
 type saldoQueryCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewSaldoQueryCache(store *CacheStore) *saldoQueryCache {
+// NewSaldoQueryCache creates a new instance of saldoQueryCache.
+//
+// Parameters:
+//   - store: The cache store to use for caching.
+//
+// Returns:
+//   - *saldoQueryCache: The newly created saldoQueryCache instance.
+func NewSaldoQueryCache(store *sharedcachehelpers.CacheStore) SaldoQueryCache {
 	return &saldoQueryCache{store: store}
 }
 
-func (s *saldoQueryCache) GetCachedSaldos(req *requests.FindAllSaldos) ([]*response.SaldoResponse, *int, bool) {
+// GetCachedSaldos retrieves a list of saldos from the cache based on filter parameters.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing pagination and search filters.
+//
+// Returns:
+//   - []*response.SaldoResponse: The list of saldos.
+//   - *int: The total number of records.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) GetCachedSaldos(ctx context.Context, req *requests.FindAllSaldos) ([]*response.SaldoResponse, *int, bool) {
 	key := fmt.Sprintf(saldoAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[saldoCachedResponse](s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[saldoCachedResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -48,10 +71,20 @@ func (s *saldoQueryCache) GetCachedSaldos(req *requests.FindAllSaldos) ([]*respo
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *saldoQueryCache) GetCachedSaldoByActive(req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, bool) {
+// GetCachedSaldoByActive retrieves a list of active (non-deleted) saldos from the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing filter parameters.
+//
+// Returns:
+//   - []*response.SaldoResponseDeleteAt: The list of active saldos.
+//   - *int: The total number of records.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) GetCachedSaldoByActive(ctx context.Context, req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(saldoActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[saldoCachedResponseDeleteAt](s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[saldoCachedResponseDeleteAt](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -60,10 +93,20 @@ func (s *saldoQueryCache) GetCachedSaldoByActive(req *requests.FindAllSaldos) ([
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *saldoQueryCache) GetCachedSaldoByTrashed(req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, bool) {
+// GetCachedSaldoByTrashed retrieves a list of trashed (soft-deleted) saldos from the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing filter parameters.
+//
+// Returns:
+//   - []*response.SaldoResponseDeleteAt: The list of trashed saldos.
+//   - *int: The total number of records.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) GetCachedSaldoByTrashed(ctx context.Context, req *requests.FindAllSaldos) ([]*response.SaldoResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(saldoTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[saldoCachedResponseDeleteAt](s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[saldoCachedResponseDeleteAt](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -72,9 +115,18 @@ func (s *saldoQueryCache) GetCachedSaldoByTrashed(req *requests.FindAllSaldos) (
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *saldoQueryCache) GetCachedSaldoById(saldo_id int) (*response.SaldoResponse, bool) {
+// GetCachedSaldoById retrieves a saldo by its ID from the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The ID of the saldo.
+//
+// Returns:
+//   - *response.SaldoResponse: The cached saldo data.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) GetCachedSaldoById(ctx context.Context, saldo_id int) (*response.SaldoResponse, bool) {
 	key := fmt.Sprintf(saldoByIdCacheKey, saldo_id)
-	result, found := GetFromCache[*response.SaldoResponse](s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*response.SaldoResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -83,9 +135,18 @@ func (s *saldoQueryCache) GetCachedSaldoById(saldo_id int) (*response.SaldoRespo
 	return *result, true
 }
 
-func (s *saldoQueryCache) GetCachedSaldoByCardNumber(card_number string) (*response.SaldoResponse, bool) {
+// GetCachedSaldoByCardNumber retrieves a saldo by card number from the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number.
+//
+// Returns:
+//   - *response.SaldoResponse: The cached saldo data.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) GetCachedSaldoByCardNumber(ctx context.Context, card_number string) (*response.SaldoResponse, bool) {
 	key := fmt.Sprintf(saldoByCardNumberKey, card_number)
-	result, found := GetFromCache[*response.SaldoResponse](s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*response.SaldoResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -94,7 +155,14 @@ func (s *saldoQueryCache) GetCachedSaldoByCardNumber(card_number string) (*respo
 	return *result, true
 }
 
-func (s *saldoQueryCache) SetCachedSaldos(req *requests.FindAllSaldos, data []*response.SaldoResponse, total *int) {
+// SetCachedSaldos stores a list of saldos in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object used as the cache key.
+//   - data: The list of saldos to be cached.
+//   - totalRecords: The total number of records.
+func (s *saldoQueryCache) SetCachedSaldos(ctx context.Context, req *requests.FindAllSaldos, data []*response.SaldoResponse, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -107,10 +175,17 @@ func (s *saldoQueryCache) SetCachedSaldos(req *requests.FindAllSaldos, data []*r
 	key := fmt.Sprintf(saldoAllCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &saldoCachedResponse{Data: data, TotalRecords: total}
 
-	SetToCache(s.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *saldoQueryCache) SetCachedSaldoByActive(req *requests.FindAllSaldos, result []*response.SaldoResponseDeleteAt, total *int) {
+// SetCachedSaldoByActive stores a list of active (non-deleted) saldos in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object used as the cache key.
+//   - data: The list of active saldos to be cached.
+//   - totalRecords: The total number of records.
+func (s *saldoQueryCache) SetCachedSaldoByActive(ctx context.Context, req *requests.FindAllSaldos, result []*response.SaldoResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -123,11 +198,18 @@ func (s *saldoQueryCache) SetCachedSaldoByActive(req *requests.FindAllSaldos, re
 	key := fmt.Sprintf(saldoActiveCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &saldoCachedResponseDeleteAt{Data: result, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, s.store, key, payload, ttlDefault)
 
 }
 
-func (s *saldoQueryCache) SetCachedSaldoByTrashed(req *requests.FindAllSaldos, data []*response.SaldoResponseDeleteAt, total *int) {
+// SetCachedSaldoByTrashed stores a list of trashed (soft-deleted) saldos in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object used as the cache key.
+//   - data: The list of trashed saldos to be cached.
+//   - totalRecords: The total number of records.
+func (s *saldoQueryCache) SetCachedSaldoByTrashed(ctx context.Context, req *requests.FindAllSaldos, data []*response.SaldoResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -140,23 +222,38 @@ func (s *saldoQueryCache) SetCachedSaldoByTrashed(req *requests.FindAllSaldos, d
 	key := fmt.Sprintf(saldoTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &saldoCachedResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *saldoQueryCache) SetCachedSaldoById(saldo_id int, result *response.SaldoResponse) {
+// SetCachedSaldoById stores a saldo by its ID in the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The ID of the saldo.
+//   - data: The saldo data to cache.
+func (s *saldoQueryCache) SetCachedSaldoById(ctx context.Context, saldo_id int, result *response.SaldoResponse) {
 	if result == nil {
 		result = &response.SaldoResponse{}
 	}
 
 	key := fmt.Sprintf(saldoByIdCacheKey, saldo_id)
-	SetToCache(s.store, key, result, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, s.store, key, result, ttlDefault)
 }
 
-func (s *saldoQueryCache) SetCachedSaldoByCardNumber(card_number string, result *response.SaldoResponse) {
+// GetCachedSaldoByCardNumber retrieves a saldo by card number from the cache.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number.
+//
+// Returns:
+//   - *response.SaldoResponse: The cached saldo data.
+//   - bool: Whether the cache was found and valid.
+func (s *saldoQueryCache) SetCachedSaldoByCardNumber(ctx context.Context, card_number string, result *response.SaldoResponse) {
 	if result == nil {
 		result = &response.SaldoResponse{}
 	}
 
 	key := fmt.Sprintf(saldoByCardNumberKey, card_number)
-	SetToCache(s.store, key, result, ttlDefault)
+	sharedcachehelpers.SetToCache(ctx, s.store, key, result, ttlDefault)
 }

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
@@ -10,30 +9,72 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/saldo"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type saldoCommandService struct {
-	ctx                    context.Context
-	errorhandler           errorhandler.SaldoCommandErrorHandler
-	mencache               mencache.SaldoCommandCache
-	trace                  trace.Tracer
-	cardRepository         repository.CardRepository
-	logger                 logger.LoggerInterface
-	mapping                responseservice.SaldoResponseMapper
-	saldoCommandRepository repository.SaldoCommandRepository
-	requestCounter         *prometheus.CounterVec
-	requestDuration        *prometheus.HistogramVec
+// saldoCommandParams holds the dependencies required to construct a saldoCommandService.
+type saldoCommandParams struct {
+	// Ctx is the base context for the service.
+	Ctx context.Context
+
+	// ErrorHandler handles domain-specific errors for saldo command operations.
+	ErrorHandler errorhandler.SaldoCommandErrorHandler
+
+	// Cache provides in-memory caching for saldo command operations.
+	Cache mencache.SaldoCommandCache
+
+	// SaldoRepository provides access to persistent storage for saldo commands.
+	SaldoRepository repository.SaldoCommandRepository
+
+	// CardRepository provides access to card data related to saldo operations.
+	CardRepository repository.CardRepository
+
+	// Logger is used for structured logging.
+	Logger logger.LoggerInterface
+
+	// Mapper maps internal saldo entities to response DTOs.
+	Mapper responseservice.SaldoCommandResponseMapper
 }
 
-func NewSaldoCommandService(ctx context.Context, errorhandler errorhandler.SaldoCommandErrorHandler,
-	mencache mencache.SaldoCommandCache, saldo repository.SaldoCommandRepository, card repository.CardRepository, logger logger.LoggerInterface, mapping responseservice.SaldoResponseMapper) *saldoCommandService {
+// saldoCommandService handles write operations for saldo, such as top-up and adjustment.
+type saldoCommandService struct {
+	// ctx is the base context shared across the service.
+	ctx context.Context
+
+	// errorhandler handles domain-specific errors for saldo commands.
+	errorhandler errorhandler.SaldoCommandErrorHandler
+
+	// mencache provides in-memory caching for saldo data.
+	mencache mencache.SaldoCommandCache
+
+	// cardRepository accesses card information related to saldo operations.
+	cardRepository repository.CardRepository
+
+	// logger provides structured logging capability.
+	logger logger.LoggerInterface
+
+	// mapper converts internal saldo models to response formats.
+	mapper responseservice.SaldoCommandResponseMapper
+
+	// saldoCommandRepository provides persistence operations for saldo commands.
+	saldoCommandRepository repository.SaldoCommandRepository
+
+	observability observability.TraceLoggerObservability
+}
+
+// NewSaldoCommandService initializes a new instance of saldoCommandService with the provided parameters.
+// It sets up the prometheus metrics for counting and measuring the duration of saldo command requests.
+//
+// Parameters:
+// - params: A pointer to a saldoCommandParams containing the necessary dependencies.
+//
+// Returns:
+// - A pointer to a newly created saldoCommandService.
+func NewSaldoCommandService(params *saldoCommandParams) SaldoCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "saldo_command_service_request_total",
@@ -53,133 +94,178 @@ func NewSaldoCommandService(ctx context.Context, errorhandler errorhandler.Saldo
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(otel.Tracer("saldo-command-service"), params.Logger, requestCounter, requestDuration)
+
 	return &saldoCommandService{
-		ctx:                    ctx,
-		errorhandler:           errorhandler,
-		mencache:               mencache,
-		trace:                  otel.Tracer("saldo-command-service"),
-		saldoCommandRepository: saldo,
-		cardRepository:         card,
-		logger:                 logger,
-		mapping:                mapping,
-		requestCounter:         requestCounter,
-		requestDuration:        requestDuration,
+		ctx:                    params.Ctx,
+		errorhandler:           params.ErrorHandler,
+		mencache:               params.Cache,
+		saldoCommandRepository: params.SaldoRepository,
+		cardRepository:         params.CardRepository,
+		logger:                 params.Logger,
+		mapper:                 params.Mapper,
+		observability:          observability,
 	}
 }
 
-func (s *saldoCommandService) CreateSaldo(request *requests.CreateSaldoRequest) (*response.SaldoResponse, *response.ErrorResponse) {
+// CreateSaldo creates a new saldo record in the system.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The request payload containing saldo creation data.
+//
+// Returns:
+//   - *response.SaldoResponse: The created saldo response.
+//   - *response.ErrorResponse: An error response if creation fails.
+func (s *saldoCommandService) CreateSaldo(ctx context.Context, request *requests.CreateSaldoRequest) (*response.SaldoResponse, *response.ErrorResponse) {
 	const method = "CreateSaldo"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.cardRepository.FindCardByCardNumber(request.CardNumber)
+	_, err := s.cardRepository.FindCardByCardNumber(ctx, request.CardNumber)
 
 	if err != nil {
 		return s.errorhandler.HandleFindCardByNumberError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
-	res, err := s.saldoCommandRepository.CreateSaldo(request)
+	res, err := s.saldoCommandRepository.CreateSaldo(ctx, request)
 
 	if err != nil {
 		return s.errorhandler.HandleCreateSaldoError(err, method, "FAILED_CREATE_SALDO", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToSaldoResponse(res)
+	so := s.mapper.ToSaldoResponse(res)
 
 	logSuccess("Successfully created saldo record", zap.String("card_number", request.CardNumber), zap.Float64("amount", float64(request.TotalBalance)))
 
 	return so, nil
 }
 
-func (s *saldoCommandService) UpdateSaldo(request *requests.UpdateSaldoRequest) (*response.SaldoResponse, *response.ErrorResponse) {
+// UpdateSaldo updates an existing saldo record.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - request: The request payload containing updated saldo data.
+//
+// Returns:
+//   - *response.SaldoResponse: The updated saldo response.
+//   - *response.ErrorResponse: An error response if update fails.
+func (s *saldoCommandService) UpdateSaldo(ctx context.Context, request *requests.UpdateSaldoRequest) (*response.SaldoResponse, *response.ErrorResponse) {
 	const method = "UpdateSaldo"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.cardRepository.FindCardByCardNumber(request.CardNumber)
+	_, err := s.cardRepository.FindCardByCardNumber(ctx, request.CardNumber)
 
 	if err != nil {
 		return s.errorhandler.HandleFindCardByNumberError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
 
-	res, err := s.saldoCommandRepository.UpdateSaldo(request)
+	res, err := s.saldoCommandRepository.UpdateSaldo(ctx, request)
 
 	if err != nil {
 		return s.errorhandler.HandleUpdateSaldoError(err, "UpdateSaldo", "FAILED_UPDATE_SALDO", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToSaldoResponse(res)
+	so := s.mapper.ToSaldoResponse(res)
 
-	s.mencache.DeleteSaldoCache(res.ID)
+	s.mencache.DeleteSaldoCache(ctx, res.ID)
 
 	logSuccess("Successfully updated saldo record", zap.String("card_number", request.CardNumber), zap.Float64("amount", float64(request.TotalBalance)))
 
 	return so, nil
 }
 
-func (s *saldoCommandService) TrashSaldo(saldo_id int) (*response.SaldoResponse, *response.ErrorResponse) {
+// TrashSaldo moves a saldo to the trash (soft delete).
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The ID of the saldo to trash.
+//
+// Returns:
+//   - *response.SaldoResponse: The trashed saldo response.
+//   - *response.ErrorResponse: An error response if trashing fails.
+func (s *saldoCommandService) TrashSaldo(ctx context.Context, saldo_id int) (*response.SaldoResponseDeleteAt, *response.ErrorResponse) {
 	const method = "TrashSaldo"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.saldoCommandRepository.TrashedSaldo(saldo_id)
+	res, err := s.saldoCommandRepository.TrashedSaldo(ctx, saldo_id)
 
 	if err != nil {
 		return s.errorhandler.HandleTrashSaldoError(err, method, "FAILED_TRASH_SALDO", span, &status, zap.Error(err))
 	}
-	so := s.mapping.ToSaldoResponse(res)
+	so := s.mapper.ToSaldoResponseDeleteAt(res)
 
-	s.mencache.DeleteSaldoCache(saldo_id)
+	s.mencache.DeleteSaldoCache(ctx, saldo_id)
 
 	logSuccess("Successfully trashed saldo record", zap.Int("saldo.id", saldo_id))
 
 	return so, nil
 }
 
-func (s *saldoCommandService) RestoreSaldo(saldo_id int) (*response.SaldoResponse, *response.ErrorResponse) {
+// RestoreSaldo restores a previously trashed saldo.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The ID of the saldo to restore.
+//
+// Returns:
+//   - *response.SaldoResponse: The restored saldo response.
+//   - *response.ErrorResponse: An error response if restoring fails.
+func (s *saldoCommandService) RestoreSaldo(ctx context.Context, saldo_id int) (*response.SaldoResponse, *response.ErrorResponse) {
 	const method = "RestoreSaldo"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.saldoCommandRepository.RestoreSaldo(saldo_id)
+	res, err := s.saldoCommandRepository.RestoreSaldo(ctx, saldo_id)
 
 	if err != nil {
 		return s.errorhandler.HandleRestoreSaldoError(err, method, "FAILED_RESTORE_SALDO", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToSaldoResponse(res)
+	so := s.mapper.ToSaldoResponse(res)
 
 	logSuccess("Successfully restored saldo record", zap.Int("saldo.id", saldo_id))
 
 	return so, nil
 }
 
-func (s *saldoCommandService) DeleteSaldoPermanent(saldo_id int) (bool, *response.ErrorResponse) {
+// DeleteSaldoPermanent permanently deletes a saldo record.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The ID of the saldo to delete permanently.
+//
+// Returns:
+//   - bool: True if the deletion is successful.
+//   - *response.ErrorResponse: An error response if deletion fails.
+func (s *saldoCommandService) DeleteSaldoPermanent(ctx context.Context, saldo_id int) (bool, *response.ErrorResponse) {
 	const method = "DeleteSaldoPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.saldoCommandRepository.DeleteSaldoPermanent(saldo_id)
+	_, err := s.saldoCommandRepository.DeleteSaldoPermanent(ctx, saldo_id)
 
 	if err != nil {
 		return s.errorhandler.HandleDeleteSaldoPermanentError(err, method, "FAILED_DELETE_SALDO_PERMANENT", span, &status, zap.Error(err))
@@ -190,16 +276,24 @@ func (s *saldoCommandService) DeleteSaldoPermanent(saldo_id int) (bool, *respons
 	return true, nil
 }
 
-func (s *saldoCommandService) RestoreAllSaldo() (bool, *response.ErrorResponse) {
+// RestoreAllSaldo restores all trashed saldo records.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if restoration is successful.
+//   - *response.ErrorResponse: An error response if operation fails.
+func (s *saldoCommandService) RestoreAllSaldo(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "RestoreAllSaldo"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.saldoCommandRepository.RestoreAllSaldo()
+	_, err := s.saldoCommandRepository.RestoreAllSaldo(ctx)
 
 	if err != nil {
 		return s.errorhandler.HandleRestoreAllSaldoError(err, method, "FAILED_RESTORE_ALL_SALDO", span, &status, zap.Error(err))
@@ -210,16 +304,24 @@ func (s *saldoCommandService) RestoreAllSaldo() (bool, *response.ErrorResponse) 
 	return true, nil
 }
 
-func (s *saldoCommandService) DeleteAllSaldoPermanent() (bool, *response.ErrorResponse) {
+// DeleteAllSaldoPermanent permanently deletes all trashed saldo records.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: True if deletion is successful.
+//   - *response.ErrorResponse: An error response if operation fails.
+func (s *saldoCommandService) DeleteAllSaldoPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "DeleteAllSaldoPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.saldoCommandRepository.DeleteAllSaldoPermanent()
+	_, err := s.saldoCommandRepository.DeleteAllSaldoPermanent(ctx)
 
 	if err != nil {
 		return s.errorhandler.HandleDeleteAllSaldoPermanentError(err, method, "FAILED_DELETE_ALL_SALDO_PERMANENT", span, &status, zap.Error(err))
@@ -228,46 +330,4 @@ func (s *saldoCommandService) DeleteAllSaldoPermanent() (bool, *response.ErrorRe
 	logSuccess("Successfully deleted all permanent saldo", zap.Bool("success", true))
 
 	return true, nil
-}
-
-func (s *saldoCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *saldoCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

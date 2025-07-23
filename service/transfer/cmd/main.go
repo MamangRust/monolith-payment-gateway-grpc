@@ -1,12 +1,34 @@
 package main
 
 import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/apps"
 	"go.uber.org/zap"
 )
 
+// main starts the gRPC server for the Transfer Service.
+//
+// It sets up all required dependencies and handles graceful shutdown
+// when the service is interrupted.
 func main() {
-	server, shutdown, err := apps.NewServer()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+
+		log.Println("Shutting down gracefully...")
+		cancel()
+	}()
+
+	server, shutdown, err := apps.NewServer(ctx)
 
 	if err != nil {
 		server.Logger.Fatal("Failed to create server", zap.Error(err))

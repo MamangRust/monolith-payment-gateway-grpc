@@ -12,52 +12,113 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/service"
+	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/service"
+	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/service"
+	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transaction"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type transactionCommandService struct {
-	kafka                        *kafka.Kafka
-	ctx                          context.Context
-	errorhandler                 errorhandler.TransactionCommandErrorHandler
-	mencache                     mencache.TransactionCommandCache
-	trace                        trace.Tracer
-	merchantRepository           repository.MerchantRepository
-	cardRepository               repository.CardRepository
-	saldoRepository              repository.SaldoRepository
-	transactionQueryRepository   repository.TransactionQueryRepository
-	transactionCommandRepository repository.TransactionCommandRepository
-	logger                       logger.LoggerInterface
-	mapping                      responseservice.TransactionResponseMapper
-	requestCounter               *prometheus.CounterVec
-	requestDuration              *prometheus.HistogramVec
+// TransactionCommandServiceDeps defines the dependencies required to initialize a TransactionCommandService.
+type transactionCommandServiceDeps struct {
+	// Kafka producer for publishing transaction events.
+	Kafka *kafka.Kafka
+
+	// Context for base operations (usually request context).
+	Ctx context.Context
+
+	// Error handler to process and log errors consistently.
+	ErrorHandler errorhandler.TransactionCommandErrorHandler
+
+	// Redis cache layer used for storing command-side data temporarily.
+	Mencache mencache.TransactionCommandCache
+
+	// OpenTelemetry tracer for distributed tracing.
+	Tracer trace.Tracer
+
+	// Repository to access merchant-related data.
+	MerchantRepository repository.MerchantRepository
+
+	// Repository to access card-related data.
+	CardRepository repository.CardRepository
+
+	// Repository for saldo (balance) operations.
+	SaldoRepository repository.SaldoRepository
+
+	// Repository for reading/querying transaction data.
+	TransactionQueryRepository repository.TransactionQueryRepository
+
+	// Repository for writing/updating transaction data.
+	TransactionCommandRepository repository.TransactionCommandRepository
+
+	// Structured logger interface.
+	Logger logger.LoggerInterface
+
+	// Mapper for converting transaction records to response DTOs.
+	Mapping responseservice.TransactionCommandResponseMapper
 }
 
+// transactionCommandService provides command-side business logic related to transactions,
+// such as creating new transactions, updating statuses, publishing events to Kafka,
+// and interacting with Redis cache and repositories.
+type transactionCommandService struct {
+	// kafka is the Kafka producer used to publish transaction-related events.
+	kafka *kafka.Kafka
+
+	// ctx is the base context used for all operations in the service.
+	ctx context.Context
+
+	// errorhandler handles standardized error responses and telemetry for command operations.
+	errorhandler errorhandler.TransactionCommandErrorHandler
+
+	// mencache is the Redis-based cache layer used for transaction command data.
+	mencache mencache.TransactionCommandCache
+
+	// merchantRepository handles database operations related to merchants.
+	merchantRepository repository.MerchantRepository
+
+	// cardRepository handles database operations related to cards.
+	cardRepository repository.CardRepository
+
+	// saldoRepository handles database operations related to saldo/balance.
+	saldoRepository repository.SaldoRepository
+
+	// transactionQueryRepository is used to query historical transaction data when needed.
+	transactionQueryRepository repository.TransactionQueryRepository
+
+	// transactionCommandRepository handles writes and updates to transaction data.
+	transactionCommandRepository repository.TransactionCommandRepository
+
+	// logger is the structured logger interface used to log service activities and errors.
+	logger logger.LoggerInterface
+
+	// mapper provides functionality to map internal transaction data to response models.
+	mapper responseservice.TransactionCommandResponseMapper
+
+	observability observability.TraceLoggerObservability
+}
+
+// NewTransactionCommandService initializes a new instance of transactionCommandService with the provided parameters.
+// It sets up Prometheus metrics for tracking request counts and durations and returns a configured
+// transactionCommandService ready for handling transaction-related commands.
+//
+// Parameters:
+// - params: A pointer to transactionCommandServiceDeps containing the necessary dependencies.
+//
+// Returns:
+// - A pointer to an initialized transactionCommandService.
 func NewTransactionCommandService(
-	kafka *kafka.Kafka,
-	ctx context.Context,
-	errorhandler errorhandler.TransactionCommandErrorHandler,
-	mencache mencache.TransactionCommandCache,
-	merchantRepository repository.MerchantRepository,
-	cardRepository repository.CardRepository,
-	saldoRepository repository.SaldoRepository,
-	transactionCommandRepository repository.TransactionCommandRepository,
-	transactionQueryRepository repository.TransactionQueryRepository,
-	logger logger.LoggerInterface,
-	mapping responseservice.TransactionResponseMapper,
-) *transactionCommandService {
+	params *transactionCommandServiceDeps,
+) TransactionCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "transaction_command_service_request_total",
@@ -77,46 +138,57 @@ func NewTransactionCommandService(
 
 	prometheus.MustRegister(requestCounter, requestDuration)
 
+	observability := observability.NewTraceLoggerObservability(
+		otel.Tracer("transaction-command-service"), params.Logger, requestCounter, requestDuration)
+
 	return &transactionCommandService{
-		kafka:                        kafka,
-		ctx:                          ctx,
-		errorhandler:                 errorhandler,
-		mencache:                     mencache,
-		trace:                        otel.Tracer("transaction-command-service"),
-		merchantRepository:           merchantRepository,
-		cardRepository:               cardRepository,
-		saldoRepository:              saldoRepository,
-		transactionCommandRepository: transactionCommandRepository,
-		transactionQueryRepository:   transactionQueryRepository,
-		logger:                       logger,
-		mapping:                      mapping,
-		requestCounter:               requestCounter,
-		requestDuration:              requestDuration,
+		kafka:                        params.Kafka,
+		ctx:                          params.Ctx,
+		errorhandler:                 params.ErrorHandler,
+		mencache:                     params.Mencache,
+		merchantRepository:           params.MerchantRepository,
+		cardRepository:               params.CardRepository,
+		saldoRepository:              params.SaldoRepository,
+		transactionCommandRepository: params.TransactionCommandRepository,
+		transactionQueryRepository:   params.TransactionQueryRepository,
+		logger:                       params.Logger,
+		mapper:                       params.Mapping,
+		observability:                observability,
 	}
 }
 
-func (s *transactionCommandService) Create(apiKey string, request *requests.CreateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
+// Create creates a new transaction based on the provided request and API key.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - apiKey: The API key for merchant authorization.
+//   - request: The transaction creation request payload.
+//
+// Returns:
+//   - *response.TransactionResponse: The created transaction response.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) Create(ctx context.Context, apiKey string, request *requests.CreateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
 	const method = "CreateTransacton"
 
 	s.logger.Debug("CreateTransaction called", zap.String("card_number", request.CardNumber), zap.String("api_key", apiKey))
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.String("apikey", apiKey))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("apikey", apiKey))
 
 	defer func() {
 		end(status)
 	}()
 
-	merchant, err := s.merchantRepository.FindByApiKey(apiKey)
+	merchant, err := s.merchantRepository.FindByApiKey(ctx, apiKey)
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_MERCHANT_BY_API_KEY", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
 	}
 
-	card, err := s.cardRepository.FindUserCardByCardNumber(request.CardNumber)
+	card, err := s.cardRepository.FindUserCardByCardNumber(ctx, request.CardNumber)
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
-	saldo, err := s.saldoRepository.FindByCardNumber(card.CardNumber)
+	saldo, err := s.saldoRepository.FindByCardNumber(ctx, card.CardNumber)
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedFindSaldoByCardNumber, zap.Error(err))
 	}
@@ -126,7 +198,7 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 	}
 
 	saldo.TotalBalance -= request.Amount
-	if _, err := s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
+	if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   card.CardNumber,
 		TotalBalance: saldo.TotalBalance,
 	}); err != nil {
@@ -135,10 +207,10 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 
 	request.MerchantID = &merchant.ID
 
-	transaction, err := s.transactionCommandRepository.CreateTransaction(request)
+	transaction, err := s.transactionCommandRepository.CreateTransaction(ctx, request)
 	if err != nil {
 		saldo.TotalBalance += request.Amount
-		_, err := s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
+		_, err := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 			CardNumber:   card.CardNumber,
 			TotalBalance: saldo.TotalBalance,
 		})
@@ -146,7 +218,7 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
 		}
 
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: transaction.ID,
 			Status:        "failed",
 		}); err != nil {
@@ -156,26 +228,26 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 		return s.errorhandler.HandleCreateTransactionError(err, method, "FAILED_CREATE_TRANSACTION", span, &status, zap.Error(err))
 	}
 
-	if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+	if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 		TransactionID: transaction.ID,
 		Status:        "success",
 	}); err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, transaction_errors.ErrFailedUpdateTransaction, zap.Error(err))
 	}
 
-	merchantCard, err := s.cardRepository.FindCardByUserId(merchant.UserID)
+	merchantCard, err := s.cardRepository.FindCardByUserId(ctx, merchant.UserID)
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_USER_ID_MERCHANT", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
 	}
 
-	merchantSaldo, err := s.saldoRepository.FindByCardNumber(merchantCard.CardNumber)
+	merchantSaldo, err := s.saldoRepository.FindByCardNumber(ctx, merchantCard.CardNumber)
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER_MERCHANT", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
 	}
 
 	merchantSaldo.TotalBalance += request.Amount
 
-	if _, err := s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
+	if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   merchantCard.CardNumber,
 		TotalBalance: merchantSaldo.TotalBalance,
 	}); err != nil {
@@ -205,25 +277,35 @@ func (s *transactionCommandService) Create(apiKey string, request *requests.Crea
 		return errorhandler.HandleErrorKafkaSend[*response.TransactionResponse](s.logger, err, method, "FAILED_SEND_EMAIL", span, &status, transaction_errors.ErrFailedCreateTransaction, zap.Error(err))
 	}
 
-	so := s.mapping.ToTransactionResponse(transaction)
+	so := s.mapper.ToTransactionResponse(transaction)
 
 	logSuccess("Successfully created transaction", zap.Int("transaction.id", transaction.ID))
 
 	return so, nil
 }
 
-func (s *transactionCommandService) Update(apiKey string, request *requests.UpdateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
+// Update updates an existing transaction with the given request and API key.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - apiKey: The API key for merchant authorization.
+//   - request: The transaction update request payload.
+//
+// Returns:
+//   - *response.TransactionResponse: The updated transaction response.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) Update(ctx context.Context, apiKey string, request *requests.UpdateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
 	const method = "UpdateTransaction"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	transaction, err := s.transactionQueryRepository.FindById(*request.TransactionID)
+	transaction, err := s.transactionQueryRepository.FindById(ctx, *request.TransactionID)
 	if err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -233,9 +315,9 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_TRANSACTION_BY_ID", span, &status, transaction_errors.ErrFailedUpdateTransaction, zap.Error(err))
 	}
 
-	merchant, err := s.merchantRepository.FindByApiKey(apiKey)
+	merchant, err := s.merchantRepository.FindByApiKey(ctx, apiKey)
 	if err != nil || transaction.MerchantID != merchant.ID {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -245,9 +327,9 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_MERCHANT_BY_API_KEY", span, &status, merchant_errors.ErrFailedFindByApiKey, zap.Error(err))
 	}
 
-	card, err := s.cardRepository.FindCardByCardNumber(transaction.CardNumber)
+	card, err := s.cardRepository.FindCardByCardNumber(ctx, transaction.CardNumber)
 	if err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -257,9 +339,9 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		return nil, card_errors.ErrCardNotFoundRes
 	}
 
-	saldo, err := s.saldoRepository.FindByCardNumber(card.CardNumber)
+	saldo, err := s.saldoRepository.FindByCardNumber(ctx, card.CardNumber)
 	if err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -272,11 +354,11 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 	saldo.TotalBalance += transaction.Amount
 	s.logger.Info("Restoring balance for old transaction amount", zap.Int("RestoredBalance", saldo.TotalBalance))
 
-	if _, err := s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
+	if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   card.CardNumber,
 		TotalBalance: saldo.TotalBalance,
 	}); err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -287,7 +369,7 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 	}
 
 	if saldo.TotalBalance < request.Amount {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -300,11 +382,11 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 	saldo.TotalBalance -= request.Amount
 	s.logger.Info("Updating balance for updated transaction amount")
 
-	if _, err := s.saldoRepository.UpdateSaldoBalance(&requests.UpdateSaldoBalance{
+	if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   card.CardNumber,
 		TotalBalance: saldo.TotalBalance,
 	}); err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -320,7 +402,7 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 	layout := "2006-01-02 15:04:05"
 	parsedTime, err := time.Parse(layout, transaction.TransactionTime)
 	if err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -330,7 +412,7 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		return s.errorhandler.HandleInvalidParseTimeError(err, method, "INVALID_TRANSACTION_TIME", span, &status, transaction.TransactionTime, zap.Error(err))
 	}
 
-	res, err := s.transactionCommandRepository.UpdateTransaction(&requests.UpdateTransactionRequest{
+	res, err := s.transactionCommandRepository.UpdateTransaction(ctx, &requests.UpdateTransactionRequest{
 		TransactionID:   &transaction.ID,
 		CardNumber:      transaction.CardNumber,
 		Amount:          transaction.Amount,
@@ -339,7 +421,7 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		TransactionTime: parsedTime,
 	})
 	if err != nil {
-		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+		if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 			TransactionID: *request.TransactionID,
 			Status:        "failed",
 		}); err != nil {
@@ -349,78 +431,105 @@ func (s *transactionCommandService) Update(apiKey string, request *requests.Upda
 		return s.errorhandler.HandleUpdateTransactionError(err, method, "FAILED_UPDATE_TRANSACTION", span, &status, zap.Error(err))
 	}
 
-	if _, err := s.transactionCommandRepository.UpdateTransactionStatus(&requests.UpdateTransactionStatus{
+	if _, err := s.transactionCommandRepository.UpdateTransactionStatus(ctx, &requests.UpdateTransactionStatus{
 		TransactionID: transaction.ID,
 		Status:        "success",
 	}); err != nil {
 		return s.errorhandler.HandleUpdateTransactionError(err, method, "FAILED_UPDATE_TRANSACTION_STATUS", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToTransactionResponse(res)
+	so := s.mapper.ToTransactionResponse(res)
 
-	s.mencache.DeleteTransactionCache(*request.TransactionID)
+	s.mencache.DeleteTransactionCache(ctx, *request.TransactionID)
 
 	logSuccess("Successfully updated transaction", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *transactionCommandService) TrashedTransaction(transaction_id int) (*response.TransactionResponse, *response.ErrorResponse) {
+// TrashedTransaction moves the transaction to the trash (soft delete).
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - transaction_id: The ID of the transaction to be trashed.
+//
+// Returns:
+//   - *response.TransactionResponse: The trashed transaction response.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) TrashedTransaction(ctx context.Context, transaction_id int) (*response.TransactionResponseDeleteAt, *response.ErrorResponse) {
 	const method = "TrashedTransaction"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.transactionCommandRepository.TrashedTransaction(transaction_id)
+	res, err := s.transactionCommandRepository.TrashedTransaction(ctx, transaction_id)
 
 	if err != nil {
 		return s.errorhandler.HandleTrashedTransactionError(err, method, "FAILED_TRASHED_TRANSACTION", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToTransactionResponse(res)
+	so := s.mapper.ToTransactionResponseDeleteAt(res)
 
-	s.mencache.DeleteTransactionCache(transaction_id)
+	s.mencache.DeleteTransactionCache(ctx, transaction_id)
 
 	logSuccess("Successfully trashed transaction", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *transactionCommandService) RestoreTransaction(transaction_id int) (*response.TransactionResponse, *response.ErrorResponse) {
+// RestoreTransaction restores a previously trashed transaction.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - transaction_id: The ID of the transaction to be restored.
+//
+// Returns:
+//   - *response.TransactionResponse: The restored transaction response.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) RestoreTransaction(ctx context.Context, transaction_id int) (*response.TransactionResponse, *response.ErrorResponse) {
 	const method = "RestoreTransaction"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.transactionCommandRepository.RestoreTransaction(transaction_id)
+	res, err := s.transactionCommandRepository.RestoreTransaction(ctx, transaction_id)
 
 	if err != nil {
 		return s.errorhandler.HandleRestoreTransactionError(err, method, "FAILED_RESTORE_TRANSACTION", span, &status, zap.Error(err))
 	}
 
-	so := s.mapping.ToTransactionResponse(res)
+	so := s.mapper.ToTransactionResponse(res)
 
 	logSuccess("Successfully restored transaction", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *transactionCommandService) DeleteTransactionPermanent(transaction_id int) (bool, *response.ErrorResponse) {
+// DeleteTransactionPermanent permanently deletes a transaction from the database.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - transaction_id: The ID of the transaction to delete permanently.
+//
+// Returns:
+//   - bool: Whether the operation was successful.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) DeleteTransactionPermanent(ctx context.Context, transaction_id int) (bool, *response.ErrorResponse) {
 	const method = "DeleteTransactionPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.transactionCommandRepository.DeleteTransactionPermanent(transaction_id)
+	_, err := s.transactionCommandRepository.DeleteTransactionPermanent(ctx, transaction_id)
 
 	if err != nil {
 		return s.errorhandler.HandleDeleteTransactionPermanentError(err, method, "FAILED_DELETE_TRANSACTION_PERMANENT", span, &status, zap.Error(err))
@@ -431,16 +540,24 @@ func (s *transactionCommandService) DeleteTransactionPermanent(transaction_id in
 	return true, nil
 }
 
-func (s *transactionCommandService) RestoreAllTransaction() (bool, *response.ErrorResponse) {
+// RestoreAllTransaction restores all trashed transactions.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: Whether the operation was successful.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) RestoreAllTransaction(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "RestoreAllTransaction"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.transactionCommandRepository.RestoreAllTransaction()
+	_, err := s.transactionCommandRepository.RestoreAllTransaction(ctx)
 	if err != nil {
 		return s.errorhandler.HandleRestoreAllTransactionError(err, method, "FAILED_RESTORE_ALL_TRANSACTIONS", span, &status, zap.Error(err))
 	}
@@ -450,16 +567,24 @@ func (s *transactionCommandService) RestoreAllTransaction() (bool, *response.Err
 	return true, nil
 }
 
-func (s *transactionCommandService) DeleteAllTransactionPermanent() (bool, *response.ErrorResponse) {
+// DeleteAllTransactionPermanent permanently deletes all trashed transactions.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//
+// Returns:
+//   - bool: Whether the operation was successful.
+//   - *response.ErrorResponse: Error detail if the operation fails.
+func (s *transactionCommandService) DeleteAllTransactionPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "DeleteAllTransactionPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.transactionCommandRepository.DeleteAllTransactionPermanent()
+	_, err := s.transactionCommandRepository.DeleteAllTransactionPermanent(ctx)
 
 	if err != nil {
 		return s.errorhandler.HandleDeleteAllTransactionPermanentError(err, method, "FAILED_DELETE_ALL_TRANSACTION_PERMANENT", span, &status, zap.Error(err))
@@ -468,46 +593,4 @@ func (s *transactionCommandService) DeleteAllTransactionPermanent() (bool, *resp
 	logSuccess("Successfully deleted all transactions permanent", zap.Bool("success", true))
 
 	return true, nil
-}
-
-func (s *transactionCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	_, span := s.trace.Start(s.ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Info("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Info(msg, fields...)
-	}
-
-	return span, end, status, logSuccess
-}
-
-func (s *transactionCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

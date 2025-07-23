@@ -1,17 +1,29 @@
 package mencache
 
-import "fmt"
+import (
+	"context"
+	"fmt"
 
+	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
+)
+
+// withdrawCommandCache is a struct that represents the withdraw command cache
 type withdrawCommandCache struct {
-	store *CacheStore
+	store *sharedcachehelpers.CacheStore
 }
 
-func NewWithdrawCommandCache(store *CacheStore) *withdrawCommandCache {
+// NewWithdrawCommandCache creates a new instance of withdrawCommandCache using the provided cache store
+// and returns a pointer to the newly initialized withdrawCommandCache
+func NewWithdrawCommandCache(store *sharedcachehelpers.CacheStore) WithdrawCommandCache {
 	return &withdrawCommandCache{store: store}
 }
 
-func (wc *withdrawCommandCache) DeleteCachedWithdrawCache(id int) {
+// DeleteCachedWithdrawCache deletes a cached withdraw entry by ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - id: The ID of the withdraw cache to delete.
+func (wc *withdrawCommandCache) DeleteCachedWithdrawCache(ctx context.Context, id int) {
 	key := fmt.Sprintf(withdrawByIdCacheKey, id)
-	DeleteFromCache(wc.store, key)
-
+	sharedcachehelpers.DeleteFromCache(ctx, wc.store, key)
 }

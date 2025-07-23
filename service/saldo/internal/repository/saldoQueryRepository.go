@@ -6,25 +6,44 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record"
+	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/repository"
+	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
 )
 
+// saldoQueryRepository is a struct that implements the SaldoQueryRepository interface
 type saldoQueryRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.SaldoRecordMapping
+	db     *db.Queries
+	mapper recordmapper.SaldoQueryRecordMapping
 }
 
-func NewSaldoQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.SaldoRecordMapping) *saldoQueryRepository {
+// NewSaldoQueryRepository initializes a new instance of saldoQueryRepository with the provided
+// database queries, context, and saldo record mapper. This repository is responsible for executing
+// query operations related to saldo records in the database.
+//
+// Parameters:
+//   - db: A pointer to the db.Queries object for executing database queries.
+//   - mapper: A SaldoRecordMapping that provides methods to map database rows to SaldoRecord domain models.
+//
+// Returns:
+//   - A pointer to the newly created saldoQueryRepository instance.
+func NewSaldoQueryRepository(db *db.Queries, mapper recordmapper.SaldoQueryRecordMapping) SaldoQueryRepository {
 	return &saldoQueryRepository{
-		db:      db,
-		ctx:     ctx,
-		mapping: mapping,
+		db:     db,
+		mapper: mapper,
 	}
 }
 
-func (r *saldoQueryRepository) FindAllSaldos(req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
+// FindAllSaldos retrieves all saldo records based on provided filters.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing pagination, filtering, or search criteria.
+//
+// Returns:
+//   - []*record.SaldoRecord: The list of saldo records.
+//   - *int: The total number of records found.
+//   - error: An error if the query fails.
+func (r *saldoQueryRepository) FindAllSaldos(ctx context.Context, req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetSaldosParams{
@@ -33,7 +52,7 @@ func (r *saldoQueryRepository) FindAllSaldos(req *requests.FindAllSaldos) ([]*re
 		Offset:  int32(offset),
 	}
 
-	saldos, err := r.db.GetSaldos(r.ctx, reqDb)
+	saldos, err := r.db.GetSaldos(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, saldo_errors.ErrFindAllSaldosFailed
@@ -46,10 +65,20 @@ func (r *saldoQueryRepository) FindAllSaldos(req *requests.FindAllSaldos) ([]*re
 		totalCount = 0
 	}
 
-	return r.mapping.ToSaldosRecordAll(saldos), &totalCount, nil
+	return r.mapper.ToSaldosRecordAll(saldos), &totalCount, nil
 }
 
-func (r *saldoQueryRepository) FindByActive(req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
+// FindByActive retrieves all active saldo records (not soft-deleted).
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing pagination or filtering options.
+//
+// Returns:
+//   - []*record.SaldoRecord: The list of active saldo records.
+//   - *int: The total number of active records.
+//   - error: An error if the query fails.
+func (r *saldoQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetActiveSaldosParams{
@@ -58,7 +87,7 @@ func (r *saldoQueryRepository) FindByActive(req *requests.FindAllSaldos) ([]*rec
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetActiveSaldos(r.ctx, reqDb)
+	res, err := r.db.GetActiveSaldos(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, saldo_errors.ErrFindActiveSaldosFailed
@@ -71,11 +100,21 @@ func (r *saldoQueryRepository) FindByActive(req *requests.FindAllSaldos) ([]*rec
 		totalCount = 0
 	}
 
-	return r.mapping.ToSaldosRecordActive(res), &totalCount, nil
+	return r.mapper.ToSaldosRecordActive(res), &totalCount, nil
 
 }
 
-func (r *saldoQueryRepository) FindByTrashed(req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
+// FindByTrashed retrieves all trashed saldo records (soft-deleted).
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - req: The request object containing pagination or filtering options.
+//
+// Returns:
+//   - []*record.SaldoRecord: The list of trashed saldo records.
+//   - *int: The total number of trashed records.
+//   - error: An error if the query fails.
+func (r *saldoQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllSaldos) ([]*record.SaldoRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetTrashedSaldosParams{
@@ -84,7 +123,7 @@ func (r *saldoQueryRepository) FindByTrashed(req *requests.FindAllSaldos) ([]*re
 		Offset:  int32(offset),
 	}
 
-	saldos, err := r.db.GetTrashedSaldos(r.ctx, reqDb)
+	saldos, err := r.db.GetTrashedSaldos(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, saldo_errors.ErrFindTrashedSaldosFailed
@@ -97,24 +136,42 @@ func (r *saldoQueryRepository) FindByTrashed(req *requests.FindAllSaldos) ([]*re
 		totalCount = 0
 	}
 
-	return r.mapping.ToSaldosRecordTrashed(saldos), &totalCount, nil
+	return r.mapper.ToSaldosRecordTrashed(saldos), &totalCount, nil
 }
 
-func (r *saldoQueryRepository) FindByCardNumber(card_number string) (*record.SaldoRecord, error) {
-	res, err := r.db.GetSaldoByCardNumber(r.ctx, card_number)
+// FindByCardNumber retrieves a saldo record by card number.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - card_number: The card number associated with the saldo.
+//
+// Returns:
+//   - *record.SaldoRecord: The saldo record if found.
+//   - error: An error if the record is not found or query fails.
+func (r *saldoQueryRepository) FindByCardNumber(ctx context.Context, card_number string) (*record.SaldoRecord, error) {
+	res, err := r.db.GetSaldoByCardNumber(ctx, card_number)
 
 	if err != nil {
 		return nil, saldo_errors.ErrFindSaldoByCardNumberFailed
 	}
 
-	return r.mapping.ToSaldoRecord(res), nil
+	return r.mapper.ToSaldoRecord(res), nil
 }
 
-func (r *saldoQueryRepository) FindById(saldo_id int) (*record.SaldoRecord, error) {
-	res, err := r.db.GetSaldoByID(r.ctx, int32(saldo_id))
+// FindById retrieves a saldo record by its unique ID.
+//
+// Parameters:
+//   - ctx: The context for timeout and cancellation.
+//   - saldo_id: The unique saldo ID to query.
+//
+// Returns:
+//   - *record.SaldoRecord: The saldo record if found.
+//   - error: An error if the record is not found or query fails.
+func (r *saldoQueryRepository) FindById(ctx context.Context, saldo_id int) (*record.SaldoRecord, error) {
+	res, err := r.db.GetSaldoByID(ctx, int32(saldo_id))
 
 	if err != nil {
 	}
 
-	return r.mapping.ToSaldoRecord(res), nil
+	return r.mapper.ToSaldoRecord(res), nil
 }
