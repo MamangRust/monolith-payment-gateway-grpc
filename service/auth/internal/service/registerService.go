@@ -177,9 +177,13 @@ func (s *registerService) Register(ctx context.Context, request *requests.Regist
 	}()
 
 	existingUser, err := s.user.FindByEmail(ctx, request.Email)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
-			zap.String("email", request.Email), zap.Error(err))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			existingUser = nil
+		} else {
+			return s.errohandler.HandleFindEmailError(err, "Register", "REGISTER_ERR", span, &status,
+				zap.String("email", request.Email), zap.Error(err))
+		}
 	}
 
 	if existingUser != nil {
@@ -219,7 +223,7 @@ func (s *registerService) Register(ctx context.Context, request *requests.Regist
 	htmlBody := email.GenerateEmailHTML(map[string]string{
 		"Title":   "Welcome to SanEdge",
 		"Message": "Your account has been successfully created.",
-		"Button":  "Login Now",
+		"Button":  "Verify Now",
 		"Link":    "https://sanedge.example.com/login?verify_code=" + request.VerifiedCode,
 	})
 

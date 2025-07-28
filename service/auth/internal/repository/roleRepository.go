@@ -65,7 +65,7 @@ func (r *roleRepository) FindByName(ctx context.Context, name string) (*record.R
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, role_errors.ErrRoleNotFound
+			return nil, nil
 		}
 
 		return nil, role_errors.ErrRoleNotFound

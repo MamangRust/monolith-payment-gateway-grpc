@@ -1,82 +1,66 @@
-# 🛡️ API Gateway Service 
+# Payment Gateway API Gateway
 
-A centralized entrypoint to route and manage HTTP traffic in a distributed system.
---
+## Overview
 
-The **API Gateway Service** is a reverse proxy layer for a monolith-based architecture. It consolidates routing, authorization, rate-limiting, metrics collection, and service discovery for backend gRPC services such as:
+The **API Gateway** serves as the main entry point for all client requests in the Payment Gateway distributed system. By centralizing access, it simplifies how clients interact with various backend microservices such as `AuthService`, `UserService`, `MerchantService`, `TransactionService`, and others (e.g., Topup, Transfer, Withdraw).
 
-- Auth Service
-- User Service
-- Merchant Service
-- Transaction Service
-- Topup, Transfer, Withdraw, etc.
+This gateway is typically implemented using a high-performance HTTP framework (such as [Echo](https://echo.labstack.com/)), and it communicates with backend services using gRPC. This architecture enables scalable, secure, and maintainable separation of concerns across the entire system.
 
+---
 
-## Project Structure
+## ✨ Key Features
 
-```
-├── cmd
-│   ├── main.go
-│   └── README.md
-├── Dockerfile
-├── docs
-│   ├── docs.go
-│   ├── swagger.json
-│   └── swagger.yaml
-├── go.mod
-├── go.sum
-├── internal
-│   ├── app
-│   │   ├── client.go
-│   │   └── README.md
-│   ├── handler
-│   │   ├── auth.go
-│   │   ├── card.go
-│   │   ├── handle.go
-│   │   ├── merchant_document.go
-│   │   ├── merchant.go
-│   │   ├── README.md
-│   │   ├── role.go
-│   │   ├── saldo.go
-│   │   ├── topup.go
-│   │   ├── transaction.go
-│   │   ├── transfer.go
-│   │   ├── user.go
-│   │   └── withdraw.go
-│   └── middlewares
-│       ├── auth.go
-│       ├── merchant.go
-│       ├── merchantRequestHandler.go
-│       ├── rate_limiter.go
-│       ├── README.md
-│       ├── required_role.go
-│       ├── role.go
-│       └── roleRequestHandler.go
-└── README.md
-```
+- **Single Entry Point**
+  All external requests from clients (web/mobile) go through the API Gateway, which acts as a reverse proxy.
 
-## HandleDomain
+- **Request Routing**
+  The gateway forwards HTTP requests to the appropriate backend microservice using gRPC.
 
-| Domain      | Handler File           | Endpoint Prefix          |
-| ----------- | ---------------------- | ------------------------ |
-| Auth        | `auth.go`              | `/api/auth`              |
-| User        | `user.go`              | `/api/user`              |
-| Card        | `card.go`              | `/api/card`              |
-| Merchant    | `merchant.go`          | `/api/merchant`          |
-| Documents   | `merchant_document.go` | `/api/merchant-document` |
-| Role        | `role.go`              | `/api/role`              |
-| Transaction | `transaction.go`       | `/api/transaction`                |
-| Topup       | `topup.go`             | `/api/topup`             |
-| Transfer    | `transfer.go`          | `/api/transfer`          |
-| Withdraw    | `withdraw.go`          | `/api/withdraw`          |
-| Saldo       | `saldo.go`             | `/api/saldo`             |
+- **Security**
+  Handles authentication and authorization, including JWT token validation, to enforce access control at the edge.
 
+- **Data Transformation**
+  Adjusts the request and response formats as needed between clients and backend microservices (e.g., JSON ↔ Protobuf).
 
-## 📖 API Documentation
+- **Centralized Logging and Monitoring**
+  All traffic passes through the gateway, making it a suitable place for logging, metrics, and tracing integration.
 
-The API docs are available via Swagger UI:
+---
 
-```
-http://localhost:5000/swagger//
-```
-You can explore the available routes, request/response schemas, and try out the APIs.
+## 🔄 Request Flow Through the API Gateway
+
+1. **Client Sends a Request**
+   The client (web or mobile app) sends an HTTP request to the API Gateway endpoint.
+
+2. **Validation & Security**
+   The API Gateway validates the request, checking authentication (such as JWTs) and authorization policies.
+
+3. **Routing to Monolith**
+   After validation, the gateway identifies the correct microservice (e.g., `AuthService`, `UserService`, `MerchantService`, `TransactionService`, etc.) and forwards the request via gRPC.
+
+4. **Monolith Processing**
+   The microservice processes the business logic and returns a response to the API Gateway.
+
+5. **Response to Client**
+   The API Gateway may transform the response format and sends it back to the client.
+
+---
+
+## 🛠️ Monoliths Behind the API Gateway
+
+- **Auth Service**
+  Handles user authentication, JWT issuance, and verification.
+
+- **User Service**
+  Manages user profiles and related operations.
+
+- **Merchant Service**
+  Handles merchant accounts and merchant-specific logic.
+
+- **Transaction Service**
+  Manages financial transactions, including payments, refunds, etc.
+
+- **Topup, Transfer, Withdraw Services**
+  Specialized services for account top-ups, fund transfers, and withdrawals.
+
+---

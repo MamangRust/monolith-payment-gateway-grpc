@@ -7,6 +7,7 @@ import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	refresh_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/refresh_token_errors/repository"
 	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/resettoken"
 )
 
@@ -66,7 +67,7 @@ func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *reques
 		ExpiryDate: expiryDate,
 	})
 	if err != nil {
-		return nil, err
+		return nil, refresh_errors.ErrCreateRefreshToken
 	}
 	return r.mapper.ToResetTokenRecord(res), nil
 }
@@ -82,7 +83,7 @@ func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *reques
 func (r *resetTokenRepository) DeleteResetToken(ctx context.Context, user_id int) error {
 	err := r.db.DeleteResetToken(ctx, int64(user_id))
 	if err != nil {
-		return err
+		return refresh_errors.ErrDeleteByUserID
 	}
 	return nil
 }
