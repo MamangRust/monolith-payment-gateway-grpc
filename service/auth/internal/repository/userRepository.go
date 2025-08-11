@@ -45,7 +45,7 @@ func (r *userRepository) FindById(ctx context.Context, user_id int) (*record.Use
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
+			return nil, nil
 		}
 
 		return nil, user_errors.ErrUserNotFound
@@ -89,7 +89,7 @@ func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, user_errors.ErrUserNotFound
 		}
 
 		return nil, user_errors.ErrUserNotFound

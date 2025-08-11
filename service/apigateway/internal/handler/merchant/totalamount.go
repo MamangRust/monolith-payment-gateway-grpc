@@ -62,6 +62,8 @@ func NewMerchantStatsTotalAmountHandleApi(params *merchantStatsTotalAmountHandle
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	merchantHandler := &merchantStatsTotalAmountHandleApi{
 		client:          params.client,
 		logger:          params.logger,

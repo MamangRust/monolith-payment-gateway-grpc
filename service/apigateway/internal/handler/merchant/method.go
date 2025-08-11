@@ -69,7 +69,7 @@ type merchantStatsMethodHandleDeps struct {
 func NewMerchantStatsMethodHandleApi(params *merchantStatsMethodHandleDeps) *merchantStatsMethodHandleApi {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "merchant_stats_amount_handler_requests_total",
+			Name: "merchant_stats_method_handler_requests_total",
 			Help: "Total number of merchant stats amount requests",
 		},
 		[]string{"method", "status"},
@@ -77,12 +77,14 @@ func NewMerchantStatsMethodHandleApi(params *merchantStatsMethodHandleDeps) *mer
 
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "merchant_stats_amount_handler_request_duration_seconds",
+			Name:    "merchant_stats_method_handler_request_duration_seconds",
 			Help:    "Duration of merchant stats amount requests",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method", "status"},
 	)
+
+	prometheus.MustRegister(requestCounter, requestDuration)
 
 	merchantHandler := &merchantStatsMethodHandleApi{
 		client:          params.client,

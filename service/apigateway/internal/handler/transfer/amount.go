@@ -61,6 +61,8 @@ func NewTransferStatsAmountHandleApi(params *transferStatsAmountHandleDeps) *tra
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	transferStatsAmountHandleApi := &transferStatsAmountHandleApi{
 		client:          params.client,
 		logger:          params.logger,

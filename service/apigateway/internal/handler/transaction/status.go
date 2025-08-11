@@ -46,20 +46,22 @@ type transactionStatsStatusHandleDeps struct {
 func NewTransactionStatsStatusHandleApi(params *transactionStatsStatusHandleDeps) *transactionStatsStatusHandleApi {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "transaction_stats_status_handler_requests_total",
+			Name: "transaction_stats_status_handlers_requests_total",
 			Help: "Total number of transaction stats status requests",
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
 
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "transaction_stats_status_handler_request_duration_seconds",
+			Name:    "transaction_stats_status_handlers_request_duration_seconds",
 			Help:    "Duration of transaction stats status requests",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
+
+	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transactionStatsStatusHandleApi := &transactionStatsStatusHandleApi{
 		client:          params.client,

@@ -63,6 +63,8 @@ func NewWithdrawQueryHandleApi(params *withdrawQueryHandleDeps) *withdrawQueryHa
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	withdrawQueryHandleApi := &withdrawQueryHandleApi{
 		client:          params.client,
 		logger:          params.logger,

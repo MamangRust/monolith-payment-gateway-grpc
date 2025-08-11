@@ -93,7 +93,7 @@ func NewHandlerAuth(params *authHandleParams) *authHandleApi {
 		[]string{"method", "status"},
 	)
 
-	prometheus.MustRegister(requestCounter)
+	prometheus.MustRegister(requestCounter, requestDuration)
 
 	authHandler := &authHandleApi{
 		client:          params.client,

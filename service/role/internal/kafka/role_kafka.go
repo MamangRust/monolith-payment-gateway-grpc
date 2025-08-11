@@ -17,9 +17,9 @@ import (
 // roleKafkaHandler is a struct that implements the sarama.ConsumerGroupHandler interface
 type roleKafkaHandler struct {
 	logger      logger.LoggerInterface
-	roleService service.RoleQueryService // Sesuaikan dengan interface service kamu
+	roleService service.RoleQueryService
 	kafka       *kafka.Kafka
-	ctx         context.Context // Context untuk operasi service
+	ctx         context.Context
 }
 
 // NewRoleKafkaHandler creates a new Kafka consumer group handler for processing role validation responses.
@@ -32,7 +32,7 @@ func NewRoleKafkaHandler(roleService service.RoleQueryService, kafka *kafka.Kafk
 		roleService: roleService,
 		kafka:       kafka,
 		logger:      logger,
-		ctx:         ctx, // Gunakan context dari aplikasi jika perlu
+		ctx:         ctx,
 	}
 }
 
@@ -56,19 +56,14 @@ func (h *roleKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) error {
 // response channel managed by the validator. Each message is marked as processed
 // in the consumer group session.
 func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	// Loop untuk menerima pesan dari Kafka
 	for msg := range claim.Messages() {
-		// Buat context timeout untuk operasi service
-		msgCtx, cancel := context.WithTimeout(h.ctx, 20*time.Second) // Timeout 20 detik untuk pemrosesan
-		defer cancel()                                               // Batalkan context setelah satu iterasi loop selesai
+		msgCtx, cancel := context.WithTimeout(h.ctx, 20*time.Second)
+		defer cancel()
 
-		// Log penerimaan pesan
 		h.logger.Info("Received role validation request",
 			zap.String("topic", msg.Topic),
-			// Key Kafka kemungkinan besar adalah correlationID yang dikirim oleh apigateway
 			zap.String("key", string(msg.Key)))
 
-		// Unmarshal payload permintaan
 		var payload requests.RoleRequestPayload
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {
 			h.logger.Error("Invalid role request payload", zap.Error(err))
@@ -76,7 +71,6 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
-		// Validasi field wajib
 		if payload.CorrelationID == "" || payload.ReplyTopic == "" {
 			h.logger.Error("Missing required fields in role request",
 				zap.String("correlation_id", payload.CorrelationID),
@@ -85,22 +79,18 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
-		// Log pemrosesan
 		h.logger.Info("Processing role validation request",
 			zap.Int("user_id", payload.UserID),
 			zap.String("correlation_id", payload.CorrelationID))
 
-		// Panggil service untuk mendapatkan role
 		roles, errResp := h.roleService.FindByUserId(msgCtx, payload.UserID)
 
-		// Siapkan payload respons
 		resp := response.RoleResponsePayload{
 			CorrelationID: payload.CorrelationID,
 			Valid:         errResp == nil && len(roles) > 0,
 			RoleNames:     make([]string, 0),
 		}
 
-		// Isi nama role jika valid
 		if errResp == nil && len(roles) > 0 {
 			for _, r := range roles {
 				resp.RoleNames = append(resp.RoleNames, r.Name)
@@ -112,11 +102,10 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 		} else {
 			h.logger.Debug("Role validation failed",
 				zap.Int("user_id", payload.UserID),
-				zap.Any("error", errResp), // Log error jika ada
+				zap.Any("error", errResp),
 				zap.String("correlation_id", payload.CorrelationID))
 		}
 
-		// Marshal payload respons ke JSON
 		respBytes, err := json.Marshal(resp)
 		if err != nil {
 			h.logger.Error("Failed to marshal role response",
@@ -126,9 +115,6 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 			continue
 		}
 
-		// Kirim respons ke topik yang ditentukan dalam payload permintaan
-		// Gunakan payload.CorrelationID sebagai key Kafka untuk memastikan
-		// konsistensi dengan yang diharapkan oleh apigateway
 		err = h.kafka.SendMessage(payload.ReplyTopic, payload.CorrelationID, respBytes)
 		if err != nil {
 			h.logger.Error("Failed to send Kafka role response",
@@ -141,7 +127,6 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 				zap.String("correlation_id", payload.CorrelationID))
 		}
 
-		// Tandai pesan sebagai telah diproses
 		session.MarkMessage(msg, "")
 	}
 	return nil

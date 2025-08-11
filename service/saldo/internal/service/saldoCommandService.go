@@ -126,11 +126,13 @@ func (s *saldoCommandService) CreateSaldo(ctx context.Context, request *requests
 		end(status)
 	}()
 
-	_, err := s.cardRepository.FindCardByCardNumber(ctx, request.CardNumber)
+	rescard, err := s.cardRepository.FindCardByCardNumber(ctx, request.CardNumber)
 
 	if err != nil {
 		return s.errorhandler.HandleFindCardByNumberError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, zap.Error(err))
 	}
+
+	s.logger.Info("response card", zap.Any("card", rescard), zap.Any("err", err))
 
 	res, err := s.saldoCommandRepository.CreateSaldo(ctx, request)
 

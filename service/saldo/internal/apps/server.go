@@ -124,7 +124,7 @@ func NewServer(ctx context.Context) (*Server, func(context.Context) error, error
 
 	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
-	handler_kafka_saldo := myhandlerkafka.NewSaldoKafkaHandler(services, logger)
+	handler_kafka_saldo := myhandlerkafka.NewSaldoKafkaHandler(services, logger, ctx)
 
 	err = myKafka.StartConsumers([]string{
 		"saldo-service-topic-create-saldo",

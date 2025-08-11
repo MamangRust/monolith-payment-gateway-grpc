@@ -65,7 +65,7 @@ func NewService(deps *Deps) *Service {
 		Login:         newLogin(deps, tokenService),
 		Register:      newRegister(deps, mapper),
 		PasswordReset: newPasswordReset(deps),
-		Identify:      newIdentity(deps, tokenService),
+		Identify:      newIdentity(deps, tokenService, mapper),
 	}
 }
 
@@ -120,7 +120,7 @@ func newPasswordReset(deps *Deps) PasswordResetService {
 }
 
 // newIdentity initializes the IdentifyService for identity verification and token refresh.
-func newIdentity(deps *Deps, tokenService *tokenService) IdentifyService {
+func newIdentity(deps *Deps, tokenService *tokenService, mapper responseservice.UserQueryResponseMapper) IdentifyService {
 	return NewIdentityService(&IdentityServiceDeps{
 		ErrorHandler: deps.ErrorHandler.IdentityError,
 		ErrorToken:   deps.ErrorHandler.TokenError,
@@ -130,5 +130,6 @@ func newIdentity(deps *Deps, tokenService *tokenService) IdentifyService {
 		User:         deps.Repositories.User,
 		Logger:       deps.Logger,
 		TokenService: tokenService,
+		Mapping:      mapper,
 	})
 }

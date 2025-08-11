@@ -49,7 +49,7 @@ func NewTransferStatsStatusHandleApi(params *transferStatsStatusHandleDeps) *tra
 			Name: "transfer_stats_status_handler_requests_total",
 			Help: "Total number of transfer stats status requests",
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
 
 	requestDuration := prometheus.NewHistogramVec(
@@ -58,8 +58,10 @@ func NewTransferStatsStatusHandleApi(params *transferStatsStatusHandleDeps) *tra
 			Help:    "Duration of transfer stats status requests",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
+
+	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transferStatsStatusHandleApi := &transferStatsStatusHandleApi{
 		client:          params.client,

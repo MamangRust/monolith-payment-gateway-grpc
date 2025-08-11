@@ -63,6 +63,8 @@ func NewTransferCommandHandleApi(params *transferCommandHandleDeps) *transferCom
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	transferCommandHandleApi := &transferCommandHandleApi{
 		client:          params.client,
 		logger:          params.logger,

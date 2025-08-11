@@ -63,6 +63,8 @@ func NewSaldoQueryHandleApi(params *saldoQueryHandleDeps) *saldoQueryHandleApi {
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	saldoHandler := &saldoQueryHandleApi{
 		saldo:           params.client,
 		logger:          params.logger,

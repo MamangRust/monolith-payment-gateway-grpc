@@ -86,6 +86,8 @@ func NewCardStatsTopupHandleApi(
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	cardStatsTopupHandler := &cardStatsTopupHandleApi{
 		card:            params.client,
 		logger:          params.logger,

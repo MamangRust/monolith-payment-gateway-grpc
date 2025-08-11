@@ -75,6 +75,8 @@ func NewTransactionCommandHandleApi(params *transactionCommandHandleDeps) *trans
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	transactionCommandHandleApi := &transactionCommandHandleApi{
 		kafka:           params.kafka,
 		client:          params.client,

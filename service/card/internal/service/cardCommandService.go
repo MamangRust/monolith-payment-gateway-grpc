@@ -152,6 +152,8 @@ func (s *cardCommandService) CreateCard(ctx context.Context, request *requests.C
 
 	payloadBytes, err := json.Marshal(saldoPayload)
 
+	s.logger.Info("hello world", zap.Any("payloadBytes", payloadBytes))
+
 	if err != nil {
 		return errorhandler.HandleMarshalError[*response.CardResponse](s.logger, err, "CreateCard", "FAILED_CREATE_CARD", span, &status, card_errors.ErrFailedCreateCard, zap.Error(err))
 	}

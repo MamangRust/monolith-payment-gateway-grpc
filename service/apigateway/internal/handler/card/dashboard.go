@@ -88,6 +88,8 @@ func NewCardDashboardHandleApi(
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	cardDashboardHandler := &cardDashboardHandleApi{
 		card:            params.client,
 		logger:          params.logger,

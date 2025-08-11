@@ -86,6 +86,8 @@ func NewCardQueryHandleApi(
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	cardQueryHandler := &cardQueryHandleApi{
 		card:            params.client,
 		logger:          params.logger,

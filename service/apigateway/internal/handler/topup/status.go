@@ -70,6 +70,8 @@ func NewTopupStatsStatusHandleApi(params *topupStatsStatusHandleDeps) *topupStat
 		requestDuration: requestDuration,
 	}
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	routerTopup := params.router.Group("/api/topup-stats-status")
 
 	routerTopup.GET("/monthly-success", topupHandler.FindMonthlyTopupStatusSuccess)

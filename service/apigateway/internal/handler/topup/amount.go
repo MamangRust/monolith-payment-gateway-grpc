@@ -61,6 +61,8 @@ func NewTopupStatsAmountHandleApi(params *topupStatsAmountHandleDeps) *topupStat
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	topupHandler := &topupStatsAmountHandleApi{
 		client:          params.client,
 		logger:          params.logger,

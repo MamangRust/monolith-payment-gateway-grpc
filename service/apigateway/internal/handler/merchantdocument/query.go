@@ -74,6 +74,8 @@ func NewMerchantQueryDocumentHandler(params *merchantDocumentQueryDocumentHandle
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	merchantDocumentHandler := &merchantQueryDocumentHandleApi{
 		merchantDocument: params.client,
 		logger:           params.logger,

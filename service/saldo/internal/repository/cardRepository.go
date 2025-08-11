@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
@@ -44,6 +45,9 @@ func NewCardRepository(db *db.Queries, mapper recordmapper.CardQueryRecordMapper
 //   - error: An error if the card is not found or the query fails.
 func (r *cardRepository) FindCardByCardNumber(ctx context.Context, card_number string) (*record.CardRecord, error) {
 	res, err := r.db.GetCardByCardNumber(ctx, card_number)
+
+	fmt.Println("hello res", res)
+	fmt.Println("hello err", err)
 
 	if err != nil {
 		return nil, card_errors.ErrFindCardByCardNumberFailed

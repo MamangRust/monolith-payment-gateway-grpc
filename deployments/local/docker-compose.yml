@@ -219,6 +219,7 @@ services:
       - ./docker.env:/app/docker.env
     ports:
       - "5000:5000"
+      - "8091:8091"
     networks:
       - app_network
     depends_on:

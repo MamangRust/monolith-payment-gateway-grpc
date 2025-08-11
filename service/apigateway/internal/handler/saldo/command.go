@@ -63,6 +63,8 @@ func NewSaldoCommandHandleApi(params *saldoCommandHandleDeps) *saldoCommandHandl
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	saldoHandler := &saldoCommandHandleApi{
 		saldo:           params.client,
 		logger:          params.logger,

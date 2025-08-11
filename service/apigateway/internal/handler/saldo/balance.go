@@ -61,6 +61,8 @@ func NewSaldoStatsBalanceHandleApi(params *saldoStatsBalanceHandleDeps) *saldoSt
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	saldoHandler := &saldoStatsBalanceHandleApi{
 		saldo:           params.client,
 		logger:          params.logger,

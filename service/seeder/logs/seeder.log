@@ -22,3 +22,55 @@
 {"level":"debug","ts":"2025-07-23T06:26:07.934+0700","caller":"seeder/merchant.go:78","msg":"merchant seeded successfully","totalMerchants":40,"activeMerchants":20,"trashedMerchants":20}
 {"level":"info","ts":"2025-07-23T06:26:38.145+0700","caller":"seeder/transaction.go:112","msg":"transaction seeded successfully"}
 {"level":"info","ts":"2025-07-23T06:27:08.173+0700","caller":"seeder/main.go:54","msg":"Database seeded successfully"}
+{"level":"error","ts":"2025-08-11T00:29:23.855+0700","caller":"database/connect.go:48","msg":"Failed to ping database","error":"dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"fatal","ts":"2025-08-11T00:29:23.858+0700","caller":"seeder/main.go:31","msg":"Failed to connect to database","error":"failed to ping database: dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"error","ts":"2025-08-11T00:29:51.760+0700","caller":"database/connect.go:48","msg":"Failed to ping database","error":"dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"fatal","ts":"2025-08-11T00:29:51.760+0700","caller":"seeder/main.go:31","msg":"Failed to connect to database","error":"failed to ping database: dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"error","ts":"2025-08-11T00:30:10.320+0700","caller":"database/connect.go:48","msg":"Failed to ping database","error":"dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"fatal","ts":"2025-08-11T00:30:10.320+0700","caller":"seeder/main.go:31","msg":"Failed to connect to database","error":"failed to ping database: dial tcp 172.20.0.4:5432: connect: no route to host"}
+{"level":"debug","ts":"2025-08-11T00:30:39.281+0700","caller":"database/connect.go:70","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T00:30:39.282+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"info","ts":"2025-08-11T00:30:44.830+0700","caller":"seeder/user.go:65","msg":"user seeded successfully"}
+{"level":"debug","ts":"2025-08-11T00:31:14.894+0700","caller":"seeder/role.go:64","msg":"role seeding completed","total_roles":20,"active_roles":10,"trashed_roles":10}
+{"level":"debug","ts":"2025-08-11T00:31:44.996+0700","caller":"seeder/card.go:80","msg":"card seeded successfully","totalCards":40,"activeCards":20,"trashedCards":20}
+{"level":"debug","ts":"2025-08-11T00:32:15.099+0700","caller":"seeder/saldo.go:73","msg":"saldo seeded successfully","totalSaldos":40,"activeSaldos":20,"trashedSaldos":20}
+{"level":"debug","ts":"2025-08-11T00:32:45.249+0700","caller":"seeder/topup.go:101","msg":"topup seeded successfully","totalTopups":40,"activeTopups":20,"trashedTopups":20}
+{"level":"info","ts":"2025-08-11T00:33:15.395+0700","caller":"seeder/withdraw.go:91","msg":"withdraw seeded successfully"}
+{"level":"info","ts":"2025-08-11T00:33:45.498+0700","caller":"seeder/transfer.go:92","msg":"transfer seeded successfully"}
+{"level":"debug","ts":"2025-08-11T00:34:15.646+0700","caller":"seeder/merchant.go:78","msg":"merchant seeded successfully","totalMerchants":40,"activeMerchants":20,"trashedMerchants":20}
+{"level":"info","ts":"2025-08-11T00:34:45.796+0700","caller":"seeder/transaction.go:112","msg":"transaction seeded successfully"}
+{"level":"info","ts":"2025-08-11T00:35:15.825+0700","caller":"seeder/main.go:54","msg":"Database seeded successfully"}
+{"level":"debug","ts":"2025-08-11T00:49:01.764+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T00:49:01.764+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T00:49:01.912+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Auditor","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T00:49:01.912+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Auditor: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T00:53:33.400+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T00:53:33.401+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T00:53:33.548+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Admin","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T00:53:33.548+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Admin: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T00:54:47.205+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T00:54:47.206+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T00:54:47.355+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Viewer","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T00:54:47.355+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Viewer: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T01:02:45.960+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T01:02:45.960+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T01:02:46.113+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Viewer","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T01:02:46.113+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Viewer: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T01:03:47.318+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T01:03:47.318+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T01:03:47.466+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Merchant Admin","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T01:03:47.466+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Merchant Admin: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T01:05:53.989+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T01:05:53.990+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T01:05:54.136+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Support","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T01:05:54.136+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Support: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T01:07:41.625+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T01:07:41.625+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T01:07:41.779+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"Merchant Operator","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T01:07:41.779+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role Merchant Operator: sql: no rows in result set"}
+{"level":"debug","ts":"2025-08-11T01:12:24.121+0700","caller":"database/connect.go:91","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"debug","ts":"2025-08-11T01:12:24.121+0700","caller":"seeder/main.go:42","msg":"Seeding database","seeder":"true"}
+{"level":"error","ts":"2025-08-11T01:12:24.358+0700","caller":"seeder/user.go:101","msg":"failed to get role","role":"User","error":"sql: no rows in result set"}
+{"level":"fatal","ts":"2025-08-11T01:12:24.358+0700","caller":"seeder/main.go:50","msg":"Failed to run seeder","error":"failed to seed users: failed to get role User: sql: no rows in result set"}
+{"level":"error","ts":"2025-08-11T05:11:33.683+0700","caller":"database/connect.go:69","msg":"Failed to ping database","error":"dial tcp 172.18.0.5:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-08-11T05:11:33.683+0700","caller":"seeder/main.go:31","msg":"Failed to connect to database","error":"failed to ping database: dial tcp 172.18.0.5:5432: connect: connection refused"}

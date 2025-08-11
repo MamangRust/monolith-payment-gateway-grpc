@@ -63,6 +63,8 @@ func NewUserCommandHandleApi(params *userCommandHandleDeps) *userCommandHandleAp
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	userCommandHandleApi := &userCommandHandleApi{
 		client:          params.client,
 		logger:          params.logger,

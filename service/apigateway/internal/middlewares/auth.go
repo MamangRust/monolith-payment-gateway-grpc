@@ -1,7 +1,6 @@
 package middlewares
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,6 +21,7 @@ var whiteListPaths = []string{
 	"/docs/",                // Documentation path with trailing slash
 	"/docs",                 // Documentation path without trailing slash
 	"/swagger",              // Swagger UI endpoint
+	"/metrics",
 }
 
 // WebSecurityConfig adds JWT middleware to an echo router.
@@ -56,8 +56,6 @@ func WebSecurityConfig(e *echo.Echo) {
 			}
 		},
 		ErrorHandler: func(c echo.Context, err error) error {
-			fmt.Println("JWT Error:", err)
-
 			return echo.ErrUnauthorized
 		},
 	}
@@ -76,11 +74,13 @@ func WebSecurityConfig(e *echo.Echo) {
 // - /docs/
 // - /docs
 // - /swagger
-func skipAuth(e echo.Context) bool {
-	path := e.Path()
+func skipAuth(c echo.Context) bool {
+	path := c.Request().URL.Path
 
 	for _, p := range whiteListPaths {
-		if path == p || strings.HasPrefix(path, "/swagger") {
+		if path == p ||
+			strings.HasPrefix(path, "/swagger") ||
+			strings.HasPrefix(path, "/metrics") {
 			return true
 		}
 	}

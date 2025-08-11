@@ -63,6 +63,8 @@ func NewTransferQueryHandleApi(params *transferQueryHandleDeps) *transferQueryHa
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	transferQueryHandleApi := &transferQueryHandleApi{
 		client:          params.client,
 		logger:          params.logger,

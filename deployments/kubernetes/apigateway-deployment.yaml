@@ -30,7 +30,6 @@ spec:
               mountPath: /var/log/app
           securityContext:
             runAsUser: 0
-
         - name: wait-for-kafka
           image: busybox:1.35
           command: ["sh", "-c"]
@@ -44,7 +43,7 @@ spec:
               echo "[INIT] Kafka is ready!"
       containers:
         - name: apigateway
-          image: apigateway-service:1.1
+          image: apigateway-payment-gateway-service:1.0
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

@@ -90,6 +90,8 @@ func NewRoleCommandHandleApi(params *roleCommandHandleDeps) *roleCommandHandleAp
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	roleHandler := &roleCommandHandleApi{
 		role:            params.client,
 		logger:          params.logger,

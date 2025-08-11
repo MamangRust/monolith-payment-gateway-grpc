@@ -49,7 +49,7 @@ func NewWithdrawStatsStatusHandleApi(params *withdrawStatsStatusHandleDeps) *wit
 			Name: "withdraw_stats_status_handler_requests_total",
 			Help: "Total number of withdraw stats status requests",
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
 
 	requestDuration := prometheus.NewHistogramVec(
@@ -58,8 +58,10 @@ func NewWithdrawStatsStatusHandleApi(params *withdrawStatsStatusHandleDeps) *wit
 			Help:    "Duration of withdraw stats status requests",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"status", "status"},
+		[]string{"method", "status"},
 	)
+
+	prometheus.MustRegister(requestCounter, requestDuration)
 
 	withdrawStatsStatusHandleApi := &withdrawStatsStatusHandleApi{
 		client:          params.client,

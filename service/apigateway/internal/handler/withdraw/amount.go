@@ -61,6 +61,8 @@ func NewWithdrawStatsAmountHandleApi(params *withdrawStatsAmountHandleDeps) *wit
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	withdrawStatsAmountHandleApi := &withdrawStatsAmountHandleApi{
 		client:          params.client,
 		logger:          params.logger,

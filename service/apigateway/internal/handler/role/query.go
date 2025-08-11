@@ -71,6 +71,8 @@ func NewRoleQueryHandleApi(params *roleQueryHandleDeps) *roleQueryHandlerApi {
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	roleQueryHandler := &roleQueryHandlerApi{
 		role:            params.client,
 		logger:          params.logger,

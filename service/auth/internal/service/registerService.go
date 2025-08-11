@@ -198,7 +198,7 @@ func (s *registerService) Register(ctx context.Context, request *requests.Regist
 	}
 	request.Password = passwordHash
 
-	const defaultRoleName = "Admin_Role_10"
+	const defaultRoleName = "Super Admin"
 
 	role, err := s.role.FindByName(ctx, defaultRoleName)
 

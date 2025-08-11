@@ -17,6 +17,7 @@ import (
 type saldoKafkaHandler struct {
 	logger       logger.LoggerInterface
 	saldoService service.SaldoCommandService
+	ctx          context.Context
 }
 
 // NewSaldoKafkaHandler creates a new Kafka consumer group handler for processing saldo-related Kafka messages.
@@ -24,10 +25,11 @@ type saldoKafkaHandler struct {
 // It takes a saldo command service and a logger as parameters.
 // The handler is responsible for consuming messages from Kafka topics related to saldo operations.
 // It implements the sarama.ConsumerGroupHandler interface to manage consumer group lifecycle events.
-func NewSaldoKafkaHandler(saldoService service.SaldoCommandService, logger logger.LoggerInterface) sarama.ConsumerGroupHandler {
+func NewSaldoKafkaHandler(saldoService service.SaldoCommandService, logger logger.LoggerInterface, ctx context.Context) sarama.ConsumerGroupHandler {
 	return &saldoKafkaHandler{
 		saldoService: saldoService,
 		logger:       logger,
+		ctx:          ctx,
 	}
 }
 
@@ -50,21 +52,37 @@ func (s *saldoKafkaHandler) Cleanup(session sarama.ConsumerGroupSession) error {
 // error and returns an error with the message "card service error: <error message>".
 // Each message is marked as processed in the consumer group session.
 func (s *saldoKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	s.logger.Info("saldo kafka handler consume claim")
 
 	for msg := range claim.Messages() {
+		ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
+		defer cancel()
+
 		var payload map[string]interface{}
 
 		if err := json.Unmarshal(msg.Value, &payload); err != nil {
 			return err
 		}
 
+		s.logger.Info("hello world", zap.Any("payload", payload))
+
+		cardNumber, ok := payload["card_number"].(string)
+		if !ok {
+			s.logger.Error("payload card_number missing or not string", zap.Any("payload", payload))
+			continue
+		}
+
+		totalBalanceFloat, ok := payload["total_balance"].(float64)
+		if !ok {
+			s.logger.Error("payload total_balance missing or not float64", zap.Any("payload", payload))
+			continue
+		}
+
+		totalBalance := int(totalBalanceFloat)
+
 		_, errRes := s.saldoService.CreateSaldo(ctx, &requests.CreateSaldoRequest{
-			CardNumber:   payload["card_number"].(string),
-			TotalBalance: int(payload["total_balance"].(float64)),
+			CardNumber:   cardNumber,
+			TotalBalance: int(totalBalance),
 		})
 
 		if errRes != nil {

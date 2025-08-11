@@ -62,6 +62,8 @@ func NewUserQueryHandleApi(params *userQueryHandleDeps) *userQueryHandleApi {
 		[]string{"method", "status"},
 	)
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	userQueryHandleApi := &userQueryHandleApi{
 		client:          params.client,
 		logger:          params.logger,

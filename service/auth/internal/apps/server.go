@@ -79,7 +79,7 @@ func NewServer(ctx context.Context) (*Server, func(context.Context) error, error
 
 	logger, err := logger.NewLogger("auth-service")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
+		return nil, nil, fmt.Errorf("failed to initialize jlogger: %w", err)
 	}
 
 	if err := dotenv.Viper(); err != nil {
@@ -146,8 +146,8 @@ func NewServer(ctx context.Context) (*Server, func(context.Context) error, error
 		ErrorHandler: errorhandler,
 		Mencache:     mencache,
 		Repositories: repositories,
-		Hash:         hash,
 		Token:        tokenManager,
+		Hash:         hash,
 		Logger:       logger,
 		Kafka:        kafka,
 	})

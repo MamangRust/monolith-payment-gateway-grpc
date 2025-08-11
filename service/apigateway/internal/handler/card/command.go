@@ -93,6 +93,8 @@ func NewCardCommandHandleApi(params *cardCommandHandleApiDeps) *cardCommandHandl
 		requestDuration: requestDuration,
 	}
 
+	prometheus.MustRegister(requestCounter, requestDuration)
+
 	routerCard := params.router.Group("/api/card-command")
 
 	routerCard.POST("/create", cardHandler.CreateCard)
