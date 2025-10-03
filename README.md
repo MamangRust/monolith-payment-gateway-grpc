@@ -1,95 +1,171 @@
-# Digital Payment Platform
+# 💳 Distributed Modular Monolith Payment Gateway
 
-The **Digital Payment Platform** is a reliable, scalable, and secure integrated system designed to streamline various digital financial transactions. Built using a monolithic architecture, all core functionalities—such as card management, transactions, fund transfers, and merchant interactions—are consolidated within a single application. This approach simplifies development, testing, and deployment, enabling consistent and efficient delivery of digital payment services within a unified environment.
+Proyek ini adalah **Implementasi Distribute Modular Monolith Payment Gateway** dari **Sistem Gerbang Pembayaran**. Arsitektur ini dirancang untuk menyediakan **backend yang aman, dapat diskalakan, dan modular** untuk menangani transaksi keuangan, pembayaran merchant, operasi kartu, dan alur penyelesaian.
 
+Tidak seperti monolit tradisional, sistem ini disusun menjadi **modul (layanan) yang terdefinisi dengan baik** seperti **Auth, Pengguna, Peran, Kartu, Saldo, Transaksi, Merchant, Transfer, Isi Ulang, Tarik Tunai**, dll. Setiap modul berkomunikasi secara internal melalui **gRPC** dan secara eksternal melalui **API Gateway (NGINX)**. Peristiwa dipublikasikan melalui **Kafka** untuk alur kerja asinkron yang digerakkan oleh peristiwa (misalnya, penyelesaian, notifikasi email, pembaruan saldo).
 
-## 🛠️ Technologies Used
-- 🚀 **gRPC** — Provides high-performance, strongly-typed APIs.
-- 📡 **Kafka** — Used to publish balance-related events (e.g., after card creation).
-- 📈 **Prometheus** — Collects metrics like request count and latency for each RPC method.
-- 🛰️ **OpenTelemetry (OTel)** — Enables distributed tracing for observability.
-- 🦫 **Go (Golang)** — Implementation language.
-- 🌐 **Echo** — HTTP framework for Go.
-- 🪵 **Zap Logger** — Structured logging for debugging and operations.
-- 📦 **Sqlc** — SQL code generator for Go.
-- 🧳 **Goose** — Database migration tool.
-- 🐳 **Docker** — Containerization tool.
-- 🧱 **Docker Compose** — Simplifies containerization for development and production environments.
-- 🐘 **PostgreSQL** — Relational database for storing user data.
-- 📃 **Swago** — API documentation generator.
-- 🧭 **Zookeeper** — Distributed configuration management.
-- 🔀 **Nginx** — Reverse proxy for HTTP traffic.
-- 🔍 **Jaeger** — Distributed tracing for observability.
-- 📊 **Grafana** — Monitoring and visualization tool.
-- 🧪 **Postman** — API client for testing and debugging endpoints.
-- ☸️ **Kubernetes** — Container orchestration platform for deployment, scaling, and management.
-- 🧰 **Redis** — In-memory key-value store used for caching and fast data access.
-- 📥 **Loki** — Log aggregation system for collecting and querying logs.
-- 📤 **Promtail** — Log shipping agent that sends logs to Loki.
-- 🔧 **OTel Collector** — Vendor-agnostic collector for receiving, processing, and exporting telemetry data (metrics, traces, logs).
-- 🖥️ **Node Exporter** — Exposes system-level (host) metrics such as CPU, memory, disk, and network stats for Prometheus.
+Di lapisan infrastruktur, sistem terintegrasi dengan:
+
+*   **PostgreSQL** sebagai basis data relasional inti.
+*   **Redis** untuk caching dan manajemen sesi waktu nyata.
+*   **Kafka** (dengan Zookeeper) sebagai bus acara untuk pemrosesan asinkron.
+*   **Layanan Email** untuk mengirim konfirmasi, penyelesaian, dan notifikasi transaksional.
+*   **Tumpukan Observabilitas** (Prometheus, Grafana, Loki, Jaeger, OpenTelemetry) untuk pemantauan, pencatatan, dan pelacakan di seluruh ekosistem.
+
+Penerapan dapat dijalankan di:
+
+*   **Docker Compose** untuk pengembangan dan pengujian lokal yang lengkap.
+*   **Kubernetes** untuk lingkungan tingkat produksi dengan penskalaan otomatis dan ketahanan.
+
+---
+
+## 🎯 Fitur Utama
+
+*   **🔐 Manajemen Otentikasi & Peran**
+    *   Otentikasi pengguna yang aman dengan JWT.
+    *   Kontrol akses berbasis peran (admin, merchant, pelanggan, sistem).
+    *   Izin disimpan di Redis untuk pencarian cepat.
+
+*   **💳 Manajemen Kartu & Saldo**
+    *   Pendaftaran kartu dan manajemen siklus hidup.
+    *   Pembaruan saldo otomatis yang dipicu oleh peristiwa kartu.
+    *   Layanan saldo memastikan status akun yang konsisten.
+
+*   **🏦 Pemrosesan Transaksi**
+    *   Dukungan penuh untuk **transaksi pembayaran**, termasuk pembuatan, penyelesaian, pengembalian dana.
+    *   Peristiwa transaksi dipublikasikan ke Kafka untuk layanan hilir.
+    *   Konfirmasi transaksi waktu nyata dikirim melalui email.
+
+*   **📤 Transfer, Isi Ulang, dan Penarikan**
+    *   Layanan transfer untuk pembayaran peer-to-peer atau merchant.
+    *   Layanan isi ulang untuk mendanai kartu atau dompet.
+    *   Layanan penarikan untuk pembayaran kepada merchant atau pelanggan.
+    *   Setiap operasi menghasilkan konfirmasi email berbasis peristiwa.
+
+*   **🛒 Manajemen Merchant**
+    *   Pendaftaran dan verifikasi merchant.
+    *   Status dokumen dan peristiwa konfirmasi terintegrasi dengan Layanan Email.
+    *   Alur penyelesaian terhubung ke layanan Transaksi dan Saldo.
+
+*   **⚡ Arsitektur Berbasis Peristiwa**
+    *   Broker Kafka memastikan pemisahan antara modul inti.
+    *   Notifikasi email, pemicu penyelesaian, dan pembaruan saldo digerakkan oleh peristiwa.
+    *   Cache Redis menyimpan data yang sering diakses (izin, sesi, saldo).
+
+*   **📊 Observabilitas & Pemantauan**
+    *   Endpoint `/metrics` di semua layanan diekspos ke Prometheus.
+    *   Log dikirim dengan Promtail → Loki.
+    *   Kesehatan sistem divisualisasikan melalui dasbor Grafana.
+    *   Pelacakan ujung ke ujung dengan OpenTelemetry → Jaeger.
+
+---
+
+## 🏗️ Arsitektur Penerapan
+
+### **1. Docker Compose (Pengembangan Lokal)**
+
+*   Mengatur **API Gateway, Layanan Inti, Pesan (Kafka + Zookeeper), Basis Data (PostgreSQL), Redis, Layanan Email, dan tumpukan Observabilitas**.
+*   Ideal untuk **pengujian integrasi** dan menjalankan sistem gerbang pembayaran penuh secara lokal.
+*   Pengembang dapat memvalidasi alur transaksi ujung ke ujung (misalnya, kartu → saldo → transaksi → email).
+
+### **2. Kubernetes (Produksi)**
+
+*   Setiap layanan inti berjalan di Pod-nya sendiri di dalam kluster.
+*   Kafka, Redis, PostgreSQL diterapkan sebagai Pod infrastruktur yang tangguh.
+*   Tugas migrasi memastikan skema basis data selalu terbaru.
+*   Horizontal Pod Autoscalers (HPA) menskalakan layanan penting seperti **Transaksi**, **Saldo**, atau **Merchant** di bawah beban.
+*   Komponen observabilitas diterapkan sebagai Pod/DaemonSet untuk **log, metrik, dan jejak**.
+*   Alur yang digerakkan oleh peristiwa tetap terpisah, memastikan **throughput tinggi dan toleransi kesalahan** dalam operasi keuangan.
+
+---
+
+## 🛠️ Teknologi yang Digunakan
+- 🚀 **gRPC** — Menyediakan API berkinerja tinggi dan bertipe kuat.
+- 📡 **Kafka** — Digunakan untuk mempublikasikan peristiwa terkait saldo (misalnya, setelah pembuatan kartu).
+- 📈 **Prometheus** — Mengumpulkan metrik seperti jumlah permintaan dan latensi untuk setiap metode RPC.
+- 🛰️ **OpenTelemetry (OTel)** — Memungkinkan pelacakan terdistribusi untuk observabilitas.
+- 🦫 **Go (Golang)** — Bahasa implementasi.
+- 🌐 **Echo** — Kerangka kerja HTTP untuk Go.
+- 🪵 **Zap Logger** — Pencatatan terstruktur untuk debugging dan operasi.
+- 📦 **Sqlc** — Generator kode SQL untuk Go.
+- 🧳 **Goose** — Alat migrasi basis data.
+- 🐳 **Docker** — Alat kontainerisasi.
+- 🧱 **Docker Compose** — Menyederhanakan kontainerisasi untuk lingkungan pengembangan dan produksi.
+- 🐘 **PostgreSQL** — Basis data relasional untuk menyimpan data pengguna.
+- 📃 **Swago** — Generator dokumentasi API.
+- 🧭 **Zookeeper** — Manajemen konfigurasi terdistribusi.
+- 🔀 **Nginx** — Proksi terbalik untuk lalu lintas HTTP.
+- 🔍 **Jaeger** — Pelacakan terdistribusi untuk observabilitas.
+- 📊 **Grafana** — Alat pemantauan dan visualisasi.
+- 🧪 **Postman** — Klien API untuk menguji dan men-debug endpoint.
+- ☸️ **Kubernetes** — Platform orkestrasi kontainer untuk penerapan, penskalaan, dan manajemen.
+- 🧰 **Redis** — Penyimpanan nilai kunci dalam memori yang digunakan untuk caching dan akses data cepat.
+- 📥 **Loki** — Sistem agregasi log untuk mengumpulkan dan menanyakan log.
+- 📤 **Promtail** — Agen pengiriman log yang mengirim log ke Loki.
+- 🔧 **OTel Collector** — Kolektor agnostik vendor untuk menerima, memproses, dan mengekspor data telemetri (metrik, jejak, log).
+- 🖥️ **Node Exporter** — Mengekspos metrik tingkat sistem (host) seperti CPU, memori, disk, dan statistik jaringan untuk Prometheus.
 
 
 ----
 
-## Getting Started
+## Memulai
 
-Follow these instructions to get the project up and running on your local machine for development and testing purposes.
+Ikuti petunjuk ini untuk menjalankan proyek di mesin lokal Anda untuk tujuan pengembangan dan pengujian.
 
-### Prerequisites
+### Prasyarat
 
-Make sure you have the following tools installed:
--   [Git](https://git-scm.com/)
--   [Go](https://go.dev/) (version 1.20+)
--   [Docker](https://www.docker.com/)
--   [Docker Compose](https://docs.docker.com/compose/)
--   [Make](https://www.gnu.org/software/make/)
+Pastikan Anda telah menginstal alat-alat berikut:
+- [Git](https://git-scm.com/)
+- [Go](https://go.dev/) (versi 1.20+)
+- [Docker](https://www.docker.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
+- [Make](https://www.gnu.org/software/make/)
 
-### 1. Clone the Repository
+### 1. Klon Repositori
 
 ```sh
-git clone https://github.com/your-username/monolith-payment-gateway-grpc.git
+git clone https://github.com/MamangRust/monolith-payment-gateway-grpc.git
 cd monolith-payment-gateway-grpc
 ```
 
-### 2. Environment Configuration
+### 2. Konfigurasi Lingkungan
 
-The project uses environment files for configuration. You'll need to create the necessary `.env` files.
-*   Create a `.env` file in the root directory for general settings.
-*   Create a `docker.env` file in `deployments/local/` for Docker-specific settings.
+Proyek ini menggunakan file lingkungan untuk konfigurasi. Anda perlu membuat file `.env` yang diperlukan.
+*   Buat file `.env` di direktori root untuk pengaturan umum.
+*   Buat file `docker.env` di `deployments/local/` untuk pengaturan khusus Docker.
 
-You can copy the example files if they exist, or create them from scratch.
+Anda dapat menyalin file contoh jika ada, atau membuatnya dari awal.
 
-### 3. Run the Application
+### 3. Jalankan Aplikasi
 
-The following commands will build the Docker images, start all services, and prepare the database.
+Perintah berikut akan membangun image Docker, memulai semua layanan, dan menyiapkan basis data.
 
-**1. Build images and launch services:**
-This command builds all service images and starts the entire infrastructure (including databases, Kafka, etc.) using Docker Compose.
+**1. Bangun image dan luncurkan layanan:**
+Perintah ini membangun semua image layanan dan memulai seluruh infrastruktur (termasuk basis data, Kafka, dll.) menggunakan Docker Compose.
 
 ```sh
 make build-up
 ```
 
-**2. Run Database Migrations:**
-Once the containers are running, apply the database schema migrations.
+**2. Jalankan Migrasi Basis Data:**
+Setelah kontainer berjalan, terapkan migrasi skema basis data.
 
 ```sh
 make migrate
 ```
 
-**3. Seed the Database (Optional):**
-To populate the database with initial data for testing, run the seeder.
+**3. Isi Basis Data (Opsional):**
+Untuk mengisi basis data dengan data awal untuk pengujian, jalankan seeder.
 
 ```sh
 make seeder
 ```
 
-The platform should now be fully operational. You can check the status of the running containers with `make ps`.
+Platform sekarang harus beroperasi penuh. Anda dapat memeriksa status kontainer yang berjalan dengan `make ps`.
 
-### Stopping the Application
+### Menghentikan Aplikasi
 
-To stop and remove all running containers, use the following command:
+Untuk menghentikan dan menghapus semua kontainer yang berjalan, gunakan perintah berikut:
 
 ```sh
 make down
@@ -98,30 +174,30 @@ make down
 
 ----
 
-## Architecture Overview
+## Tinjauan Arsitektur
 
-This Digital Payment Platform is designed as a **modular monolithic system**. While the business logic is organized into distinct services (e.g., `user`, `transaction`, `card`), they are developed within a single codebase. This approach combines the simplicity of a monolith with the organizational benefits of service-oriented architecture.
+Platform Pembayaran Digital ini dirancang sebagai **sistem monolitik modular**. Meskipun logika bisnis diatur ke dalam layanan yang berbeda (misalnya, `user`, `transaction`, `card`), mereka dikembangkan dalam satu basis kode. Pendekatan ini menggabungkan kesederhanaan monolit dengan manfaat organisasi dari arsitektur berorientasi layanan.
 
-The system is designed to be deployed using containerization, with separate containers for each service. This allows for independent scaling and management of components in a production-like environment.
+Sistem ini dirancang untuk diterapkan menggunakan kontainerisasi, dengan kontainer terpisah untuk setiap layanan. Hal ini memungkinkan penskalaan dan manajemen komponen secara independen di lingkungan seperti produksi.
 
-### Key Architectural Concepts:
+### Konsep Arsitektur Utama:
 
-*   **API Gateway**: A single entry point for all client requests. It routes traffic to the appropriate backend service, handles authentication, and provides a unified API.
-*   **gRPC for Inter-Service Communication**: High-performance gRPC is used for communication between internal services, ensuring low latency and strongly-typed contracts.
-*   **Asynchronous Messaging with Kafka**: Kafka is used for event-driven communication, decoupling services and improving resilience. For example, when a new card is created, a message is published to a Kafka topic, which is then consumed by the `saldo` service to update the balance.
-*   **Centralized Observability**: The platform integrates a comprehensive observability stack:
-    *   **Prometheus** for collecting metrics.
-    *   **Jaeger** (via OpenTelemetry) for distributed tracing.
-    *   **Loki** and **Promtail** for log aggregation.
-    *   **Grafana** for visualization of metrics, traces, and logs.
+*   **API Gateway**: Satu titik masuk untuk semua permintaan klien. Ini merutekan lalu lintas ke layanan backend yang sesuai, menangani otentikasi, dan menyediakan API terpadu.
+*   **gRPC for Inter-Service Communication**: gRPC berkinerja tinggi digunakan untuk komunikasi antara layanan internal, memastikan latensi rendah dan kontrak bertipe kuat.
+*   **Pesan Asinkron dengan Kafka**: Kafka digunakan untuk komunikasi berbasis peristiwa, memisahkan layanan dan meningkatkan ketahanan. Misalnya, ketika kartu baru dibuat, sebuah pesan dipublikasikan ke topik Kafka, yang kemudian dikonsumsi oleh layanan `saldo` untuk memperbarui saldo.
+*   **Observabilitas Terpusat**: Platform ini mengintegrasikan tumpukan observabilitas yang komprehensif:
+    *   **Prometheus** untuk mengumpulkan metrik.
+    *   **Jaeger** (melalui OpenTelemetry) untuk pelacakan terdistribusi.
+    *   **Loki** dan **Promtail** untuk agregasi log.
+    *   **Grafana** untuk visualisasi metrik, jejak, dan log.
 
-### Deployment Architecture
+### Arsitektur Penerapan
 
-The platform is designed to run in containerized environments. We provide configurations for both Docker Compose (for local development) and Kubernetes (for a production-like setup).
+Platform ini dirancang untuk berjalan di lingkungan terkontainerisasi. Kami menyediakan konfigurasi untuk Docker Compose (untuk pengembangan lokal) dan Kubernetes (untuk pengaturan seperti produksi).
 
-#### Docker Environment
+#### Lingkungan Docker
 
-The Docker setup uses `docker-compose` to orchestrate all the services, databases, and tools needed for a complete local development environment.
+Pengaturan Docker menggunakan `docker-compose` untuk mengatur semua layanan, basis data, dan alat yang diperlukan untuk lingkungan pengembangan lokal yang lengkap.
 
 ```mermaid
 flowchart TD
@@ -232,66 +308,92 @@ flowchart TD
     Loki --> Grafana
     Prometheus --> OtelCollector
     OtelCollector --> Jaeger
+
+
+    classDef default fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4,stroke-width:1px;
+    classDef gateway fill:#1e293b,stroke:#94e2d5,color:#f0fdfa,font-weight:bold;
+    classDef core fill:#313244,stroke:#cba6f7,color:#f5e0dc,font-weight:bold;
+    classDef infra fill:#292524,stroke:#fab387,color:#fde68a;
+    classDef observ fill:#1a2e05,stroke:#a6e3a1,color:#d9f99d;
+    classDef misc fill:#1e3a8a,stroke:#89b4fa,color:#bfdbfe;
+
+
+
+    %% Assign classes
+    class NGINX gateway;
+    class CoreServices core;
+    class MessagingAndStorage infra;
+    class ObservabilityStack observ;
+    class EmailS,Migration misc;
+
 ```
 
-#### Kubernetes Environment
+#### Lingkungan Kubernetes
 
-The Kubernetes setup provides a scalable and resilient deployment. Each service runs in its own set of Pods, with Horizontal Pod Autoscalers (HPAs) for automatic scaling based on load.
+Pengaturan Kubernetes menyediakan penerapan yang dapat diskalakan dan tangguh. Setiap layanan berjalan dalam set Pod-nya sendiri, dengan Horizontal Pod Autoscalers (HPA) untuk penskalaan otomatis berdasarkan beban.
 
 ```mermaid
 flowchart TD
     %% ======================
-    %% API Gateway
+    %% KUBERNETES CLUSTER
     %% ======================
-    subgraph Gateway
-        NGINX[API Gateway / NGINX]
-    end
+    subgraph K8s["Kubernetes Cluster"]
 
-    %% ======================
-    %% Core Services
-    %% ======================
-    subgraph CoreServices[Core Services]
-        RS[Role Service]
-        US[User Service]
-        TS[Transaction Service]
-        CS[Card Service]
-        MS[Merchant Service]
-        TRS[Transfer Service]
-        TUS[Topup Service]
-        WS[Withdraw Service]
-        BS[Balance Service]
-        AS[Auth Service]
-    end
+        %% ----------------------
+        %% Ingress + API Gateway
+        %% ----------------------
+        subgraph ingress["Namespace: ingress"]
+            NGINX["API Gateway (Ingress Controller)\n[Service + Pod]"]
+        end
 
-    %% ======================
-    %% Messaging & Storage
-    %% ======================
-    subgraph MessagingAndStorage
-        Kafka[(Kafka Broker)]
-        ZK[(Zookeeper)]
-        Redis[(Redis Cache)]
-        DB[(PostgreSQL Database)]
-    end
+        %% ----------------------
+        %% Core Services
+        %% ----------------------
+        subgraph core["Namespace: core-services"]
+            RS["Role Service\n[Deployment + Pod]"]
+            US["User Service\n[Deployment + Pod]"]
+            TS["Transaction Service\n[Deployment + Pod]"]
+            CS["Card Service\n[Deployment + Pod]"]
+            MS["Merchant Service\n[Deployment + Pod]"]
+            TRS["Transfer Service\n[Deployment + Pod]"]
+            TUS["Topup Service\n[Deployment + Pod]"]
+            WS["Withdraw Service\n[Deployment + Pod]"]
+            BS["Balance Service\n[Deployment + Pod]"]
+            AS["Auth Service\n[Deployment + Pod]"]
+        end
 
-    %% ======================
-    %% Observability
-    %% ======================
-    subgraph ObservabilityStack[Observability Stack]
-        Promtail
-        KafkaExporter
-        NodeExporter
-        Prometheus
-        Loki
-        OtelCollector
-        Grafana
-        Jaeger
-    end
+        %% ----------------------
+        %% Messaging & Storage
+        %% ----------------------
+        subgraph infra["Namespace: infra"]
+            Kafka["Kafka Broker\n[StatefulSet + Pod]"]
+            ZK["Zookeeper\n[StatefulSet + Pod]"]
+            Redis["Redis Cache\n[StatefulSet + Pod]"]
+            DB["PostgreSQL Database\n[StatefulSet + Pod]"]
+        end
 
-    %% ======================
-    %% Misc Services
-    %% ======================
-    EmailS[Email Service]
-    Migration[Migration Service]
+        %% ----------------------
+        %% Observability Stack
+        %% ----------------------
+        subgraph observ["Namespace: observability"]
+            Promtail["Promtail\n[DaemonSet + Pod]"]
+            KafkaExporter["Kafka Exporter\n[Deployment + Pod]"]
+            NodeExporter["Node Exporter\n[DaemonSet + Pod]"]
+            Prometheus["Prometheus\n[StatefulSet + Pod]"]
+            Loki["Loki\n[StatefulSet + Pod]"]
+            OtelCollector["OpenTelemetry Collector\n[Deployment + Pod]"]
+            Grafana["Grafana\n[Deployment + Pod]"]
+            Jaeger["Jaeger\n[Deployment + Pod]"]
+        end
+
+        %% ----------------------
+        %% Misc Services
+        %% ----------------------
+        subgraph misc["Namespace: misc"]
+            EmailS["Email Service\n[Deployment + Pod]"]
+            Migration["Migration Job\n[Job + Pod]"]
+        end
+    end
 
     %% ======================
     %% Gateway Connections
@@ -319,9 +421,9 @@ flowchart TD
     %% ======================
     %% Core Services <-> Messaging & Storage
     %% ======================
-    CoreServices -->|Publish/Consume| Kafka
-    CoreServices -->|Cache| Redis
-    CoreServices -->|Read/Write| DB
+    core -->|Publish/Consume| Kafka
+    core -->|Cache| Redis
+    core -->|Read/Write| DB
 
     %% ======================
     %% Migration -> Database
@@ -336,7 +438,7 @@ flowchart TD
     %% ======================
     %% Observability Connections
     %% ======================
-    CoreServices -->|/metrics| Prometheus
+    core -->|/metrics| Prometheus
     Kafka -->|/metrics| Prometheus
     Redis -->|/metrics| Prometheus
     Promtail --> Loki
@@ -346,87 +448,104 @@ flowchart TD
     Loki --> Grafana
     Prometheus --> OtelCollector
     OtelCollector --> Jaeger
+
+    %% ======================
+    %% STYLING
+    %% ======================
+    classDef default fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4,stroke-width:1px;
+    classDef gateway fill:#1e293b,stroke:#94e2d5,color:#f0fdfa,font-weight:bold;
+    classDef core fill:#313244,stroke:#cba6f7,color:#f5e0dc,font-weight:bold;
+    classDef infra fill:#292524,stroke:#fab387,color:#fde68a;
+    classDef observ fill:#1a2e05,stroke:#a6e3a1,color:#d9f99d;
+    classDef misc fill:#1e3a8a,stroke:#89b4fa,color:#bfdbfe;
+
+    %% Apply classes to namespaces
+    class ingress gateway;
+    class core core;
+    class infra infra;
+    class observ observ;
+    class misc misc;
 ```
 
-# How to Run
+# Cara Menjalankan
 
-## 1. Clone Repository
+## 1. Klon Repositori
 
 ```bash
 git clone https://github.com/MamangRust/monolith-payment-gateway-grpc.git
 cd monolith-payment-gateway-grpc
 ```
 
-## 2. Running Locally with Docker Compose
+## 2. Menjalankan Secara Lokal dengan Docker Compose
 
-To run all services locally, you can use Docker Compose.
+Untuk menjalankan semua layanan secara lokal, Anda dapat menggunakan Docker Compose.
 
 ```bash
 make build-up
 ```
 
-This command will build images for each service and run them in the background.
+Perintah ini akan membangun image untuk setiap layanan dan menjalankannya di latar belakang.
 
-To stop all services, run the following command:
+Untuk menghentikan semua layanan, jalankan perintah berikut:
 
 ```bash
 make down
 ```
 
-## 3. Running on Kubernetes
+## 3. Menjalankan di Kubernetes
 
-To run all services on Kubernetes, you can use Minikube.
+Untuk menjalankan semua layanan di Kubernetes, Anda dapat menggunakan Minikube.
 
 ```bash
 make kube-start
 make kube-up
 ```
 
-This command will start Minikube and apply all Kubernetes configurations located in the `deployments/kubernetes` directory.
+Perintah ini akan memulai Minikube dan menerapkan semua konfigurasi Kubernetes yang terletak di direktori `deployments/kubernetes`.
 
-To stop all services on Kubernetes, run the following command:
+Untuk menghentikan semua layanan di Kubernetes, jalankan perintah berikut:
 
 ```bash
 make kube-down
 ```
 
-## 4. Generate Code from Protobuf
+## 4. Hasilkan Kode dari Protobuf
 
-**Important:** This project does not include `.proto` files. You must add your own `.proto` files to the `proto/` directory.
+**Penting:** Proyek ini tidak menyertakan file `.proto`. Anda harus menambahkan file `.proto` Anda sendiri ke direktori `proto/`.
 
-After adding your `.proto` files, run the following command to generate Go code from your `.proto` files:
+Setelah menambahkan file `.proto` Anda, jalankan perintah berikut untuk menghasilkan kode Go dari file `.proto` Anda:
 
 ```bash
 make generate-proto
 ```
 
-## 5. Generate Code from SQL
+## 5. Hasilkan Kode dari SQL
 
-To generate Go code from SQL files, run the following command:
+Untuk menghasilkan kode Go dari file SQL, jalankan perintah berikut:
 
 ```bash
 make generate-sql
 ```
 
-## 6. Running Database Migration
+## 6. Menjalankan Migrasi Basis Data
 
-To run database migration, execute the following command:
+Untuk menjalankan migrasi basis data, jalankan perintah berikut:
 
 ```bash
 make migrate
 ```
 
-## 7. Running Seeder
+## 7. Menjalankan Seeder
 
-To populate the database with initial data, run the following command:
+Untuk mengisi basis data dengan data awal, jalankan perintah berikut:
 
 ```bash
 make seeder
 ```
 
-## 8. Running Tests
+## 8. Menjalankan Tes
 
-To run tests on the `auth` service, execute the following command:
+Untuk menjalankan tes pada layanan `auth`, jalankan perintah berikut:
 
 ```bash
 make test-auth
@@ -434,95 +553,95 @@ make test-auth
 
 ## Makefile
 
-This project comes with a `Makefile` containing various commands to facilitate development. Here are some available commands:
+Proyek ini dilengkapi dengan `Makefile` yang berisi berbagai perintah untuk memfasilitasi pengembangan. Berikut adalah beberapa perintah yang tersedia:
 
-- `make migrate`: Run database migration
-- `make migrate-down`: Rollback database migration
-- `make generate-proto`: Generate Go code from `.proto` files
-- `make generate-sql`: Generate Go code from SQL files
-- `make generate-swagger`: Generate Swagger documentation
-- `make seeder`: Populate database with initial data
-- `make build-image`: Build Docker images for all services
-- `make image-load`: Load Docker images to Minikube
-- `make image-delete`: Delete Docker images from Minikube
-- `make ps`: Display Docker container status
-- `make up`: Run all services with Docker Compose
-- `make down`: Stop all services running with Docker Compose
-- `make build-up`: Build images and run all services with Docker Compose
-- `make kube-start`: Start Minikube
-- `make kube-up`: Run all services on Kubernetes
-- `make kube-down`: Stop all services on Kubernetes
-- `make kube-status`: Display status of pods, services, PVCs, and jobs on Kubernetes
-- `make kube-tunnel`: Create tunnel to Minikube
-- `make test-auth`: Run tests on the `auth` service
-
-
+- `make migrate`: Jalankan migrasi basis data
+- `make migrate-down`: Batalkan migrasi basis data
+- `make generate-proto`: Hasilkan kode Go dari file `.proto`
+- `make generate-sql`: Hasilkan kode Go dari file SQL
+- `make generate-swagger`: Hasilkan dokumentasi Swagger
+- `make seeder`: Isi basis data dengan data awal
+- `make build-image`: Bangun image Docker untuk semua layanan
+- `make image-load`: Muat image Docker ke Minikube
+- `make image-delete`: Hapus image Docker dari Minikube
+- `make ps`: Tampilkan status kontainer Docker
+- `make up`: Jalankan semua layanan dengan Docker Compose
+- `make down`: Hentikan semua layanan yang berjalan dengan Docker Compose
+- `make build-up`: Bangun image dan jalankan semua layanan dengan Docker Compose
+- `make kube-start`: Mulai Minikube
+- `make kube-up`: Jalankan semua layanan di Kubernetes
+- `make kube-down`: Hentikan semua layanan di Kubernetes
+- `make kube-status`: Tampilkan status pod, layanan, PVC, dan pekerjaan di Kubernetes
+- `make kube-tunnel`: Buat terowongan ke Minikube
+- `make test-auth`: Jalankan tes pada layanan `auth`
 
 
-## Screenshoot
 
-### API Documentation
+
+## Cuplikan Layar
+
+### Dokumentasi API
 <img src="./images/swagger.png" alt="hello-api-documentation">
 
 
-### ERD Documentation
+### Dokumentasi ERD
 
 <img src="./images/Payment Gateway.png" alt="hello-erd-documentation" />
 
 
-### Grafana Dashboard(Prometheus & OpenTelemetry(Jaeger))
+### Dasbor Grafana (Prometheus & OpenTelemetry(Jaeger))
 
-#### Node Exporter
+#### Pengekspor Node
 
 <img src="./images//node-exporter.png" alt="hello-node-exporter-grafana-dashboard">
 
-#### Email Service
+#### Layanan Email
 
 <img src="./images/email-service.png" alt="hello-email-grafana-dashboard">
 
 
-#### Auth Service
+#### Layanan Otentikasi
 
 <img src="./images/auth-service.png" alt="hello-auth-grafana-dashboard">
 
-#### User Service
+#### Layanan Pengguna
 
 <img src="./images/user-service.png" alt="hello-user-grafana-dashboard">
 
 
-#### Role Service
+#### Layanan Peran
 
 <img src="./images/role-service.png" alt="hello-role-grafana-dashboard">
 
 
-#### Merchant Service
+#### Layanan Merchant
 
 <img src="./images/merchant-service.png" alt="hello-merchant-grafana-dashboard">
 
-#### Card Service
+#### Layanan Kartu
 
 <img src="./images/card-service.png" alt="hello-card-grafana-dashboard">
 
 
-#### Saldo Service
+#### Layanan Saldo
 
 <img src="./images/saldo-service.png" alt="hello-saldo-grafana-dashboard">
 
 
-#### Topup Service
+#### Layanan Isi Ulang
 
 <img src="./images/topup-service.png" alt="hello-topup-grafana-dashboard">
 
 
-#### Transaction Service
+#### Layanan Transaksi
 
 <img src="./images/transaction-service.png" alt="hello-transaction-grafana-dashboard">
 
 
-#### Transfer Service
+#### Layanan Transfer
 
 <img src="./images/transfer-service.png" alt="hello-transfer-grafana-dashboard">
 
-#### Withdraw Service
+#### Layanan Penarikan
 
 <img src="./images/withdraw-service.png" alt="hello-withdraw-grafana-dashboard">
