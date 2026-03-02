@@ -2,30 +2,36 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
+	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/config"
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/handler"
 	"github.com/MamangRust/monolith-payment-gateway-email/internal/mailer"
-	"github.com/MamangRust/monolith-payment-gateway-email/internal/metrics"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-payment-gateway-pkg/otel"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-// main initializes and starts the email service. It sets up the logger, loads
-// environment configurations, initializes the tracer provider, registers the
-// metrics endpoint, and starts the Kafka consumers for various topics related
-// to email notifications. The function will block indefinitely after starting
-// the service.
 func main() {
-	logger, err := logger.NewLogger("email-service")
+	telemetry := otel_pkg.NewTelemetry(otel_pkg.Config{
+		ServiceName:            "email-service",
+		ServiceVersion:         "v1.0.0",
+		Environment:            "production",
+		Endpoint:               "otel-collector:4317",
+		Insecure:               true,
+		EnableRuntimeMetrics:   true,
+		RuntimeMetricsInterval: 15 * time.Second,
+	})
+
+	if err := telemetry.Init(context.Background()); err != nil {
+		return
+	}
+
+	logger, err := logger.NewLogger("email-service", telemetry.GetLogger())
 	if err != nil {
 		log.Fatalf("Error creating logger: %v", err)
 	}
@@ -44,23 +50,8 @@ func main() {
 		SMTPPass:     viper.GetString("SMTP_PASS"),
 	}
 
-	metricsAddr := fmt.Sprintf(":%s", viper.GetString("METRIC_EMAIL_ADDR"))
-
-	metrics.Register()
-
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(metricsAddr, nil))
-	}()
-
-	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("email-service", ctx)
-
-	if err != nil {
-		logger.Fatal("Failed to initialize tracer provider", zap.Error(err))
-	}
-
 	defer func() {
-		if err := shutdownTracerProvider(ctx); err != nil {
+		if err := telemetry.Shutdown(ctx); err != nil {
 			logger.Fatal("Failed to shutdown tracer provider", zap.Error(err))
 		}
 	}()

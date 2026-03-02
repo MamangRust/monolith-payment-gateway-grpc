@@ -4,16 +4,13 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	userrole_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_role_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/userrole"
 )
 
 // userRoleRepository is a struct that implements the UserRoleRepository interface
 type userRoleRepository struct {
-	db     *db.Queries
-	mapper recordmapper.UserRoleRecordMapping
+	db *db.Queries
 }
 
 // NewUserRoleRepository creates a new UserRoleRepository instance
@@ -24,10 +21,9 @@ type userRoleRepository struct {
 //
 // Returns:
 // a pointer to the userRoleRepository struct
-func NewUserRoleRepository(db *db.Queries, mapper recordmapper.UserRoleRecordMapping) *userRoleRepository {
+func NewUserRoleRepository(db *db.Queries) *userRoleRepository {
 	return &userRoleRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
@@ -39,7 +35,7 @@ func NewUserRoleRepository(db *db.Queries, mapper recordmapper.UserRoleRecordMap
 //
 // Returns:
 //   - The created UserRoleRecord if successful, or an error if the operation fails.
-func (r *userRoleRepository) AssignRoleToUser(ctx context.Context, req *requests.CreateUserRoleRequest) (*record.UserRoleRecord, error) {
+func (r *userRoleRepository) AssignRoleToUser(ctx context.Context, req *requests.CreateUserRoleRequest) (*db.UserRole, error) {
 	res, err := r.db.AssignRoleToUser(ctx, db.AssignRoleToUserParams{
 		UserID: int32(req.UserId),
 		RoleID: int32(req.RoleId),
@@ -49,7 +45,7 @@ func (r *userRoleRepository) AssignRoleToUser(ctx context.Context, req *requests
 		return nil, userrole_errors.ErrAssignRoleToUser
 	}
 
-	return r.mapper.ToUserRoleRecord(res), nil
+	return res, nil
 }
 
 // RemoveRoleFromUser removes a role assigned to a user.

@@ -5,126 +5,52 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/repository"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// cardCommandServiceDeps holds the dependencies required to create a new cardCommandService.
+// cardCommandServiceDeps defines dependencies for cardCommandService.
 type cardCommandServiceDeps struct {
-	// errorHandler handles domain-specific errors for the card command service.
-	ErrorHandler errorhandler.CardCommandErrorHandler
-
-	// cache is the in-memory cache layer for card commands.
-	Cache mencache.CardCommandCache
-
-	// kafka is the Kafka client used to publish card-related events.
-	Kafka *kafka.Kafka
-
-	// userRepository provides access to user data for validation or enrichment.
-	UserRepository repository.UserRepository
-
-	// cardCommandRepository provides access to persistent storage for card commands.
+	Cache                 mencache.CardCommandCache
+	Kafka                 *kafka.Kafka
+	UserRepository        repository.UserRepository
 	CardCommandRepository repository.CardCommandRepository
-
-	// logger is used to log service activity and errors.
-	Logger logger.LoggerInterface
-
-	// mapper converts internal data models to API response formats.
-	Mapper responseservice.CardCommandResponseMapper
+	Logger                logger.LoggerInterface
+	Observability         observability.TraceLoggerObservability
 }
 
-// cardCommandService implements business logic for card-related command operations.
+// cardCommandService implements CardCommandService.
 type cardCommandService struct {
-
-	// errorhandler handles domain-level errors for the card command service.
-	errorhandler errorhandler.CardCommandErrorHandler
-
-	// mencache provides cache functionality for reducing load and improving performance.
-	mencache mencache.CardCommandCache
-
-	// kafka is the Kafka producer used for emitting card-related events.
-	kafka *kafka.Kafka
-
-	// userRepository is used to fetch user data related to card operations.
-	userRepository repository.UserRepository
-
-	// cardCommentRepository handles database interactions for card commands.
-	cardCommentRepository repository.CardCommandRepository
-
-	// logger enables structured logging within the service.
-	logger logger.LoggerInterface
-
-	// mapper is responsible for converting internal entities to response DTOs.
-	mapper responseservice.CardCommandResponseMapper
-
-	observability observability.TraceLoggerObservability
+	cache                 mencache.CardCommandCache
+	kafka                 *kafka.Kafka
+	userRepository        repository.UserRepository
+	cardCommandRepository repository.CardCommandRepository
+	logger                logger.LoggerInterface
+	observability         observability.TraceLoggerObservability
 }
 
-// NewCardCommandService initializes a new instance of cardCommandService with the provided parameters.
-// It sets up Prometheus metrics for tracking request counts and durations and returns a configured
-// cardCommandService ready for handling card-related commands.
-//
-// Parameters:
-// - params: A pointer to cardCommandServiceDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to an initialized cardCommandService.
 func NewCardCommandService(params *cardCommandServiceDeps) CardCommandService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "card_command_service_requests_total",
-			Help: "Total number of requests to the CardCommandService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "card_command_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the CardCommandService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("card-command-service"), params.Logger, requestCounter, requestDuration)
 
 	return &cardCommandService{
-		errorhandler:          params.ErrorHandler,
-		mencache:              params.Cache,
+		cache:                 params.Cache,
 		kafka:                 params.Kafka,
 		userRepository:        params.UserRepository,
-		cardCommentRepository: params.CardCommandRepository,
+		cardCommandRepository: params.CardCommandRepository,
 		logger:                params.Logger,
-		mapper:                params.Mapper,
-		observability:         observability,
+		observability:         params.Observability,
 	}
 }
 
-// CreateCard creates a new card for a user.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - request: A requests.CreateCardRequest object containing the details of the card to be created.
-//
-// Returns:
-//   - A pointer to a responses.CardResponse object containing the created card's info.
-//   - A pointer to a responses.ErrorResponse object describing the error if the operation fails.
-func (s *cardCommandService) CreateCard(ctx context.Context, request *requests.CreateCardRequest) (*response.CardResponse, *response.ErrorResponse) {
+func (s *cardCommandService) CreateCard(ctx context.Context, request *requests.CreateCardRequest) (*db.CreateCardRow, error) {
 	const method = "CreateCard"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -134,52 +60,41 @@ func (s *cardCommandService) CreateCard(ctx context.Context, request *requests.C
 	}()
 
 	_, err := s.userRepository.FindById(ctx, request.UserID)
-
 	if err != nil {
-		return s.errorhandler.HandleFindByIdUserError(err, "CreateCard", "FAILED_USER_NOT_FOUND", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.CreateCardRow](s.logger, err, method, span, zap.Int("user_id", request.UserID))
 	}
 
-	res, err := s.cardCommentRepository.CreateCard(ctx, request)
-
+	res, err := s.cardCommandRepository.CreateCard(ctx, request)
 	if err != nil {
-		return s.errorhandler.HandleCreateCardError(err, "CreateCard", "FAILED_CREATE_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.CreateCardRow](s.logger, err, method, span, zap.Int("user_id", request.UserID))
 	}
 
-	saldoPayload := map[string]any{
-		"card_number":   res.CardNumber,
-		"total_balance": 0,
-	}
+	go func() {
+		saldoPayload := map[string]any{
+			"card_number":   res.CardNumber,
+			"total_balance": 0,
+		}
 
-	payloadBytes, err := json.Marshal(saldoPayload)
+		payloadBytes, err := json.Marshal(saldoPayload)
+		if err != nil {
+			s.logger.Error("failed to marshal saldo payload for new card", zap.Error(err), zap.Int("card_id", int(res.CardID)))
+			return
+		}
 
-	s.logger.Info("hello world", zap.Any("payloadBytes", payloadBytes))
+		err = s.kafka.SendMessage("saldo-service-topic-create-saldo", strconv.Itoa(int(res.CardID)), payloadBytes)
+		if err != nil {
+			s.logger.Error("failed to send create saldo message to kafka", zap.Error(err), zap.Int("card_id", int(res.CardID)))
+		}
+	}()
 
-	if err != nil {
-		return errorhandler.HandleMarshalError[*response.CardResponse](s.logger, err, "CreateCard", "FAILED_CREATE_CARD", span, &status, card_errors.ErrFailedCreateCard, zap.Error(err))
-	}
+	logSuccess("Successfully created card", zap.Int("card.id", int(res.CardID)), zap.String("card.card_number", res.CardNumber))
 
-	err = s.kafka.SendMessage("saldo-service-topic-create-saldo", strconv.Itoa(res.ID), payloadBytes)
-
-	if err != nil {
-		return errorhandler.HandleSendEmailError[*response.CardResponse](s.logger, err, "CreateCard", "FAILED_CREATE_CARD", span, &status, card_errors.ErrFailedCreateCard, zap.Error(err))
-	}
-
-	so := s.mapper.ToCardResponse(res)
-
-	logSuccess("Successfully created card", zap.Int("card.id", so.ID), zap.String("card.card_number", so.CardNumber))
-
-	return so, nil
+	return res, nil
 }
 
-// UpdateCard updates a card record in the database.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - request: An UpdateCardRequest object containing the details of the card to be updated.
-//
-// Returns:
-//   - A pointer to the updated CardResponse, or an error if the operation fails.
-func (s *cardCommandService) UpdateCard(ctx context.Context, request *requests.UpdateCardRequest) (*response.CardResponse, *response.ErrorResponse) {
+func (s *cardCommandService) UpdateCard(ctx context.Context, request *requests.UpdateCardRequest) (*db.UpdateCardRow, error) {
 	const method = "UpdateCard"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -189,131 +104,117 @@ func (s *cardCommandService) UpdateCard(ctx context.Context, request *requests.U
 	}()
 
 	_, err := s.userRepository.FindById(ctx, request.UserID)
-
 	if err != nil {
 		status = "error"
-
-		return s.errorhandler.HandleFindByIdUserError(err, "UpdateCard", "FAILED_USER_NOT_FOUND", span, &status, zap.Error(err))
+		return sharederrorhandler.HandleError[*db.UpdateCardRow](s.logger, err, method, span, zap.Int("user_id", request.UserID))
 	}
 
-	res, err := s.cardCommentRepository.UpdateCard(ctx, request)
-
+	res, err := s.cardCommandRepository.UpdateCard(ctx, request)
 	if err != nil {
-		return s.errorhandler.HandleUpdateCardError(err, "UpdateCard", "FAILED_UPDATE_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.UpdateCardRow](s.logger, err, method, span, zap.Int("card_id", request.CardID))
 	}
 
-	so := s.mapper.ToCardResponse(res)
+	s.cache.DeleteCardCommandCache(ctx, request.CardID)
 
-	s.mencache.DeleteCardCommandCache(ctx, request.CardID)
+	logSuccess("Successfully updated card", zap.Int("card.id", int(res.CardID)))
 
-	logSuccess("Successfully updated card", zap.Int("card.id", so.ID))
-
-	return so, nil
+	return res, nil
 }
 
-// TrashedCard marks a card as trashed by updating its deleted_at field in the database
-// and removes its cache entry.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - card_id: The ID of the card to be trashed.
-//
-// Returns:
-//   - A pointer to a CardResponse containing the trashed card's info, or an error
-//     if the operation fails.
-func (s *cardCommandService) TrashedCard(ctx context.Context, card_id int) (*response.CardResponseDeleteAt, *response.ErrorResponse) {
+func (s *cardCommandService) TrashedCard(ctx context.Context, card_id int) (*db.Card, error) {
 	const method = "TrashedCard"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("card.id", card_id))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("card_id", card_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.cardCommentRepository.TrashedCard(ctx, card_id)
-
+	res, err := s.cardCommandRepository.TrashedCard(ctx, card_id)
 	if err != nil {
-		return s.errorhandler.HandleTrashedCardError(err, "TrashedCard", "FAILED_TO_TRASH_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Card](
+			s.logger,
+			card_errors.ErrFailedTrashCard,
+			method,
+			span,
+
+			zap.Int("card_id", card_id),
+		)
 	}
 
-	so := s.mapper.ToCardResponseDeleteAt(res)
+	s.cache.DeleteCardCommandCache(ctx, card_id)
 
-	s.mencache.DeleteCardCommandCache(ctx, card_id)
+	logSuccess("Successfully trashed card", zap.Int("card_id", int(res.CardID)))
 
-	logSuccess("Successfully trashed card", zap.Int("card.id", so.ID))
-
-	return so, nil
+	return res, nil
 }
 
-// RestoreCard restores a previously trashed card by setting its deleted_at field to NULL.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - card_id: The ID of the card to be restored.
-//
-// Returns:
-//   - A pointer to the restored CardResponse, or an error if the operation fails.
-func (s *cardCommandService) RestoreCard(ctx context.Context, card_id int) (*response.CardResponse, *response.ErrorResponse) {
+func (s *cardCommandService) RestoreCard(ctx context.Context, card_id int) (*db.Card, error) {
 	const method = "RestoreCard"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("card.id", card_id))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("card_id", card_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	res, err := s.cardCommentRepository.RestoreCard(ctx, card_id)
+	s.logger.Debug("Restoring card", zap.Int("card_id", card_id))
 
+	res, err := s.cardCommandRepository.RestoreCard(ctx, card_id)
 	if err != nil {
-		return s.errorhandler.HandleRestoreCardError(err, "RestoreCard", "FAILED_TO_RESTORE_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Card](
+			s.logger,
+			card_errors.ErrFailedRestoreCard,
+			method,
+			span,
+
+			zap.Int("card_id", card_id),
+		)
 	}
 
-	so := s.mapper.ToCardResponse(res)
+	s.cache.DeleteCardCommandCache(ctx, card_id)
 
-	logSuccess("Successfully restored card", zap.Int("card.id", so.ID))
+	logSuccess("Successfully restored card", zap.Int("card_id", int(res.CardID)))
 
-	return so, nil
+	return res, nil
 }
 
-// DeleteCardPermanent permanently deletes a card by its ID from the database
-// and removes its cache entry.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - card_id: The ID of the card to be deleted permanently.
-//
-// Returns:
-//   - A boolean indicating if the operation was successful, and an error
-//     if the operation fails.
-func (s *cardCommandService) DeleteCardPermanent(ctx context.Context, card_id int) (bool, *response.ErrorResponse) {
+func (s *cardCommandService) DeleteCardPermanent(ctx context.Context, card_id int) (bool, error) {
 	const method = "DeleteCardPermanent"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("card.id", card_id))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("card_id", card_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.cardCommentRepository.DeleteCardPermanent(ctx, card_id)
-
+	_, err := s.cardCommandRepository.DeleteCardPermanent(ctx, card_id)
 	if err != nil {
-		return s.errorhandler.HandleDeleteCardPermanentError(err, "DeleteCardPermanent", "FAILED_TO_DELETE_CARD_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			card_errors.ErrFailedDeleteCard,
+			method,
+			span,
+
+			zap.Int("card_id", card_id),
+		)
 	}
 
-	logSuccess("Successfully deleted card permanently", zap.Int("card.id", card_id))
+	s.cache.DeleteCardCommandCache(ctx, card_id)
+
+	logSuccess("Successfully deleted card permanently", zap.Int("card_id", card_id))
 
 	return true, nil
 }
 
-// RestoreAllCard restores all previously trashed card records by setting their deleted_at fields to NULL.
-//
-// Parameters:
-//   - ctx: The context for the database operation
-//
-// Returns:
-//   - A boolean indicating if the operation was successful, and an error
-//     if the operation fails.
-func (s *cardCommandService) RestoreAllCard(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *cardCommandService) RestoreAllCard(ctx context.Context) (bool, error) {
 	const method = "RestoreAllCard"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -322,25 +223,23 @@ func (s *cardCommandService) RestoreAllCard(ctx context.Context) (bool, *respons
 		end(status)
 	}()
 
-	_, err := s.cardCommentRepository.RestoreAllCard(ctx)
-
+	_, err := s.cardCommandRepository.RestoreAllCard(ctx)
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllCardError(err, "RestoreAllCard", "FAILED_TO_RESTORE_ALL_CARDS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			card_errors.ErrFailedRestoreAllCards,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("Successfully restored all cards", zap.Bool("success", true))
+	logSuccess("Successfully restored all cards")
 
 	return true, nil
 }
 
-// DeleteAllCardPermanent permanently deletes all card records from the database.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//
-// Returns:
-//   - A boolean indicating if the operation was successful, and an error if the operation fails.
-func (s *cardCommandService) DeleteAllCardPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *cardCommandService) DeleteAllCardPermanent(ctx context.Context) (bool, error) {
 	const method = "DeleteAllCardPermanent"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -349,13 +248,18 @@ func (s *cardCommandService) DeleteAllCardPermanent(ctx context.Context) (bool, 
 		end(status)
 	}()
 
-	_, err := s.cardCommentRepository.DeleteAllCardPermanent(ctx)
-
+	_, err := s.cardCommandRepository.DeleteAllCardPermanent(ctx)
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllCardPermanentError(err, "DeleteAllCardPermanent", "FAILED_TO_DELETE_ALL_CARDS_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			card_errors.ErrFailedDeleteAllCards,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("Successfully deleted all cards permanently", zap.Bool("success", true))
+	logSuccess("Successfully deleted all cards permanently")
 
 	return true, nil
 }

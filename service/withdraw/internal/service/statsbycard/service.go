@@ -2,8 +2,7 @@ package withdrawstatsbycardservice
 
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/withdraw"
-	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/errorhandler"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	mencache "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/redis/statsbycard"
 	repository "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/repository/statsbycard"
 )
@@ -21,31 +20,26 @@ type withdrawStatsByCardStatsByCardService struct {
 type DepsStatsByCard struct {
 	Cache mencache.WithdrawStatsByCardCache
 
-	ErrorHandler errorhandler.WithdrawStatisticByCardErrorHandler
-
 	Logger logger.LoggerInterface
 
 	Repository repository.WithdrawStatsByCardRepository
 
-	MapperAmount responseservice.WithdrawStatsAmountResponseMapper
-	MapperStatus responseservice.WithdrawStatsStatusResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewWithdrawStatsByCardService(deps *DepsStatsByCard) WithdrawStatsByCardService {
 	return &withdrawStatsByCardStatsByCardService{
 		WithdrawStatsByCardAmountService: NewWithdrawStatsByCardAmountService(&withdrawStatsByCardAmountDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Cache,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Repository:    deps.Repository,
+			Cache:         deps.Cache,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		WithdrawStatsByCardStatusService: NewWithdrawStatsByCardStatusService(&withdrawStatsByCardStatusDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Cache,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperStatus,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

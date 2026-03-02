@@ -3,186 +3,156 @@ package withdrawstatshandler
 import (
 	"context"
 
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	pbwithdraw "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw/stats"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	withdraw_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors/grpc"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/withdraw"
 	service "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/service"
-
-	servicestats "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/service/stats"
-	servicestatsbycard "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/service/statsbycard"
-
-	"go.uber.org/zap"
 )
 
 type withdrawAmountHandleGrpc struct {
 	pb.UnimplementedWithdrawStatsAmountServiceServer
 
-	withdrawAmount       servicestats.WithdrawStatsService
-	withdrawAmounyByCard servicestatsbycard.WithdrawStatsByCardService
-
-	logger logger.LoggerInterface
-	mapper protomapper.WithdrawaStatsAmountProtoMapper
+	service service.Service
 }
 
 func NewWithdrawStatsAmountHandleGrpc(
 	service service.Service,
-	logger logger.LoggerInterface,
-	mapper protomapper.WithdrawaStatsAmountProtoMapper,
 ) WithdrawStatsAmountHandlerGrpc {
 	return &withdrawAmountHandleGrpc{
-		withdrawAmount:       service,
-		withdrawAmounyByCard: service,
-		logger:               logger,
-		mapper:               mapper,
+		service: service,
 	}
 }
 
-// FindMonthlyWithdraws retrieves the monthly withdraws for the given year.
-//
-// Parameters:
-//   - ctx: the context.Context object for request-scoped values, cancellation, and deadlines.
-//   - req: a pointer to a FindYearWithdrawStatus message containing the year.
-//
-// Returns:
-//   - A pointer to an ApiResponseWithdrawMonthAmount message containing the monthly withdraws.
-//   - An error, which is non-nil if the operation fails or if the provided year is invalid.
-func (w *withdrawAmountHandleGrpc) FindMonthlyWithdraws(ctx context.Context, req *pb.FindYearWithdrawStatus) (*pb.ApiResponseWithdrawMonthAmount, error) {
+func (w *withdrawAmountHandleGrpc) FindMonthlyWithdraws(ctx context.Context, req *pbwithdraw.FindYearWithdrawStatus) (*pb.ApiResponseWithdrawMonthAmount, error) {
 	year := int(req.GetYear())
 
-	w.logger.Debug("FindMonthlyWithdraws", zap.Int("year", year))
-
 	if year <= 0 {
-		w.logger.Error("FindMonthlyWithdraws", zap.Any("error", withdraw_errors.ErrGrpcInvalidYear))
 		return nil, withdraw_errors.ErrGrpcInvalidYear
 	}
 
-	withdraws, err := w.withdrawAmount.FindMonthlyWithdraws(ctx, year)
+	withdraws, err := w.service.FindMonthlyWithdraws(ctx, year)
 
 	if err != nil {
-		w.logger.Error("FindMonthlyWithdraws", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := w.mapper.ToProtoResponseWithdrawMonthAmount("success", "Successfully fetched monthly withdraws", withdraws)
+	dataResponses := make([]*pb.WithdrawMonthlyAmountResponse, len(withdraws))
+	for i, withdraw := range withdraws {
+		dataResponses[i] = &pb.WithdrawMonthlyAmountResponse{
+			Month:       withdraw.Month,
+			TotalAmount: int32(withdraw.TotalWithdrawAmount),
+		}
+	}
 
-	return so, nil
+	return &pb.ApiResponseWithdrawMonthAmount{
+		Status:  "success",
+		Message: "Successfully fetched monthly withdraws",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyWithdraws retrieves the yearly withdraws for the given year.
-//
-// Parameters:
-//   - ctx: the context.Context object for request-scoped values, cancellation, and deadlines.
-//   - req: a pointer to a FindYearWithdrawStatus message containing the year.
-//
-// Returns:
-//   - A pointer to an ApiResponseWithdrawYearAmount message containing the yearly withdraws.
-//   - An error, which is non-nil if the operation fails or if the provided year is invalid.
-func (w *withdrawAmountHandleGrpc) FindYearlyWithdraws(ctx context.Context, req *pb.FindYearWithdrawStatus) (*pb.ApiResponseWithdrawYearAmount, error) {
+func (w *withdrawAmountHandleGrpc) FindYearlyWithdraws(ctx context.Context, req *pbwithdraw.FindYearWithdrawStatus) (*pb.ApiResponseWithdrawYearAmount, error) {
 	year := int(req.GetYear())
 
-	w.logger.Info("FindYearlyWithdraws", zap.Int("year", year))
-
 	if year <= 0 {
-		w.logger.Error("FindYearlyWithdraws", zap.Any("error", withdraw_errors.ErrGrpcInvalidYear))
 		return nil, withdraw_errors.ErrGrpcInvalidYear
 	}
 
-	withdraws, err := w.withdrawAmount.FindYearlyWithdraws(ctx, year)
+	withdraws, err := w.service.FindYearlyWithdraws(ctx, year)
 
 	if err != nil {
-		w.logger.Error("FindYearlyWithdraws", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := w.mapper.ToProtoResponseWithdrawYearAmount("success", "Successfully fetched yearly withdraws", withdraws)
+	dataResponses := make([]*pb.WithdrawYearlyAmountResponse, len(withdraws))
+	for i, withdraw := range withdraws {
+		dataResponses[i] = &pb.WithdrawYearlyAmountResponse{
+			Year:        withdraw.Year.Int.String(),
+			TotalAmount: int32(withdraw.TotalWithdrawAmount),
+		}
+	}
 
-	return so, nil
+	return &pb.ApiResponseWithdrawYearAmount{
+		Status:  "success",
+		Message: "Successfully fetched yearly withdraws",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindMonthlyWithdrawsByCardNumber retrieves the monthly withdraw amounts for a specific card number and year.
-//
-// Parameters:
-//   - ctx: the context.Context object for request-scoped values, cancellation, and deadlines.
-//   - req: a pointer to a FindYearWithdrawCardNumber message containing the year and card number.
-//
-// Returns:
-//   - A pointer to an ApiResponseWithdrawMonthAmount message containing the monthly withdraw amounts.
-//   - An error, which is non-nil if the operation fails or if the provided year or card number is invalid.
-func (w *withdrawAmountHandleGrpc) FindMonthlyWithdrawsByCardNumber(ctx context.Context, req *pb.FindYearWithdrawCardNumber) (*pb.ApiResponseWithdrawMonthAmount, error) {
+func (w *withdrawAmountHandleGrpc) FindMonthlyWithdrawsByCardNumber(ctx context.Context, req *pbwithdraw.FindYearWithdrawCardNumber) (*pb.ApiResponseWithdrawMonthAmount, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	w.logger.Debug("FindMonthlyWithdrawsByCardNumber", zap.Int("year", year), zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		w.logger.Error("FindMonthlyWithdrawsByCardNumber", zap.Any("error", withdraw_errors.ErrGrpcInvalidYear))
 		return nil, withdraw_errors.ErrGrpcInvalidYear
 	}
 
 	if cardNumber == "" {
-		w.logger.Error("FindMonthlyWithdrawsByCardNumber", zap.Any("error", withdraw_errors.ErrGrpcInvalidCardNumber))
 		return nil, withdraw_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearMonthCardNumber{
+	reqService := requests.YearMonthCardNumber{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	withdraws, err := w.withdrawAmounyByCard.FindMonthlyWithdrawsByCardNumber(ctx, reqService)
+	withdraws, err := w.service.FindMonthlyWithdrawsByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		w.logger.Error("FindMonthlyWithdrawsByCardNumber", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := w.mapper.ToProtoResponseWithdrawMonthAmount("success", "Successfully fetched monthly withdraws by card number", withdraws)
+	dataResponses := make([]*pb.WithdrawMonthlyAmountResponse, len(withdraws))
+	for i, withdraw := range withdraws {
+		dataResponses[i] = &pb.WithdrawMonthlyAmountResponse{
+			Month:       withdraw.Month,
+			TotalAmount: int32(withdraw.TotalWithdrawAmount),
+		}
+	}
 
-	return so, nil
+	return &pb.ApiResponseWithdrawMonthAmount{
+		Status:  "success",
+		Message: "Successfully fetched monthly withdraws by card number",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyWithdrawsByCardNumber retrieves the yearly withdraw amount data
-// for a given card number and year.
-//
-// Parameters:
-//   - ctx: the context.Context object for request-scoped values, cancellation, and deadlines.
-//   - req: a pointer to a FindYearWithdrawCardNumber message containing the year and card number.
-//
-// Returns:
-//   - A pointer to an ApiResponseWithdrawYearAmount message containing the yearly withdraw amounts.
-//   - An error, which is non-nil if the operation fails or if the provided year or card number is invalid.
-func (w *withdrawAmountHandleGrpc) FindYearlyWithdrawsByCardNumber(ctx context.Context, req *pb.FindYearWithdrawCardNumber) (*pb.ApiResponseWithdrawYearAmount, error) {
+func (w *withdrawAmountHandleGrpc) FindYearlyWithdrawsByCardNumber(ctx context.Context, req *pbwithdraw.FindYearWithdrawCardNumber) (*pb.ApiResponseWithdrawYearAmount, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	w.logger.Debug("FindYearlyWithdrawsByCardNumber", zap.Int("year", year), zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		w.logger.Error("FindYearlyWithdrawsByCardNumber", zap.Any("error", withdraw_errors.ErrGrpcInvalidYear))
 		return nil, withdraw_errors.ErrGrpcInvalidYear
 	}
 
 	if cardNumber == "" {
-		w.logger.Error("FindYearlyWithdrawsByCardNumber", zap.Any("error", withdraw_errors.ErrGrpcInvalidCardNumber))
 		return nil, withdraw_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearMonthCardNumber{
+	reqService := requests.YearMonthCardNumber{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	withdraws, err := w.withdrawAmounyByCard.FindYearlyWithdrawsByCardNumber(ctx, reqService)
+	withdraws, err := w.service.FindYearlyWithdrawsByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		w.logger.Error("FindYearlyWithdrawsByCardNumber", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := w.mapper.ToProtoResponseWithdrawYearAmount("success", "Successfully fetched yearly withdraws by card number", withdraws)
+	dataResponses := make([]*pb.WithdrawYearlyAmountResponse, len(withdraws))
+	for i, withdraw := range withdraws {
+		dataResponses[i] = &pb.WithdrawYearlyAmountResponse{
+			Year:        withdraw.Year.Int.String(),
+			TotalAmount: int32(withdraw.TotalWithdrawAmount),
+		}
+	}
 
-	return so, nil
+	return &pb.ApiResponseWithdrawYearAmount{
+		Status:  "success",
+		Message: "Successfully fetched yearly withdraws by card number",
+		Data:    dataResponses,
+	}, nil
 }

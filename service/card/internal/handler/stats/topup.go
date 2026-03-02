@@ -3,15 +3,14 @@ package handlerstats
 import (
 	"context"
 
+	"github.com/MamangRust/monolith-payment-gateway-card/internal/service"
 	cardstatsservice "github.com/MamangRust/monolith-payment-gateway-card/internal/service/stats"
 	cardstatsbycard "github.com/MamangRust/monolith-payment-gateway-card/internal/service/statsbycard"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	pbcard "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/card/stats"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/grpc"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/card"
-	"go.uber.org/zap"
 )
 
 type cardStatsTopupGrpc struct {
@@ -20,109 +19,75 @@ type cardStatsTopupGrpc struct {
 	cardStatsTopup cardstatsservice.CardStatsTopupService
 
 	cardStatsTopupByCard cardstatsbycard.CardStatsTopupByCardService
-
-	logger logger.LoggerInterface
-
-	mapper protomapper.CardStatsAmountProtoMapper
 }
 
-func NewCardStatsTopupGrpc(cardStatsTopup cardstatsservice.CardStatsService, cardStatsTopupByCard cardstatsbycard.CardStatsByCardService, logger logger.LoggerInterface, mapper protomapper.CardStatsAmountProtoMapper) CardStatsTopupService {
+func NewCardStatsTopupGrpc(service service.Service) CardStatsTopupService {
 	return &cardStatsTopupGrpc{
-		cardStatsTopup:       cardStatsTopup,
-		cardStatsTopupByCard: cardStatsTopupByCard,
-		logger:               logger,
-		mapper:               mapper,
+		cardStatsTopup:       service,
+		cardStatsTopupByCard: service,
 	}
 }
 
-// FindMonthlyTopupAmount retrieves the monthly topup amount statistics for a given year.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearAmount object containing the year to fetch the monthly topup amount statistics for.
-//
-// Returns:
-//   - An ApiResponseMonthlyAmount containing the monthly topup amount statistics retrieved from the database.
-//   - An error if the operation fails, or if the provided year is invalid.
-func (s *cardStatsTopupGrpc) FindMonthlyTopupAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseMonthlyAmount, error) {
+func (s *cardStatsTopupGrpc) FindMonthlyTopupAmount(ctx context.Context, req *pbcard.FindYearAmount) (*pbcard.ApiResponseMonthlyAmount, error) {
 	year := int(req.GetYear())
-
-	s.logger.Info("Fetching monthly topup amount", zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Info("FindMonthlyTopupAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatsTopup.FindMonthlyTopupAmount(ctx, year)
-
 	if err != nil {
-		s.logger.Error("FindMonthlyTopupAmount failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseMonthlyAmounts("success", "Monthly topup amount retrieved successfully", res)
+	protoData := make([]*pbcard.CardResponseMonthlyAmount, len(res))
+	for i, item := range res {
+		protoData[i] = &pbcard.CardResponseMonthlyAmount{
+			Month:       item.Month,
+			TotalAmount: int64(item.TotalTopupAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly topup amount", zap.Bool("success", true))
-
-	return so, nil
+	return &pbcard.ApiResponseMonthlyAmount{
+		Status:  "success",
+		Message: "Monthly topup amount retrieved successfully",
+		Data:    protoData,
+	}, nil
 }
 
-// FindYearlyTopupAmount retrieves the yearly topup amount statistics for a given year.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearAmount object containing the year to fetch the yearly topup amount statistics for.
-//
-// Returns:
-//   - An ApiResponseYearlyAmount containing the yearly topup amount statistics retrieved from the database.
-//   - An error if the operation fails, or if the provided year is invalid.
-func (s *cardStatsTopupGrpc) FindYearlyTopupAmount(ctx context.Context, req *pb.FindYearAmount) (*pb.ApiResponseYearlyAmount, error) {
+func (s *cardStatsTopupGrpc) FindYearlyTopupAmount(ctx context.Context, req *pbcard.FindYearAmount) (*pbcard.ApiResponseYearlyAmount, error) {
 	year := int(req.GetYear())
-
-	s.logger.Info("Fetching yearly topup amount", zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("FindYearlyTopupAmount failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
 
 	res, err := s.cardStatsTopup.FindYearlyTopupAmount(ctx, year)
-
 	if err != nil {
-		s.logger.Error("FindYearlyTopupAmount failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseYearlyAmounts("success", "Yearly topup amount retrieved successfully", res)
+	protoData := make([]*pbcard.CardResponseYearlyAmount, len(res))
+	for i, item := range res {
+		protoData[i] = &pbcard.CardResponseYearlyAmount{
+			Year:        item.Year.Int.String(),
+			TotalAmount: item.TotalTopupAmount,
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly topup amount", zap.Bool("success", true))
-
-	return so, nil
+	return &pbcard.ApiResponseYearlyAmount{
+		Status:  "success",
+		Message: "Yearly topup amount retrieved successfully",
+		Data:    protoData,
+	}, nil
 }
 
-// FindMonthlyTopupAmountByCardNumber retrieves the monthly topup amount statistics for a given card number and year.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearAmountCardNumber object containing the card number and year to fetch the monthly topup amount statistics for.
-//
-// Returns:
-//   - An ApiResponseMonthlyAmount containing the monthly topup amount statistics retrieved from the database.
-//   - An error if the operation fails, or if the provided year or card number is invalid.
-func (s *cardStatsTopupGrpc) FindMonthlyTopupAmountByCardNumber(ctx context.Context, req *pb.FindYearAmountCardNumber) (*pb.ApiResponseMonthlyAmount, error) {
+func (s *cardStatsTopupGrpc) FindMonthlyTopupAmountByCardNumber(ctx context.Context, req *pbcard.FindYearAmountCardNumber) (*pbcard.ApiResponseMonthlyAmount, error) {
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching monthly topup amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
-
 	if card_number == "" {
-		s.logger.Error("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
@@ -132,59 +97,57 @@ func (s *cardStatsTopupGrpc) FindMonthlyTopupAmountByCardNumber(ctx context.Cont
 	}
 
 	res, err := s.cardStatsTopupByCard.FindMonthlyTopupAmountByCardNumber(ctx, &reqService)
-
 	if err != nil {
-		s.logger.Error("FindMonthlyTopupAmountByCardNumber failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseMonthlyAmounts("success", "Monthly topup amount by card number retrieved successfully", res)
+	protoData := make([]*pbcard.CardResponseMonthlyAmount, len(res))
+	for i, item := range res {
+		protoData[i] = &pbcard.CardResponseMonthlyAmount{
+			Month:       item.Month,
+			TotalAmount: int64(item.TotalTopupAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly topup amount by card number", zap.Bool("success", true))
-
-	return so, nil
+	return &pbcard.ApiResponseMonthlyAmount{
+		Status:  "success",
+		Message: "Monthly topup amount by card number retrieved successfully",
+		Data:    protoData,
+	}, nil
 }
 
-// FindYearlyTopupAmountByCardNumber retrieves the yearly topup amount statistics for a given card number and year.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearAmountCardNumber object containing the card number and year to fetch the yearly topup amount statistics for.
-//
-// Returns:
-//   - An ApiResponseYearlyAmount containing the yearly topup amount statistics retrieved from the database.
-//   - An error if the operation fails, or if the provided year or card number is invalid.
-func (s *cardStatsTopupGrpc) FindYearlyTopupAmountByCardNumber(ctx context.Context, req *pb.FindYearAmountCardNumber) (*pb.ApiResponseYearlyAmount, error) {
+func (s *cardStatsTopupGrpc) FindYearlyTopupAmountByCardNumber(ctx context.Context, req *pbcard.FindYearAmountCardNumber) (*pbcard.ApiResponseYearlyAmount, error) {
 	card_number := req.GetCardNumber()
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching yearly topup amount by card number", zap.String("card_number", card_number), zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidYear))
 		return nil, card_errors.ErrGrpcInvalidYear
 	}
-
 	if card_number == "" {
-		s.logger.Error("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", card_errors.ErrGrpcInvalidCardNumber))
 		return nil, card_errors.ErrGrpcInvalidCardNumber
 	}
 
 	reqService := requests.MonthYearCardNumberCard{
 		CardNumber: card_number,
-		Year:       int(year),
+		Year:       year,
 	}
 
 	res, err := s.cardStatsTopupByCard.FindYearlyTopupAmountByCardNumber(ctx, &reqService)
-
 	if err != nil {
-		s.logger.Error("FindYearlyTopupAmountByCardNumber failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseYearlyAmounts("success", "Yearly topup amount by card number retrieved successfully", res)
+	protoData := make([]*pbcard.CardResponseYearlyAmount, len(res))
+	for i, item := range res {
+		protoData[i] = &pbcard.CardResponseYearlyAmount{
+			Year:        item.Year.Int.String(),
+			TotalAmount: item.TotalTopupAmount,
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly topup amount by card number", zap.Bool("success", true))
-
-	return so, nil
+	return &pbcard.ApiResponseYearlyAmount{
+		Status:  "success",
+		Message: "Yearly topup amount by card number retrieved successfully",
+		Data:    protoData,
+	}, nil
 }

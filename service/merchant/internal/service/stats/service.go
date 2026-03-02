@@ -1,11 +1,10 @@
 package merchantstatsservice
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/merchant"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 )
 
 type MerchantStatsService interface {
@@ -21,37 +20,31 @@ type merchantStatsService struct {
 }
 
 type DepsStats struct {
-	Mencache          mencache.MerchantStatsCache
-	ErrorHandler      errorhandler.MerchantStatisticErrorHandler
-	Logger            logger.LoggerInterface
-	Repository        repository.MerchantStatsRepository
-	MapperAmount      responseservice.MerchantAmountResponseMapper
-	MapperMethod      responseservice.MerchantPaymentMethodResponseMapper
-	MapperTotalAmount responseservice.MerchantTotalAmountResponseMapper
+	Mencache      mencache.MerchantStatsCache
+	Logger        logger.LoggerInterface
+	Repository    repository.MerchantStatsRepository
+	Observability observability.TraceLoggerObservability
 }
 
 func NewMerchantStatsService(deps *DepsStats) MerchantStatsService {
 	return &merchantStatsService{
 		NewMerchantStatsAmountService(&merchantStatsAmountDeps{
-			Cache:        deps.Mencache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewMerchantStatsTotalAmountService(&merchantStatsTotalAmountDeps{
-			Cache:        deps.Mencache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperTotalAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewMerchantStatsMethodService(&merchantStatsMethodDeps{
-			Cache:        deps.Mencache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperMethod,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

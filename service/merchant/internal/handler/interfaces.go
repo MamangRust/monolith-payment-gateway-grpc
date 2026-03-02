@@ -2,11 +2,11 @@ package handler
 
 import (
 	pbmerchant "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
-	pbdocument "github.com/MamangRust/monolith-payment-gateway-pb/merchantdocument"
+	pbdocument "github.com/MamangRust/monolith-payment-gateway-pb/merchant_document"
 )
 
 type MerchantDocumentQueryHandleGrpc interface {
-	pbdocument.MerchantDocumentServiceServer
+	pbdocument.MerchantDocumentQueryServiceServer
 }
 
 type MerchantDocumentCommandHandleGrpc interface {

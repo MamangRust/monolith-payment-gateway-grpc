@@ -11,11 +11,3 @@ type TransferQueryHandleGrpc interface {
 type TransferCommandHandleGrpc interface {
 	pb.TransferCommandServiceServer
 }
-
-type TransferStatsAmountHandleGrpc interface {
-	pb.TransferStatsAmountServiceServer
-}
-
-type TransferStatsStatusHandleGrpc interface{
-	pb.TransferStatsStatusServiceServer
-}

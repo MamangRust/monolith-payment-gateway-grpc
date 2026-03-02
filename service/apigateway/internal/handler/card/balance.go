@@ -1,210 +1,152 @@
 package cardhandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	card_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/card"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/card/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-
-	cardapierrors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type cardStatsBalanceHandleApi struct {
-	// card is the gRPC client used to interact with the CardService.
 	card pb.CardStatsBalanceServiceClient
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
 
-	// mapper transforms gRPC responses into standardized HTTP API responses.
+	apiHandler errors.ApiHandler
+
+	cache card_cache.CardMencache
+
 	mapper apimapper.CardStatsBalanceResponseMapper
-
-	// trace is the OpenTelemetry tracer for distributed tracing.
-	trace trace.Tracer
-
-	// requestCounter records the number of HTTP requests handled by this service.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of HTTP request handling in seconds.
-	requestDuration *prometheus.HistogramVec
 }
 
-// cardStatsBalanceHandleApiDeps contains the necessary dependencies for the cardStatsBalanceHandleApi to function.
 type cardStatsBalanceHandleApiDeps struct {
-	// client is the gRPC client used to interact with the CardService.
 	client pb.CardStatsBalanceServiceClient
 
-	// router is the Echo HTTP router used to register routes.
 	router *echo.Echo
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
 
-	// mapper transforms gRPC responses into standardized HTTP API responses.
+	cache card_cache.CardMencache
+
+	apiHandler errors.ApiHandler
+
 	mapper apimapper.CardStatsBalanceResponseMapper
 }
 
-// NewCardStatsBalanceHandleApi initializes a new cardStatsBalanceHandleApi and sets up the routes for card stats balance-related operations.
-//
-// This function registers various HTTP endpoints related to card stats balance management, including retrieval of monthly and yearly balances.
-// It also tracks metrics like request count and duration using Prometheus metrics. The routes are grouped under "/api/card-stats-balance".
-//
-// Parameters:
-// - params: A pointer to cardStatsBalanceHandleApiDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created cardStatsBalanceHandleApi.
 func NewCardStatsBalanceHandleApi(
 	params *cardStatsBalanceHandleApiDeps,
 ) *cardStatsBalanceHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "card_stats_balance_handler_requests_total",
-			Help: "Total number of Card Stats Balance requests",
-		},
-		[]string{"method", "status"},
-	)
 
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "card_stats_balance_handler_request_duration_seconds",
-			Help:    "Duration of Card Stats Balance requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	cardStatsBalanceHandler := &cardStatsBalanceHandleApi{
-		card:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("card-stats-balance-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+	cardHandler := &cardStatsBalanceHandleApi{
+		card:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerCard := params.router.Group("/api/card-stats-balance")
 
-	routerCard.GET("/monthly-balance", cardStatsBalanceHandler.FindMonthlyBalance)
-	routerCard.GET("/yearly-balance", cardStatsBalanceHandler.FindYearlyBalance)
+	routerCard.GET("/monthly-balance", params.apiHandler.Handle("find-monthly-balance", cardHandler.FindMonthlyBalance))
+	routerCard.GET("/yearly-balance", params.apiHandler.Handle("find-yearly-balance", cardHandler.FindYearlyBalance))
+	routerCard.GET("/monthly-balance-by-card", params.apiHandler.Handle("find-monthly-balance-by-card", cardHandler.FindMonthlyBalanceByCardNumber))
+	routerCard.GET("/yearly-balance-by-card", params.apiHandler.Handle("find-yearly-balance-by-card", cardHandler.FindYearlyBalanceByCardNumber))
 
-	routerCard.GET("/monthly-balance-by-card", cardStatsBalanceHandler.FindMonthlyBalanceByCardNumber)
-	routerCard.GET("/yearly-balance-by-card", cardStatsBalanceHandler.FindYearlyBalanceByCardNumber)
-
-	return cardStatsBalanceHandler
+	return cardHandler
 }
 
 // FindMonthlyBalance godoc
 // @Summary Get monthly balance data
 // @Description Retrieve monthly balance data for a specific year
-// @Tags Card-Stats-Balance
+// @Tags Card Stats Balance
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
 // @Success 200 {object} response.ApiResponseMonthlyBalance
 // @Failure 400 {object} response.ErrorResponse
 // @Failure 500 {object} response.ErrorResponse
-// @Router /api/card/monthly-balance [get]
+// @Router /api/card-stats-balance/monthly-balance [get]
 func (h *cardStatsBalanceHandleApi) FindMonthlyBalance(c echo.Context) error {
-	const method = "FindMonthlyBalance"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyBalanceCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearBalance{
+	reqGrpc := &pb.FindYearBalance{
 		Year: int32(year),
 	}
 
-	res, err := h.card.FindMonthlyBalance(ctx, req)
-
+	res, err := h.card.FindMonthlyBalance(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve monthly balance data", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindMonthlyBalance(c)
+		return h.handleGrpcError(err, "FindMonthlyBalance")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyBalances(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyBalances(res)
+	h.cache.SetMonthlyBalanceCache(ctx, year, apiResponse)
 
-	logSuccess("Success retrieve monthly balance data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyBalance godoc
 // @Summary Get yearly balance data
 // @Description Retrieve yearly balance data for a specific year
-// @Tags Card-Stats-Balance
+// @Tags Card Stats Balance
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
 // @Success 200 {object} response.ApiResponseYearlyBalance
 // @Failure 400 {object} response.ErrorResponse
 // @Failure 500 {object} response.ErrorResponse
-// @Router /api/card/yearly-balance [get]
+// @Router /api/card-stats-balance/yearly-balance [get]
 func (h *cardStatsBalanceHandleApi) FindYearlyBalance(c echo.Context) error {
-	const method = "FindYearlyBalance"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyBalanceCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearBalance{
+	reqGrpc := &pb.FindYearBalance{
 		Year: int32(year),
 	}
 
-	res, err := h.card.FindYearlyBalance(ctx, req)
-
+	res, err := h.card.FindYearlyBalance(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve yearly balance data", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindYearlyBalance(c)
+		return h.handleGrpcError(err, "FindYearlyBalance")
 	}
 
-	so := h.mapper.ToApiResponseYearlyBalances(res)
+	apiResponse := h.mapper.ToApiResponseYearlyBalances(res)
+	h.cache.SetYearlyBalanceCache(ctx, year, apiResponse)
 
-	logSuccess("Success retrieve yearly balance data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyBalanceByCardNumber godoc
 // @Summary Get monthly balance data by card number
 // @Description Retrieve monthly balance data for a specific year and card number
-// @Tags Card-Stats-Balance
+// @Tags Card Stats Balance
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -212,54 +154,51 @@ func (h *cardStatsBalanceHandleApi) FindYearlyBalance(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseMonthlyBalance
 // @Failure 400 {object} response.ErrorResponse
 // @Failure 500 {object} response.ErrorResponse
-// @Router /api/card/monthly-balance-by-card [get]
+// @Router /api/card-stats-balance/monthly-balance-by-card [get]
 func (h *cardStatsBalanceHandleApi) FindMonthlyBalanceByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyBalanceByCardNumber"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	cardNumber := c.QueryParam("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumberCard{
+		Year:       year,
+		CardNumber: cardNumber,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyBalanceByNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearBalanceCardNumber{
+	reqGrpc := &pb.FindYearBalanceCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	}
 
-	res, err := h.card.FindMonthlyBalanceByCardNumber(ctx, req)
-
+	res, err := h.card.FindMonthlyBalanceByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve monthly balance data by card number", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindMonthlyBalanceByCard(c)
+		return h.handleGrpcError(err, "FindMonthlyBalanceByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyBalances(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyBalances(res)
+	h.cache.SetMonthlyBalanceByNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve monthly balance data by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyBalanceByCardNumber godoc
 // @Summary Get yearly balance data by card number
 // @Description Retrieve yearly balance data for a specific year and card number
-// @Tags Card-Stats-Balance
+// @Tags Card Stats Balance
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -267,105 +206,79 @@ func (h *cardStatsBalanceHandleApi) FindMonthlyBalanceByCardNumber(c echo.Contex
 // @Success 200 {object} response.ApiResponseYearlyBalance
 // @Failure 400 {object} response.ErrorResponse
 // @Failure 500 {object} response.ErrorResponse
-// @Router /api/card/yearly-balance-by-card [get]
+// @Router /api/card-stats-balance/yearly-balance-by-card [get]
 func (h *cardStatsBalanceHandleApi) FindYearlyBalanceByCardNumber(c echo.Context) error {
-	const method = "FindYearlyBalanceByCardNumber"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	cardNumber := c.QueryParam("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumberCard{
+		Year:       year,
+		CardNumber: cardNumber,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyBalanceByNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearBalanceCardNumber{
+	reqGrpc := &pb.FindYearBalanceCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	}
 
-	res, err := h.card.FindYearlyBalanceByCardNumber(ctx, req)
-
+	res, err := h.card.FindYearlyBalanceByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve yearly balance data by card number", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindYearlyBalanceByCard(c)
+		return h.handleGrpcError(err, "FindYearlyBalanceByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseYearlyBalances(res)
+	apiResponse := h.mapper.ToApiResponseYearlyBalances(res)
+	h.cache.SetYearlyBalanceByNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve yearly balance data by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-// startTracingAndLogging starts a tracing span and returns functions to log the outcome of the call.
-// The returned functions are logSuccess and logError, which log the outcome of the call to the trace span.
-// The returned end function records the metrics and ends the trace span.
-func (s *cardStatsBalanceHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *cardStatsBalanceHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Card").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Card already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-// recordMetrics records a Prometheus metric for the given method and status.
-// It increments a counter and records the duration since the provided start time.
-func (s *cardStatsBalanceHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

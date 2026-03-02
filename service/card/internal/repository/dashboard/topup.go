@@ -17,14 +17,6 @@ func NewCardDashboardTopupRepository(db *db.Queries) CardDashboardTopupRepositor
 	}
 }
 
-// GetTotalTopAmount retrieves the total amount of all topups in the database.
-//
-// Parameters:
-//   - ctx: the context for the database operation
-//
-// Returns:
-//   - A pointer to an int64 containing the total topup amount.
-//   - An error if the query fails.
 func (r *cardDashboardTopupRepository) GetTotalTopAmount(ctx context.Context) (*int64, error) {
 	res, err := r.db.GetTotalTopupAmount(ctx)
 
@@ -35,15 +27,6 @@ func (r *cardDashboardTopupRepository) GetTotalTopAmount(ctx context.Context) (*
 	return &res, nil
 }
 
-// GetTotalTopupAmountByCardNumber retrieves the total top-up amount for the card with the given card number.
-//
-// Parameters:
-//   - ctx: the context for the database operation
-//   - cardNumber: the card number to retrieve the top-up amount for.
-//
-// Returns:
-//   - A pointer to an int64 containing the total top-up amount.
-//   - An error if the query fails.
 func (r *cardDashboardTopupRepository) GetTotalTopupAmountByCardNumber(ctx context.Context, cardNumber string) (*int64, error) {
 	res, err := r.db.GetTotalTopupAmountByCardNumber(ctx, cardNumber)
 

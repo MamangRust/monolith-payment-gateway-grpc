@@ -1,89 +1,63 @@
 package rolehandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
 	mencache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis"
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	role_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/role"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/role"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/role"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/role"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type roleQueryHandlerApi struct {
 	kafka *kafka.Kafka
 
-	role pb.RoleQueryServiceClient
+	role pb.RoleServiceClient
 
-	// logger provides structured logging capabilities for debugging and tracing.
 	logger logger.LoggerInterface
 
-	// mapper maps gRPC responses into API-compliant response formats.
 	mapper apimapper.RoleQueryResponseMapper
 
-	// trace enables distributed tracing for handler operations via OpenTelemetry.
-	trace trace.Tracer
+	cache role_cache.RoleMencache
 
-	// requestCounter counts the number of incoming requests handled.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of each request in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type roleQueryHandleDeps struct {
-	client pb.RoleQueryServiceClient
-	router *echo.Echo
-	logger logger.LoggerInterface
-	mapper apimapper.RoleQueryResponseMapper
-	kafka  *kafka.Kafka
-	cache  mencache.RoleCache
+	client     pb.RoleServiceClient
+	router     *echo.Echo
+	logger     logger.LoggerInterface
+	mapper     apimapper.RoleQueryResponseMapper
+	kafka      *kafka.Kafka
+	cache_role mencache.RoleCache
+
+	cache role_cache.RoleMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewRoleQueryHandleApi(params *roleQueryHandleDeps) *roleQueryHandlerApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "role_query_handler_requests_total",
-			Help: "Total number of role requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "role_query_handler_request_duration_seconds",
-			Help:    "Duration of role requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	roleQueryHandler := &roleQueryHandlerApi{
-		role:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		kafka:           params.kafka,
-		trace:           otel.Tracer("role-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		role:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		kafka:      params.kafka,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
-	roleMiddleware := middlewares.NewRoleValidator(params.kafka, "request-role", "response-role", 5*time.Second, params.logger, params.cache)
+	roleMiddleware := middlewares.NewRoleValidator(params.kafka, "request-role", "response-role", 5*time.Second, params.logger, params.cache_role)
 
 	routerRole := params.router.Group("/api/role-query")
 
@@ -105,7 +79,7 @@ func NewRoleQueryHandleApi(params *roleQueryHandleDeps) *roleQueryHandlerApi {
 
 // FindAll godoc.
 // @Summary Get all roles
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Retrieve a paginated list of roles with optional search and pagination parameters.
 // @Accept json
@@ -116,50 +90,54 @@ func NewRoleQueryHandleApi(params *roleQueryHandleDeps) *roleQueryHandlerApi {
 // @Success 200 {object} response.ApiResponsePaginationRole "List of roles"
 // @Failure 400 {object} response.ErrorResponse "Invalid query parameters"
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch roles"
-// @Router /api/role [get]
+// @Router /api/role-query [get]
 func (h *roleQueryHandlerApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	req := &requests.FindAllRoles{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedRoles(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllRoleRequest{
+	grpcReq := &pb.FindAllRoleRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.role.FindAllRole(ctx, req)
-
+	res, err := h.role.FindAllRole(ctx, grpcReq)
 	if err != nil {
-		logError("failed to fetch roles", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedFindAll(c)
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationRole(res)
+	apiResponse := h.mapper.ToApiResponsePaginationRole(res)
 
-	logSuccess("fetch roles successfully", zap.Bool("success", true))
+	h.cache.SetCachedRoles(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindById godoc.
 // @Summary Get a role by ID
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Retrieve a role by its ID.
 // @Accept json
@@ -168,23 +146,18 @@ func (h *roleQueryHandlerApi) FindAll(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid role ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch role"
-// @Router /api/role/{id} [get]
+// @Router /api/role-query/{id} [get]
 func (h *roleQueryHandlerApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	roleID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || roleID <= 0 {
+		return errors.NewBadRequestError("id is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	roleID, err := strconv.Atoi(c.Param("id"))
-
-	if err != nil || roleID <= 0 {
-		logError("invalid role ID", err, zap.Error(err))
-
-		return role_errors.ErrApiRoleInvalidId(c)
+	cachedData, found := h.cache.GetCachedRoleById(ctx, roleID)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	req := &pb.FindByIdRoleRequest{
@@ -192,23 +165,20 @@ func (h *roleQueryHandlerApi) FindById(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByIdRole(ctx, req)
-
 	if err != nil {
-		logError("failed to fetch role", err, zap.Error(err))
-
-		return role_errors.ErrApiRoleNotFound(c)
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseRole(res)
+	apiResponse := h.mapper.ToApiResponseRole(res)
 
-	logSuccess("fetch role successfully", zap.Bool("success", true))
+	h.cache.SetCachedRoleById(ctx, roleID, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindByActive godoc.
 // @Summary Get active roles
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Retrieve a paginated list of active roles with optional search and pagination parameters.
 // @Accept json
@@ -219,51 +189,54 @@ func (h *roleQueryHandlerApi) FindById(c echo.Context) error {
 // @Success 200 {object} response.ApiResponsePaginationRoleDeleteAt "List of active roles"
 // @Failure 400 {object} response.ErrorResponse "Invalid query parameters"
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch active roles"
-// @Router /api/role/active [get]
+// @Router /api/role-query/active [get]
 func (h *roleQueryHandlerApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
 
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
 
 	search := c.QueryParam("search")
 
-	req := &pb.FindAllRoleRequest{
+	ctx := c.Request().Context()
+
+	req := &requests.FindAllRoles{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
+
+	cachedData, found := h.cache.GetCachedRoleActive(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	grpcReq := &pb.FindAllRoleRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.role.FindByActive(ctx, req)
-
+	res, err := h.role.FindByActive(ctx, grpcReq)
 	if err != nil {
-		logError("failed to fetch active roles", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedFindActive(c)
+		return h.handleGrpcError(err, "FindByActive")
 	}
 
-	so := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
 
-	logSuccess("fetch active roles successfully", zap.Bool("success", true))
+	h.cache.SetCachedRoleActive(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindByTrashed godoc.
 // @Summary Get trashed roles
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Retrieve a paginated list of trashed roles with optional search and pagination parameters.
 // @Accept json
@@ -274,50 +247,54 @@ func (h *roleQueryHandlerApi) FindByActive(c echo.Context) error {
 // @Success 200 {object} response.ApiResponsePaginationRoleDeleteAt "List of trashed roles"
 // @Failure 400 {object} response.ErrorResponse "Invalid query parameters"
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch trashed roles"
-// @Router /api/role/trashed [get]
+// @Router /api/role-query/trashed [get]
 func (h *roleQueryHandlerApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	req := &requests.FindAllRoles{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedRoleTrashed(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllRoleRequest{
+	grpcReq := &pb.FindAllRoleRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.role.FindByTrashed(ctx, req)
-
+	res, err := h.role.FindByTrashed(ctx, grpcReq)
 	if err != nil {
-		logError("failed to fetch trashed roles", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedFindTrashed(c)
+		return h.handleGrpcError(err, "FindByTrashed")
 	}
 
-	so := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
 
-	logSuccess("fetch trashed roles successfully", zap.Bool("success", true))
+	h.cache.SetCachedRoleTrashed(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindByUserId godoc.
 // @Summary Get role by user ID
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Retrieve a role by the associated user ID.
 // @Accept json
@@ -326,23 +303,18 @@ func (h *roleQueryHandlerApi) FindByTrashed(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid user ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to fetch role by user ID"
-// @Router /api/role/user/{user_id} [get]
+// @Router /api/role-query/user/{user_id} [get]
 func (h *roleQueryHandlerApi) FindByUserId(c echo.Context) error {
-	const method = "FindAll"
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		return errors.NewBadRequestError("user_id is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	userID, err := strconv.Atoi(c.Param("user_id"))
-
-	if err != nil || userID <= 0 {
-		logError("invalid user id", err, zap.Error(err))
-
-		return role_errors.ErrApiRoleInvalidId(c)
+	cachedData, found := h.cache.GetCachedRoleByUserId(ctx, userID)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	req := &pb.FindByIdUserRoleRequest{
@@ -350,70 +322,49 @@ func (h *roleQueryHandlerApi) FindByUserId(c echo.Context) error {
 	}
 
 	res, err := h.role.FindByUserId(ctx, req)
-
 	if err != nil {
-		logError("failed to fetch role by user id", err, zap.Error(err))
-
-		return role_errors.ErrApiRoleNotFound(c)
+		return h.handleGrpcError(err, "FindByUserId")
 	}
 
-	so := h.mapper.ToApiResponsesRole(res)
+	apiResponse := h.mapper.ToApiResponsesRole(res)
 
-	logSuccess("fetch role by user id successfully", zap.Bool("success", true))
+	h.cache.SetCachedRoleByUserId(ctx, userID, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *roleQueryHandlerApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *roleQueryHandlerApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Role").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Role already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Role service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *roleQueryHandlerApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

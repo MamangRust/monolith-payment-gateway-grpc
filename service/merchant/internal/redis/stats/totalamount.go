@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type merchantStatsTotalAmountCache struct {
@@ -16,26 +16,10 @@ func NewMerchantStatsTotalAmountCache(store *sharedcachehelpers.CacheStore) Merc
 	return &merchantStatsTotalAmountCache{store: store}
 }
 
-// GetMonthlyTotalAmountMerchantCache retrieves monthly total amount statistics
-// from the cache using the given year as part of the cache key. It returns the
-// cached data if found and valid; otherwise, it returns nil and false.
-//
-// Parameters:
-//
-//	year: An integer representing the year for which the total amount statistics
-//	      should be retrieved from the cache.
-//
-// Returns:
-//
-//	[]*response.MerchantResponseMonthlyTotalAmount: A slice of pointers to the
-//	                                                  monthly total amount
-//	                                                  statistics retrieved from the
-//	                                                  cache.
-//	bool: A boolean indicating whether the cache was found and contains valid data.
-func (s *merchantStatsTotalAmountCache) GetMonthlyTotalAmountMerchantCache(ctx context.Context, year int) ([]*response.MerchantResponseMonthlyTotalAmount, bool) {
+func (s *merchantStatsTotalAmountCache) GetMonthlyTotalAmountMerchantCache(ctx context.Context, year int) ([]*db.GetMonthlyTotalAmountMerchantRow, bool) {
 	key := fmt.Sprintf(merchantMonthlyTotalAmountCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.MerchantResponseMonthlyTotalAmount](ctx, s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyTotalAmountMerchantRow](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -44,17 +28,7 @@ func (s *merchantStatsTotalAmountCache) GetMonthlyTotalAmountMerchantCache(ctx c
 	return *result, true
 }
 
-// SetMonthlyTotalAmountMerchantCache stores monthly total amount statistics in the cache
-// using the given year as part of the cache key. If the data provided is nil, the function
-// returns without storing anything.
-//
-// Parameters:
-//
-//	year: An integer representing the year for which the total amount statistics
-//	      should be stored in the cache.
-//	data: A slice of pointers to MerchantResponseMonthlyTotalAmount containing the
-//	      total amount statistics to be cached.
-func (s *merchantStatsTotalAmountCache) SetMonthlyTotalAmountMerchantCache(ctx context.Context, year int, data []*response.MerchantResponseMonthlyTotalAmount) {
+func (s *merchantStatsTotalAmountCache) SetMonthlyTotalAmountMerchantCache(ctx context.Context, year int, data []*db.GetMonthlyTotalAmountMerchantRow) {
 	if data == nil {
 		return
 	}
@@ -64,25 +38,10 @@ func (s *merchantStatsTotalAmountCache) SetMonthlyTotalAmountMerchantCache(ctx c
 	sharedcachehelpers.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTotalAmountMerchantCache retrieves yearly total amount statistics from the cache
-// using the given year as part of the cache key. It returns the cached data if found and
-// valid; otherwise, it returns nil and false.
-//
-// Parameters:
-//
-//	year: An integer representing the year for which the total amount statistics
-//	      should be retrieved from the cache.
-//
-// Returns:
-//
-//	[]*response.MerchantResponseYearlyTotalAmount: A slice of pointers to the yearly
-//	                                                  total amount statistics retrieved
-//	                                                  from the cache.
-//	bool: A boolean indicating whether the cache was found and contains valid data.
-func (s *merchantStatsTotalAmountCache) GetYearlyTotalAmountMerchantCache(ctx context.Context, year int) ([]*response.MerchantResponseYearlyTotalAmount, bool) {
+func (s *merchantStatsTotalAmountCache) GetYearlyTotalAmountMerchantCache(ctx context.Context, year int) ([]*db.GetYearlyTotalAmountMerchantRow, bool) {
 	key := fmt.Sprintf(merchantYearlyTotalAmountCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.MerchantResponseYearlyTotalAmount](ctx, s.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTotalAmountMerchantRow](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -91,16 +50,7 @@ func (s *merchantStatsTotalAmountCache) GetYearlyTotalAmountMerchantCache(ctx co
 	return *result, true
 }
 
-// SetYearlyTotalAmountMerchantCache stores yearly total amount statistics in the cache
-// using the provided year as part of the cache key. If the data provided is nil, the
-// function returns without storing anything.
-//
-// Parameters:
-//
-//	year: An integer representing the year for generating the cache key.
-//	data: A slice of pointers to MerchantResponseYearlyTotalAmount containing the
-//	      total amount statistics to be cached.
-func (s *merchantStatsTotalAmountCache) SetYearlyTotalAmountMerchantCache(ctx context.Context, year int, data []*response.MerchantResponseYearlyTotalAmount) {
+func (s *merchantStatsTotalAmountCache) SetYearlyTotalAmountMerchantCache(ctx context.Context, year int, data []*db.GetYearlyTotalAmountMerchantRow) {
 	if data == nil {
 		return
 	}

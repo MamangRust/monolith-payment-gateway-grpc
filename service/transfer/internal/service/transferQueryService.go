@@ -3,167 +3,118 @@ package service
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transfer"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 
-	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transfer/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// transferQueryDeps holds the dependencies required to create a transferQueryService.
+// transferQueryDeps defines dependencies for transferQueryService.
 type transferQueryDeps struct {
-	// Ctx is the context used across the service for deadlines, cancelation, and tracing.
-	Ctx context.Context
-
-	// ErrorHandler handles errors that occur during transfer query operations.
-	ErrorHandler errorhandler.TransferQueryErrorHandler
-
-	// Cache provides caching functionality for transfer queries.
-	Cache mencache.TransferQueryCache
-
-	// Repository is the data access layer for transfer query operations.
-	Repository repository.TransferQueryRepository
-
-	// Logger provides structured logging throughout the service.
-	Logger logger.LoggerInterface
-
-	// Mapper converts internal data models to response DTOs.
-	Mapper responseservice.TransferQueryResponseMapper
+	Cache         mencache.TransferQueryCache
+	Repository    repository.TransferQueryRepository
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
-// transferQueryService provides a service for querying transfer records.
-//
-// The service provides methods for retrieving transfer records by ID, finding
-// transfer records by year and month, and retrieving the monthly transfer status
-// for successful transactions.
+// transferQueryService handles read-only transfer queries.
 type transferQueryService struct {
-	// ctx is the context for the service.
-	ctx context.Context
-
-	// errorHandler is the error handler for the service.
-	errorHandler errorhandler.TransferQueryErrorHandler
-
-	// mencache is the cache for the service.
-	mencache mencache.TransferQueryCache
-
-	// transferQueryRepository is the repository for the service.
+	cache                   mencache.TransferQueryCache
 	transferQueryRepository repository.TransferQueryRepository
-
-	// logger is the logger for the service.
-	logger logger.LoggerInterface
-
-	// mapper is the mapper for the service.
-	mapper responseservice.TransferQueryResponseMapper
-
-	observability observability.TraceLoggerObservability
+	logger                  logger.LoggerInterface
+	observability           observability.TraceLoggerObservability
 }
 
 func NewTransferQueryService(
 	params *transferQueryDeps,
 ) TransferQueryService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transfer_query_service_request_total",
-			Help: "Total number of requests to the TransferQueryService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transfer_query_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the TransferQueryService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(
-		otel.Tracer("transfer-query-service"), params.Logger, requestCounter, requestDuration)
-
 	return &transferQueryService{
-		ctx:                     params.Ctx,
-		errorHandler:            params.ErrorHandler,
-		mencache:                params.Cache,
+		cache:                   params.Cache,
 		transferQueryRepository: params.Repository,
 		logger:                  params.Logger,
-		mapper:                  params.Mapper,
-		observability:           observability,
+		observability:           params.Observability,
 	}
 }
 
-// FindAll retrieves all transfer records based on filter and pagination.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The filter and pagination parameters.
-//
-// Returns:
-//   - []*response.TransferResponse: List of transfer responses.
-//   - *int: Total number of transfer records.
-//   - *response.ErrorResponse: Error response if an error occurs.
-func (s *transferQueryService) FindAll(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponse, *int, *response.ErrorResponse) {
+func (s *transferQueryService) FindAll(ctx context.Context, req *requests.FindAllTransfers) ([]*db.GetTransfersRow, *int, error) {
+	const method = "FindAll"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindAll"
+	if page <= 0 {
+		page = 1
+	}
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTransfersCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTransfersCache(ctx, req); found {
 		logSuccess("Successfully retrieved all transfer records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	transfers, totalRecords, err := s.transferQueryRepository.FindAll(ctx, req)
-
+	transfers, err := s.transferQueryRepository.FindAll(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleRepositoryPaginationError(err, method, "FAILED_TO_FIND_ALL_TRANSFERS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTransfersRow](
+			s.logger,
+			transfer_errors.ErrFailedFindAllTransfers,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTransfersResponse(transfers)
+	var totalCount int
 
-	s.mencache.SetCachedTransfersCache(ctx, req, so, totalRecords)
+	if len(transfers) > 0 {
+		totalCount = int(transfers[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved all transfer records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedTransfersCache(ctx, req, transfers, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched transfer",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return transfers, &totalCount, nil
 }
 
-// FindById retrieves a single transfer record by its ID.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transferId: The ID of the transfer to retrieve.
-//
-// Returns:
-//   - *response.TransferResponse: The transfer response.
-//   - *response.ErrorResponse: Error response if not found or failed.
-func (s *transferQueryService) FindById(ctx context.Context, transferId int) (*response.TransferResponse, *response.ErrorResponse) {
+func (s *transferQueryService) FindById(ctx context.Context, transferId int) (*db.GetTransferByIDRow, error) {
 	const method = "FindById"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("transfer.id", transferId))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("transfer_id", transferId))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedTransferCache(ctx, transferId); found {
+	if data, found := s.cache.GetCachedTransferCache(ctx, transferId); found {
 		logSuccess("Successfully fetched transfer from cache", zap.Int("transfer.id", transferId))
 		return data, nil
 	}
@@ -171,121 +122,141 @@ func (s *transferQueryService) FindById(ctx context.Context, transferId int) (*r
 	transfer, err := s.transferQueryRepository.FindById(ctx, transferId)
 
 	if err != nil {
-		return s.errorHandler.HandleRepositorySingleError(err, method, "FAILED_TO_FIND_TRANSFER_BY_ID", span, &status, transfer_errors.ErrTransferNotFound, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.GetTransferByIDRow](
+			s.logger,
+			transfer_errors.ErrTransferNotFound,
+			method,
+			span,
+
+			zap.Int("transfer_id", transferId),
+		)
 	}
+	s.cache.SetCachedTransferCache(ctx, transfer)
 
-	so := s.mapper.ToTransferResponse(transfer)
+	logSuccess("Successfully fetched transfer", zap.Int("transfer_id", transferId))
 
-	s.mencache.SetCachedTransferCache(ctx, so)
-
-	logSuccess("Successfully fetched transfer", zap.Int("transfer.id", transferId))
-
-	return so, nil
+	return transfer, nil
 }
 
-// FindByActive retrieves all active (non-deleted) transfer records.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The filter and pagination parameters.
-//
-// Returns:
-//   - []*response.TransferResponseDeleteAt: List of active transfer responses with deleted_at info.
-//   - *int: Total number of active records.
-//   - *response.ErrorResponse: Error response if an error occurs.
-func (s *transferQueryService) FindByActive(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *transferQueryService) FindByActive(ctx context.Context, req *requests.FindAllTransfers) ([]*db.GetActiveTransfersRow, *int, error) {
+	const method = "FindByActive"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindByActive"
-
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTransferActiveCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTransferActiveCache(ctx, req); found {
 		logSuccess("Successfully retrieved active transfer records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	transfers, totalRecords, err := s.transferQueryRepository.FindByActive(ctx, req)
+	transfers, err := s.transferQueryRepository.FindByActive(ctx, req)
 
 	if err != nil {
-		return s.errorHandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_TO_FIND_BY_ACTIVE_TRANSFERS", span, &status, transfer_errors.ErrFailedFindActiveTransfers, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetActiveTransfersRow](
+			s.logger,
+			transfer_errors.ErrFailedFindActiveTransfers,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTransfersResponseDeleteAt(transfers)
+	var totalCount int
 
-	s.mencache.SetCachedTransferActiveCache(ctx, req, so, totalRecords)
+	if len(transfers) > 0 {
+		totalCount = int(transfers[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved active transfer records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedTransferActiveCache(ctx, req, transfers, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched active transfer",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return transfers, &totalCount, nil
 }
 
-// FindByTrashed retrieves all trashed (soft-deleted) transfer records.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The filter and pagination parameters.
-//
-// Returns:
-//   - []*response.TransferResponseDeleteAt: List of trashed transfer responses with deleted_at info.
-//   - *int: Total number of trashed records.
-//   - *response.ErrorResponse: Error response if an error occurs.
-func (s *transferQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllTransfers) ([]*response.TransferResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *transferQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllTransfers) ([]*db.GetTrashedTransfersRow, *int, error) {
+	const method = "FindByTrashed"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindByTrashed"
-
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTransferTrashedCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTransferTrashedCache(ctx, req); found {
 		logSuccess("Successfully retrieved trashed transfer records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	transfers, totalRecords, err := s.transferQueryRepository.FindByTrashed(ctx, req)
-
+	transfers, err := s.transferQueryRepository.FindByTrashed(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_TO_FIND_BY_TRASHED_TRANSFERS", span, &status, transfer_errors.ErrFailedFindTrashedTransfers, zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTrashedTransfersRow](
+			s.logger,
+			transfer_errors.ErrFailedFindTrashedTransfers,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTransfersResponseDeleteAt(transfers)
+	var totalCount int
 
-	s.mencache.SetCachedTransferTrashedCache(ctx, req, so, totalRecords)
+	if len(transfers) > 0 {
+		totalCount = int(transfers[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved trashed transfer records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedTransferTrashedCache(ctx, req, transfers, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched trashed transfer",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return transfers, &totalCount, nil
 }
 
-// FindTransferByTransferFrom retrieves transfers by sender card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transfer_from: The sender card number.
-//
-// Returns:
-//   - []*response.TransferResponse: List of transfer responses.
-//   - *response.ErrorResponse: Error response if an error occurs.
-func (s *transferQueryService) FindTransferByTransferFrom(ctx context.Context, transfer_from string) ([]*response.TransferResponse, *response.ErrorResponse) {
+func (s *transferQueryService) FindTransferByTransferFrom(ctx context.Context, transfer_from string) ([]*db.GetTransfersBySourceCardRow, error) {
 	const method = "FindTransferByTransferFrom"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("transaction.from", transfer_from))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("transfer_from", transfer_from))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedTransferByFrom(ctx, transfer_from); found {
+	if data, found := s.cache.GetCachedTransferByFrom(ctx, transfer_from); found {
 		logSuccess("Successfully fetched transfer from cache", zap.String("transfer_from", transfer_from))
 		return data, nil
 	}
@@ -293,37 +264,35 @@ func (s *transferQueryService) FindTransferByTransferFrom(ctx context.Context, t
 	res, err := s.transferQueryRepository.FindTransferByTransferFrom(ctx, transfer_from)
 
 	if err != nil {
-		return s.errorHandler.HanldeRepositoryListError(err, method, "FAILED_TO_FIND_TRANSFER_BY_TRANSFER_FROM", span, &status, transfer_errors.ErrTransferNotFound, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetTransfersBySourceCardRow](
+			s.logger,
+			transfer_errors.ErrTransferNotFound,
+			method,
+			span,
+
+			zap.String("transfer_from", transfer_from),
+		)
 	}
 
-	so := s.mapper.ToTransfersResponse(res)
+	s.cache.SetCachedTransferByFrom(ctx, transfer_from, res)
 
-	s.mencache.SetCachedTransferByFrom(ctx, transfer_from, so)
+	logSuccess("Successfully fetched transfer record by transfer_from", zap.String("transfer_from", transfer_from))
 
-	logSuccess("Successfully fetched transfer", zap.String("transfer_from", transfer_from))
-
-	return so, nil
+	return res, nil
 }
 
-// FindTransferByTransferTo retrieves transfers by receiver card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transfer_to: The receiver card number.
-//
-// Returns:
-//   - []*response.TransferResponse: List of transfer responses.
-//   - *response.ErrorResponse: Error response if an error occurs.
-func (s *transferQueryService) FindTransferByTransferTo(ctx context.Context, transfer_to string) ([]*response.TransferResponse, *response.ErrorResponse) {
+func (s *transferQueryService) FindTransferByTransferTo(ctx context.Context, transfer_to string) ([]*db.GetTransfersByDestinationCardRow, error) {
 	const method = "FindTransferByTransferTo"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("transfer.to", transfer_to))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("transfer_to", transfer_to))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedTransferByTo(ctx, transfer_to); found {
+	if data, found := s.cache.GetCachedTransferByTo(ctx, transfer_to); found {
 		logSuccess("Successfully fetched transfer from cache", zap.String("transfer_to", transfer_to))
 		return data, nil
 	}
@@ -331,28 +300,24 @@ func (s *transferQueryService) FindTransferByTransferTo(ctx context.Context, tra
 	res, err := s.transferQueryRepository.FindTransferByTransferTo(ctx, transfer_to)
 
 	if err != nil {
-		return s.errorHandler.HanldeRepositoryListError(err, method, "FAILED_TO_FIND_TRANSFER_BY_TRANSFER_TO", span, &status, transfer_errors.ErrTransferNotFound, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetTransfersByDestinationCardRow](
+			s.logger,
+			transfer_errors.ErrTransferNotFound,
+			method,
+			span,
+
+			zap.String("transfer_to", transfer_to),
+		)
 	}
 
-	so := s.mapper.ToTransfersResponse(res)
+	s.cache.SetCachedTransferByTo(ctx, transfer_to, res)
 
-	s.mencache.SetCachedTransferByTo(ctx, transfer_to, so)
+	logSuccess("Successfully fetched transfer record by transfer_to", zap.String("transfer_to", transfer_to))
 
-	logSuccess("Successfully fetched transfer", zap.String("transfer_to", transfer_to))
-
-	return so, nil
+	return res, nil
 }
 
-// normalizePagination validates and normalizes pagination parameters.
-// Ensures the page is set to at least 1 and pageSize to a default of 10 if
-// they are not positive. Returns the normalized page and pageSize values.
-//
-// Parameters:
-//   - page: The requested page number.
-//   - pageSize: The number of items per page.
-//
-// Returns:
-//   - The normalized page and pageSize values.
 func (s *transferQueryService) normalizePagination(page, pageSize int) (int, int) {
 	if page <= 0 {
 		page = 1

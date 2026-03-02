@@ -1,45 +1,20 @@
 package main
 
 import (
-	"context"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/apps"
-	"go.uber.org/zap"
 )
 
-// main starts the gRPC server for the Topup Service.
-//
-// It sets up all required dependencies and handles graceful shutdown
-// when the service is interrupted.
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
-
-		log.Println("Shutting down gracefully...")
-		cancel()
-	}()
-
-	server, shutdown, err := apps.NewServer(ctx)
+	server, err := apps.NewServer(&apps.Config{
+		ServiceName:    "topup-service",
+		ServiceVersion: "1.0.0",
+		Environment:    "production",
+		OtelEndpoint:   "otel-collector:4317",
+	})
 
 	if err != nil {
-		server.Logger.Fatal("Failed to create server", zap.Error(err))
 		panic(err)
 	}
-
-	defer func() {
-		if err := shutdown(server.Ctx); err != nil {
-			server.Logger.Error("Failed to shutdown tracer", zap.Error(err))
-		}
-	}()
 
 	server.Run()
 }

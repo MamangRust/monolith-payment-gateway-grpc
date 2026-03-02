@@ -1,22 +1,20 @@
 package saldohandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
+	saldo_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/saldo"
+	pbsaldo "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/saldo"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/saldo"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type saldoTotalBalanceHandleApi struct {
@@ -26,11 +24,9 @@ type saldoTotalBalanceHandleApi struct {
 
 	mapper apimapper.SaldoStatsTotalResponseMapper
 
-	trace trace.Tracer
+	cache saldo_cache.SaldoMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type saldoTotalBalanceHandleDeps struct {
@@ -41,48 +37,32 @@ type saldoTotalBalanceHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.SaldoStatsTotalResponseMapper
+
+	cache saldo_cache.SaldoMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewSaldoTotalBalanceHandleApi(params *saldoTotalBalanceHandleDeps) *saldoTotalBalanceHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "saldo_stats_total_balance_handler_requests_total",
-			Help: "Total number of saldo query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "saldo_stats_total_balance_handler_request_duration_seconds",
-			Help:    "Duration of saldo query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
 	saldoHandler := &saldoTotalBalanceHandleApi{
-		saldo:           params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("saldo-stats-total-balance-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		saldo:      params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerSaldo := params.router.Group("/api/saldo-stats-total-balance")
 
-	routerSaldo.GET("/monthly-total-balance", saldoHandler.FindMonthlyTotalSaldoBalance)
-	routerSaldo.GET("/yearly-total-balance", saldoHandler.FindYearTotalSaldoBalance)
+	routerSaldo.GET("/monthly-total-balance", params.apiHandler.Handle("find-monthly-total-saldo-balance", saldoHandler.FindMonthlyTotalSaldoBalance))
+	routerSaldo.GET("/yearly-total-balance", params.apiHandler.Handle("find-yearly-total-saldo-balance", saldoHandler.FindYearTotalSaldoBalance))
 
 	return saldoHandler
 }
 
 // FindMonthlyTotalSaldoBalance retrieves the total saldo balance for a specific month and year.
 // @Summary Get monthly total saldo balance
-// @Tags Saldo-Stats-Total-Balance
+// @Tags Saldo
 // @Security Bearer
 // @Description Retrieve the total saldo balance for a specific month and year.
 // @Accept json
@@ -92,50 +72,51 @@ func NewSaldoTotalBalanceHandleApi(params *saldoTotalBalanceHandleDeps) *saldoTo
 // @Success 200 {object} response.ApiResponseMonthTotalSaldo "Monthly total saldo balance"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month parameter"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly total saldo balance"
-// @Router /api/saldo-stats-total-balance/monthly-total-balance [get]
+// @Router /api/saldo-stats-total-balances/monthly-total-balance [get]
 func (h *saldoTotalBalanceHandleApi) FindMonthlyTotalSaldoBalance(c echo.Context) error {
-	const method = "FindMonthlyTotalSaldoBalance"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthTotalSaldoBalance{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyTotalSaldoBalanceCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.saldo.FindMonthlyTotalSaldoBalance(ctx, &pb.FindMonthlySaldoTotalBalance{
+	res, err := h.saldo.FindMonthlyTotalSaldoBalance(ctx, &pbsaldo.FindMonthlySaldoTotalBalance{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly total saldo balance", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindMonthlyTotalSaldoBalance(c)
+		h.logger.Debug("Failed to retrieve monthly total saldo balance", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTotalSaldoBalance")
 	}
 
-	so := h.mapper.ToApiResponseMonthTotalSaldo(res)
+	apiResponse := h.mapper.ToApiResponseMonthTotalSaldo(res)
+	h.cache.SetMonthlyTotalSaldoCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieve monthly total saldo balance", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearTotalSaldoBalance retrieves the total saldo balance for a specific year.
 // @Summary Get yearly total saldo balance
-// @Tags Saldo-Stats-Total-Balance
+// @Tags Saldo
 // @Security Bearer
 // @Description Retrieve the total saldo balance for a specific year.
 // @Accept json
@@ -146,88 +127,65 @@ func (h *saldoTotalBalanceHandleApi) FindMonthlyTotalSaldoBalance(c echo.Context
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly total saldo balance"
 // @Router /api/saldo-stats-total-balance/yearly-total-balance [get]
 func (h *saldoTotalBalanceHandleApi) FindYearTotalSaldoBalance(c echo.Context) error {
-	const method = "FindYearTotalSaldoBalance"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearTotalSaldoBalanceCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.saldo.FindYearTotalSaldoBalance(ctx, &pb.FindYearlySaldo{
+	res, err := h.saldo.FindYearTotalSaldoBalance(ctx, &pbsaldo.FindYearlySaldo{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly total saldo balance", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindYearTotalSaldoBalance(c)
+		h.logger.Debug("Failed to retrieve year total saldo balance", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearTotalSaldoBalance")
 	}
 
-	so := h.mapper.ToApiResponseYearTotalSaldo(res)
+	apiResponse := h.mapper.ToApiResponseYearTotalSaldo(res)
+	h.cache.SetYearTotalSaldoBalanceCache(ctx, year, apiResponse)
 
-	logSuccess("Successfully retrieve yearly total saldo balance", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *saldoTotalBalanceHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *saldoTotalBalanceHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Saldo").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Saldo already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Saldo service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *saldoTotalBalanceHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

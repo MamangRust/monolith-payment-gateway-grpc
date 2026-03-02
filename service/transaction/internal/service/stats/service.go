@@ -2,8 +2,7 @@ package transactionstatsservice
 
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transaction"
-	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository/stats"
 )
@@ -23,41 +22,32 @@ type transactionStatsService struct {
 type DepsStats struct {
 	Cache mencache.TransactionStatsCache
 
-	ErrorHandler errorhandler.TransactionStatisticErrorHandler
-
 	Repository repository.TransactionStatsRepository
 
 	Logger logger.LoggerInterface
 
-	MapperAmount responseservice.TransactionStatsAmountResponseMapper
-
-	MapperMethod responseservice.TransactionStatsMethodResponseMapper
-
-	MapperStatus responseservice.TransactionStatsStatusResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewTransactionStatsService(deps *DepsStats) TransactionStatsService {
 	return &transactionStatsService{
 		TransactionStatsAmountService: NewTransactionStatsAmountService(&transactionStatsAmountServiceDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		TransactionStatsStatusService: NewTransactionStatsStatusService(&transactionStatsStatusServiceDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperStatus,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		TransactionStatsMethodService: NewTransactionStatsMethodService(&transactionStatsMethodServiceDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperMethod,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

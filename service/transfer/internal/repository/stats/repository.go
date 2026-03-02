@@ -2,7 +2,6 @@ package transferstatsrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transfer/stats"
 )
 
 type TransferStatsRepository interface {
@@ -15,10 +14,10 @@ type repositories struct {
 	TransferStatsStatusRepository
 }
 
-func NewTransferStatsRepository(db *db.Queries, mapper recordmapper.TransferStatisticRecordMapper) TransferStatsRepository {
+func NewTransferStatsRepository(db *db.Queries) TransferStatsRepository {
 
 	return &repositories{
-		TransferStatsAmountRepository: NewTransferStatsAmountRepository(db, mapper),
-		TransferStatsStatusRepository: NewTransferStatsStatusRepository(db, mapper),
+		TransferStatsAmountRepository: NewTransferStatsAmountRepository(db),
+		TransferStatsStatusRepository: NewTransferStatsStatusRepository(db),
 	}
 }

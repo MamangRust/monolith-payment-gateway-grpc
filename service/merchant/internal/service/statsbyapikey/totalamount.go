@@ -3,16 +3,14 @@ package merchantstatsbyapikeyservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis/statsbyapikey"
 	repository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/statsbyapikey"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/merchant"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
@@ -20,139 +18,100 @@ import (
 type merchantStatsTotalAmountByApiKeyDeps struct {
 	Cache mencache.MerchantStatsTotalAmountByApiKeyCache
 
-	ErrorHandler errorhandler.MerchantStatisticByApikeyErrorHandler
-
 	Repository repository.MerchantStatsTotalAmountByApiKeyRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.MerchantTotalAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type merchantStatsTotalAmountByApiKeyService struct {
-	mencache mencache.MerchantStatsTotalAmountByApiKeyCache
+	cache mencache.MerchantStatsTotalAmountByApiKeyCache
 
 	repository repository.MerchantStatsTotalAmountByApiKeyRepository
 
-	errorHandler errorhandler.MerchantStatisticByApikeyErrorHandler
-
 	logger logger.LoggerInterface
-
-	mapper responseservice.MerchantTotalAmountResponseMapper
 
 	observability observability.TraceLoggerObservability
 }
 
 func NewMerchantStatsTotalAmountByApiKeyService(params *merchantStatsTotalAmountByApiKeyDeps) MerchantStatsByApiKeyTotalAmountService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "merchant_stats_totalamount_byapikey_service_request_total",
-		Help: "The total number of requests MerchantStatsTotalAmountByApiKeyService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "merchant_stats_totalamount_byapikey_service_request_duration_seconds",
-		Help:    "The duration of requests MerchantStatsTotalAmountByApiKeyService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("merchant-stats-totalamount-by-apikey-service"), params.Logger, requestCounter, requestDuration)
-
 	return &merchantStatsTotalAmountByApiKeyService{
-		mencache:      params.Cache,
+		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		errorHandler:  params.ErrorHandler,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyTotalAmountByApikeys retrieves monthly total transaction amounts for a merchant using API key.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the API key and the target year.
-//
-// Returns:
-//   - []*response.MerchantResponseMonthlyTotalAmount: A slice of monthly total amount statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsTotalAmountByApiKeyService) FindMonthlyTotalAmountByApikeys(ctx context.Context, req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseMonthlyTotalAmount, *response.ErrorResponse) {
-	api_key := req.Apikey
-	year := req.Year
-
+func (s *merchantStatsTotalAmountByApiKeyService) FindMonthlyTotalAmountByApikey(ctx context.Context, req *requests.MonthYearTotalAmountApiKey) ([]*db.GetMonthlyTotalAmountByApikeyRow, error) {
 	const method = "FindMonthlyTotalAmountByApikeys"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("api_key", api_key), attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("api_key", req.Apikey),
+		attribute.Int("year", req.Year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetMonthlyTotalAmountByApikeysCache(ctx, req); found {
-		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+	if cachedMerchant, found := s.cache.GetMonthlyTotalAmountByApikeysCache(ctx, req); found {
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetMonthlyTotalAmountByApikey(ctx, req)
-
+	dbRows, err := s.repository.GetMonthlyTotalAmountByApikey(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyTotalAmountByApikeysError(
-			err, method, "FAILED_FIND_MONTHLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthlyTotalAmountByApikeyRow](
+			s.logger,
+			merchant_errors.ErrFailedFindMonthlyTotalAmountByApikeys,
+			method,
+			span,
+
+			zap.String("api_key", req.Apikey),
+			zap.Int("year", req.Year),
 		)
 	}
 
-	so := s.mapper.ToMerchantMonthlyTotalAmounts(res)
+	s.cache.SetMonthlyTotalAmountByApikeysCache(ctx, req, dbRows)
 
-	s.mencache.SetMonthlyTotalAmountByApikeysCache(ctx, req, so)
-
-	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found monthly total amount by API key (from DB)", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
+	return dbRows, nil
 }
 
-// FindYearlyTotalAmountByApikeys retrieves yearly total transaction amounts for a merchant using API key.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the API key and the target year.
-//
-// Returns:
-//   - []*response.MerchantResponseYearlyTotalAmount: A slice of yearly total amount statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsTotalAmountByApiKeyService) FindYearlyTotalAmountByApikeys(ctx context.Context, req *requests.MonthYearTotalAmountApiKey) ([]*response.MerchantResponseYearlyTotalAmount, *response.ErrorResponse) {
-	api_key := req.Apikey
-	year := req.Year
-
+func (s *merchantStatsTotalAmountByApiKeyService) FindYearlyTotalAmountByApikey(ctx context.Context, req *requests.MonthYearTotalAmountApiKey) ([]*db.GetYearlyTotalAmountByApikeyRow, error) {
 	const method = "FindYearlyTotalAmountByApikeys"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("api_key", api_key), attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("api_key", req.Apikey),
+		attribute.Int("year", req.Year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetYearlyTotalAmountByApikeysCache(ctx, req); found {
-		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+	if cachedMerchant, found := s.cache.GetYearlyTotalAmountByApikeysCache(ctx, req); found {
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetYearlyTotalAmountByApikey(ctx, req)
-
+	dbRows, err := s.repository.GetYearlyTotalAmountByApikey(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleYearlyTotalAmountByApikeysError(
-			err, method, "FAILED_FIND_YEARLY_TOTAL_AMOUNT_BY_APIKEYS", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyTotalAmountByApikeyRow](
+			s.logger,
+			merchant_errors.ErrFailedFindYearlyTotalAmountByApikeys,
+			method,
+			span,
+
+			zap.String("api_key", req.Apikey),
+			zap.Int("year", req.Year),
 		)
 	}
 
-	so := s.mapper.ToMerchantYearlyTotalAmounts(res)
+	s.cache.SetYearlyTotalAmountByApikeysCache(ctx, req, dbRows)
 
-	s.mencache.SetYearlyTotalAmountByApikeysCache(ctx, req, so)
-
-	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found yearly total amount by API key (from DB)", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
+	return dbRows, nil
 }

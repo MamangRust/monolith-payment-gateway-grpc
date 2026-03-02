@@ -3,82 +3,53 @@ package cardstatsservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	cardstatsmencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-card/internal/repository/stats"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
+
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
 type cardStatsWithdrawService struct {
-	errorHandler errorhandler.CardStatisticErrorHandler
-
 	cache cardstatsmencache.CardStatsWithdrawCache
 
 	repository repository.CardStatsWithdrawRepository
 
 	logger logger.LoggerInterface
 
-	mapper responseservice.CardStatisticAmountResponseMapper
-
 	observability observability.TraceLoggerObservability
 }
 
 type cardStatsWithdrawServiceDeps struct {
-	ErrorHandler errorhandler.CardStatisticErrorHandler
-
 	Cache cardstatsmencache.CardStatsWithdrawCache
 
 	Repository repository.CardStatsWithdrawRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.CardStatisticAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewCardStatsWithdrawService(params *cardStatsWithdrawServiceDeps) CardStatsWithdrawService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "card_stats_withdraw_amount_request_count",
-		Help: "Number of card statistic requests CardStatsWithdrawService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "card_stats_withdraw_amount_request_duration_seconds",
-		Help:    "Duration of card statistic requests CardStatsWithdrawService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("card-stats-withdraw-amount-service"), params.Logger, requestCounter, requestDuration)
 
 	return &cardStatsWithdrawService{
-		errorHandler:  params.ErrorHandler,
 		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyWithdrawAmount retrieves monthly withdraw statistics across all card numbers for a given year.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the monthly withdraw data is requested
-//
-// Returns:
-//   - A slice of CardResponseMonthAmount or an error response if the operation fails.
-func (s *cardStatsWithdrawService) FindMonthlyWithdrawAmount(ctx context.Context, year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
+func (s *cardStatsWithdrawService) FindMonthlyWithdrawAmount(ctx context.Context, year int) ([]*db.GetMonthlyWithdrawAmountRow, error) {
 	const method = "FindMonthlyWithdrawAmount"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -90,34 +61,32 @@ func (s *cardStatsWithdrawService) FindMonthlyWithdrawAmount(ctx context.Context
 	}
 
 	res, err := s.repository.GetMonthlyWithdrawAmount(ctx, year)
-
 	if err != nil {
-		return s.errorHandler.HandleMonthlyWithdrawAmountError(err, method, "FAILED_MONTHLY_WITHDRAW_AMOUNT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyWithdrawAmountRow](
+			s.logger,
+			card_errors.ErrFailedFindMonthlyWithdrawAmount,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetMonthlyAmounts(res)
-
-	s.cache.SetMonthlyWithdrawCache(ctx, year, so)
+	s.cache.SetMonthlyWithdrawCache(ctx, year, res)
 
 	logSuccess("Monthly withdraw amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }
 
-// FindYearlyWithdrawAmount retrieves yearly withdraw statistics across all card numbers for a given year.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the yearly withdraw data is requested
-//
-// Returns:
-//   - A slice of CardResponseYearAmount or an error response if the operation fails.
-func (s *cardStatsWithdrawService) FindYearlyWithdrawAmount(ctx context.Context, year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
+func (s *cardStatsWithdrawService) FindYearlyWithdrawAmount(ctx context.Context, year int) ([]*db.GetYearlyWithdrawAmountRow, error) {
 	const method = "FindYearlyWithdrawAmount"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -129,19 +98,23 @@ func (s *cardStatsWithdrawService) FindYearlyWithdrawAmount(ctx context.Context,
 	}
 
 	res, err := s.repository.GetYearlyWithdrawAmount(ctx, year)
-
 	if err != nil {
-		return s.errorHandler.HandleYearlyWithdrawAmountError(err, method, "FAILED_YEARLY_WITHDRAW_AMOUNT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyWithdrawAmountRow](
+			s.logger,
+			card_errors.ErrFailedFindYearlyWithdrawAmount,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetYearlyAmounts(res)
-
-	s.cache.SetYearlyWithdrawCache(ctx, year, so)
+	s.cache.SetYearlyWithdrawCache(ctx, year, res)
 
 	logSuccess("Yearly withdraw amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }

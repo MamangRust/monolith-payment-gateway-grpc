@@ -1,9 +1,7 @@
 package mencache
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/redis/go-redis/v9"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 )
 
 type CacheApiGateway interface {
@@ -16,16 +14,10 @@ type mencacheApiGateay struct {
 	RoleCache
 }
 
-type Deps struct {
-	Redis  *redis.Client
-	Logger logger.LoggerInterface
-}
-
-func NewCacheApiGateway(deps *Deps) CacheApiGateway {
-	store := sharedcachehelpers.NewCacheStore(deps.Redis, deps.Logger)
+func NewCacheApiGateway(cacheStore *cache.CacheStore) CacheApiGateway {
 
 	return &mencacheApiGateay{
-		MerchantCache: NewMerchantCache(store),
-		RoleCache:     NewRoleCache(store),
+		MerchantCache: NewMerchantCache(cacheStore),
+		RoleCache:     NewRoleCache(cacheStore),
 	}
 }

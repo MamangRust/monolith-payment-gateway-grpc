@@ -1,7 +1,7 @@
 package handlerstats
 
 import (
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/card/stats"
 )
 
 type CardStatsBalanceService interface {
@@ -13,7 +13,7 @@ type CardStatsTopupService interface {
 }
 
 type CardStatsTransactionService interface {
-	pb.CardStatsTransactonServiceServer
+	pb.CardStatsTransactionServiceServer
 }
 
 type CardStatsTransferService interface {

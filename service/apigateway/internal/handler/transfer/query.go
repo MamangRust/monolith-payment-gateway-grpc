@@ -1,38 +1,32 @@
 package transferhandler
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+
+	transfer_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transfer"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transfer"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transfer"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-type transferQueryHandleApi struct {
+type transferHandleApi struct {
 	client pb.TransferQueryServiceClient
 
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransferQueryResponseMapper
 
-	trace trace.Tracer
+	cache transfer_cache.TransferMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transferQueryHandleDeps struct {
@@ -43,49 +37,33 @@ type transferQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransferQueryResponseMapper
+
+	cache transfer_cache.TransferMencache
+
+	apiHandler errors.ApiHandler
 }
 
-func NewTransferQueryHandleApi(params *transferQueryHandleDeps) *transferQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transfer_query_handler_requests_total",
-			Help: "Total number of transfer query requests",
-		},
-		[]string{"method", "status"},
-	)
+func NewTransferQueryHandleApi(params *transferQueryHandleDeps) *transferHandleApi {
 
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transfer_query_handler_request_duration_seconds",
-			Help:    "Duration of transfer query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	transferQueryHandleApi := &transferQueryHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transfer-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+	transferHandleApi := &transferHandleApi{
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTransfer := params.router.Group("/api/transfer-query")
 
-	routerTransfer.GET("", transferQueryHandleApi.FindAll)
-	routerTransfer.GET("/:id", transferQueryHandleApi.FindById)
+	routerTransfer.GET("", params.apiHandler.Handle("find-all-transfers", transferHandleApi.FindAll))
+	routerTransfer.GET("/:id", params.apiHandler.Handle("find-transfer-by-id", transferHandleApi.FindById))
+	routerTransfer.GET("/transfer_from/:transfer_from", params.apiHandler.Handle("find-transfers-by-transfer-from", transferHandleApi.FindByTransferByTransferFrom))
+	routerTransfer.GET("/transfer_to/:transfer_to", params.apiHandler.Handle("find-transfers-by-transfer-to", transferHandleApi.FindByTransferByTransferTo))
 
-	routerTransfer.GET("/transfer_from/:transfer_from", transferQueryHandleApi.FindByTransferByTransferFrom)
-	routerTransfer.GET("/transfer_to/:transfer_to", transferQueryHandleApi.FindByTransferByTransferTo)
+	routerTransfer.GET("/active", params.apiHandler.Handle("find-active-transfers", transferHandleApi.FindByActiveTransfer))
+	routerTransfer.GET("/trashed", params.apiHandler.Handle("find-trashed-transfers", transferHandleApi.FindByTrashedTransfer))
 
-	routerTransfer.GET("/active", transferQueryHandleApi.FindByActiveTransfer)
-	routerTransfer.GET("/trashed", transferQueryHandleApi.FindByTrashedTransfer)
-
-	return transferQueryHandleApi
+	return transferHandleApi
 }
 
 // @Summary Find all transfer records
@@ -100,44 +78,48 @@ func NewTransferQueryHandleApi(params *transferQueryHandleDeps) *transferQueryHa
 // @Success 200 {object} response.ApiResponsePaginationTransfer "List of transfer records"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query [get]
-func (h *transferQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+func (h *transferHandleApi) FindAll(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransfers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransfersCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransferRequest{
+	reqGrpc := &pb.FindAllTransferRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindAllTransfer(ctx, req)
-
+	res, err := h.client.FindAllTransfer(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindAllTransfers(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransfer(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransfer(res)
+	h.cache.SetCachedTransfersCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a transfer by ID
@@ -151,42 +133,33 @@ func (h *transferQueryHandleApi) FindAll(c echo.Context) error {
 // @Failure 400 {object} response.ErrorResponse "Bad Request: Invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query/{id} [get]
-func (h *transferQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+func (h *transferHandleApi) FindById(c echo.Context) error {
+	idStr := c.Param("id")
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
+		return errors.NewBadRequestError("invalid id parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id := c.Param("id")
-
-	idInt, err := strconv.Atoi(id)
-
-	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiTransferInvalidID(c)
-
+	cachedData, found := h.cache.GetCachedTransferCache(ctx, idInt)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.client.FindByIdTransfer(ctx, &pb.FindByIdTransferRequest{
 		TransferId: int32(idInt),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindByIdTransfer(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseTransfer(res)
+	apiResponse := h.mapper.ToApiResponseTransfer(res)
+	h.cache.SetCachedTransferCache(ctx, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find transfers by transfer_from
@@ -199,41 +172,31 @@ func (h *transferQueryHandleApi) FindById(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseTransfers "Transfer data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query/transfer_from/{transfer_from} [get]
-func (h *transferQueryHandleApi) FindByTransferByTransferFrom(c echo.Context) error {
-	const method = "FindByTransferByTransferFrom"
+func (h *transferHandleApi) FindByTransferByTransferFrom(c echo.Context) error {
+	transferFrom := c.Param("transfer_from")
+	if transferFrom == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	transfer_from := c.Param("transfer_from")
-
-	if transfer_from == "" {
-		err := errors.New("transfer_from is required")
-
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidCardNumber(c)
+	cachedData, found := h.cache.GetCachedTransferByFrom(ctx, transferFrom)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.client.FindTransferByTransferFrom(ctx, &pb.FindTransferByTransferFromRequest{
-		TransferFrom: transfer_from,
+		TransferFrom: transferFrom,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindByTransferFrom(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTransferByTransferFrom")
 	}
 
-	so := h.mapper.ToApiResponseTransfers(res)
+	apiResponse := h.mapper.ToApiResponseTransfers(res)
+	h.cache.SetCachedTransferByFrom(ctx, transferFrom, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find transfers by transfer_to
@@ -246,41 +209,31 @@ func (h *transferQueryHandleApi) FindByTransferByTransferFrom(c echo.Context) er
 // @Success 200 {object} response.ApiResponseTransfers "Transfer data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query/transfer_to/{transfer_to} [get]
-func (h *transferQueryHandleApi) FindByTransferByTransferTo(c echo.Context) error {
-	const method = "FindByTransferByTransferTo"
+func (h *transferHandleApi) FindByTransferByTransferTo(c echo.Context) error {
+	transferTo := c.Param("transfer_to")
+	if transferTo == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	transfer_to := c.Param("transfer_to")
-
-	if transfer_to == "" {
-		err := errors.New("transfer_to is required")
-
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiInvalidCardNumber(c)
+	cachedData, found := h.cache.GetCachedTransferByTo(ctx, transferTo)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.client.FindTransferByTransferTo(ctx, &pb.FindTransferByTransferToRequest{
-		TransferTo: transfer_to,
+		TransferTo: transferTo,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindByTransferTo(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTransferByTransferTo")
 	}
 
-	so := h.mapper.ToApiResponseTransfers(res)
+	apiResponse := h.mapper.ToApiResponseTransfers(res)
+	h.cache.SetCachedTransferByTo(ctx, transferTo, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find active transfers
@@ -295,44 +248,48 @@ func (h *transferQueryHandleApi) FindByTransferByTransferTo(c echo.Context) erro
 // @Success 200 {object} response.ApiResponseTransfers "Active transfer data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query/active [get]
-func (h *transferQueryHandleApi) FindByActiveTransfer(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActiveTransfer"
-	)
+func (h *transferHandleApi) FindByActiveTransfer(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransfers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransferActiveCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransferRequest{
+	reqGrpc := &pb.FindAllTransferRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByActiveTransfer(ctx, req)
-
+	res, err := h.client.FindByActiveTransfer(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindByActiveTransfer(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByActiveTransfer")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
+	h.cache.SetCachedTransferActiveCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve trashed transfers
@@ -347,96 +304,82 @@ func (h *transferQueryHandleApi) FindByActiveTransfer(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseTransfers "List of trashed transfer records"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transfer data"
 // @Router /api/transfer-query/trashed [get]
-func (h *transferQueryHandleApi) FindByTrashedTransfer(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashedTransfer"
-	)
+func (h *transferHandleApi) FindByTrashedTransfer(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransfers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransferTrashedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransferRequest{
+	reqGrpc := &pb.FindAllTransferRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByTrashedTransfer(ctx, req)
-
+	res, err := h.client.FindByTrashedTransfer(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transfer data", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindByTrashedTransfer(c)
+		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTrashedTransfer")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
+	h.cache.SetCachedTransferTrashedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved transfer data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *transferQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transferHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transfer").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transfer already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *transferQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

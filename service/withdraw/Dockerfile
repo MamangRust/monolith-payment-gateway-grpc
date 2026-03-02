@@ -1,4 +1,4 @@
-FROM golang:1.24.4-alpine3.22 AS builder
+FROM golang:1.25.3-alpine3.22 AS builder
 
 WORKDIR /app
 
@@ -26,6 +26,6 @@ RUN chown 1000:1000 ./withdraw
 
 USER appuser
 
-EXPOSE 50060 8090
+EXPOSE 50060
 
 CMD ["./withdraw"]

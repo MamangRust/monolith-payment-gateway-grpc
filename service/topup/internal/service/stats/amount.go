@@ -3,15 +3,13 @@ package topupstatsservice
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/topup"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-topup/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-topup/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-topup/internal/repository/stats"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
@@ -19,75 +17,38 @@ import (
 type topupStatsAmountDeps struct {
 	Cache mencache.TopupStatsAmountCache
 
-	ErrorHandler errorhandler.TopupStatisticErrorHandler
-
 	Repository repository.TopupStatsAmountRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.TopupStatsAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type topupStatsAmountService struct {
 	cache mencache.TopupStatsAmountCache
 
-	errorHandler errorhandler.TopupStatisticErrorHandler
-
 	repository repository.TopupStatsAmountRepository
 
 	logger logger.LoggerInterface
-
-	mapper responseservice.TopupStatsAmountResponseMapper
 
 	observability observability.TraceLoggerObservability
 }
 
 func NewTopupStatsAmountService(params *topupStatsAmountDeps) TopupStatsAmountService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "topup_stats_amount_service_request_total",
-			Help: "Total number of requests to the TopupStatsAmountService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "topup_stats_amount_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the TopupStatsAmountService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(
-		otel.Tracer("topup-stats-amount-service"), params.Logger, requestCounter, requestDuration)
 
 	return &topupStatsAmountService{
 		cache:         params.Cache,
-		errorHandler:  params.ErrorHandler,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyTopupAmounts retrieves monthly statistics of topup amounts.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the statistics are requested.
-//
-// Returns:
-//   - []*response.TopupMonthAmountResponse: List of monthly topup amounts.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupStatsAmountService) FindMonthlyTopupAmounts(ctx context.Context, year int) ([]*response.TopupMonthAmountResponse, *response.ErrorResponse) {
+func (s *topupStatsAmountService) FindMonthlyTopupAmounts(ctx context.Context, year int) ([]*db.GetMonthlyTopupAmountsRow, error) {
 	const method = "FindMonthlyTopupAmounts"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -98,33 +59,31 @@ func (s *topupStatsAmountService) FindMonthlyTopupAmounts(ctx context.Context, y
 		return data, nil
 	}
 
-	records, err := s.repository.GetMonthlyTopupAmounts(ctx, year)
+	dbRows, err := s.repository.GetMonthlyTopupAmounts(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyTopupAmounts(err, method, "FAILED_FIND_MONTHLY_TOPUP_AMOUNT", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthlyTopupAmountsRow](
+			s.logger,
+			topup_errors.ErrFailedFindMonthlyTopupAmounts,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
 
-	responses := s.mapper.ToTopupMonthlyAmountResponses(records)
+	s.cache.SetMonthlyTopupAmountsCache(ctx, year, dbRows)
 
-	s.cache.SetMonthlyTopupAmountsCache(ctx, year, responses)
+	logSuccess("Successfully fetched monthly topup amounts (from DB)", zap.Int("year", year))
 
-	logSuccess("Successfully fetched monthly topup amounts", zap.Int("year", year))
-
-	return responses, nil
+	return dbRows, nil
 }
 
-// FindYearlyTopupAmounts retrieves yearly statistics of topup amounts.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the statistics are requested.
-//
-// Returns:
-//   - []*response.TopupYearlyAmountResponse: List of yearly topup amounts.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupStatsAmountService) FindYearlyTopupAmounts(ctx context.Context, year int) ([]*response.TopupYearlyAmountResponse, *response.ErrorResponse) {
+func (s *topupStatsAmountService) FindYearlyTopupAmounts(ctx context.Context, year int) ([]*db.GetYearlyTopupAmountsRow, error) {
 	const method = "FindYearlyTopupAmounts"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -135,16 +94,22 @@ func (s *topupStatsAmountService) FindYearlyTopupAmounts(ctx context.Context, ye
 		return data, nil
 	}
 
-	records, err := s.repository.GetYearlyTopupAmounts(ctx, year)
+	dbRows, err := s.repository.GetYearlyTopupAmounts(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleYearlyTopupAmounts(err, method, "FAILED_FIND_YEARLY_TOPUP_AMOUNTS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyTopupAmountsRow](
+			s.logger,
+			topup_errors.ErrFailedFindYearlyTopupAmounts,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
 
-	responses := s.mapper.ToTopupYearlyAmountResponses(records)
+	s.cache.SetYearlyTopupAmountsCache(ctx, year, dbRows)
 
-	s.cache.SetYearlyTopupAmountsCache(ctx, year, responses)
+	logSuccess("Successfully fetched yearly topup amounts (from DB)", zap.Int("year", year))
 
-	logSuccess("Successfully fetched yearly topup amounts", zap.Int("year", year))
-
-	return responses, nil
+	return dbRows, nil
 }

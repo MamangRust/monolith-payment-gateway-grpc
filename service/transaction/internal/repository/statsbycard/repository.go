@@ -2,7 +2,6 @@ package transactionbycardrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transaction/statsbycard"
 )
 
 type TransactionStatsByCardRepository interface {
@@ -17,11 +16,11 @@ type repository struct {
 	TransactonStatsByCardStatusRepository
 }
 
-func NewTransactionStatsRepository(db *db.Queries, mapper recordmapper.TransactonStatisticByCardMapper) TransactionStatsByCardRepository {
+func NewTransactionStatsRepository(db *db.Queries) TransactionStatsByCardRepository {
 
 	return &repository{
-		TransactonStatsByCardAmountRepository:  NewTransactionStatsByCardAmountRepository(db, mapper),
-		TransactionStatsByCardMethodRepository: NewTransactionStatsByCardMethodRepository(db, mapper),
-		TransactonStatsByCardStatusRepository:  NewTransactionStatsByCardStatusRepository(db, mapper),
+		TransactonStatsByCardAmountRepository:  NewTransactionStatsByCardAmountRepository(db),
+		TransactionStatsByCardMethodRepository: NewTransactionStatsByCardMethodRepository(db),
+		TransactonStatsByCardStatusRepository:  NewTransactionStatsByCardStatusRepository(db),
 	}
 }

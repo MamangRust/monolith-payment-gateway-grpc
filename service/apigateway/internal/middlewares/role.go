@@ -18,38 +18,20 @@ import (
 	"go.uber.org/zap"
 )
 
-// RoleValidator is responsible for validating user roles via Kafka-based request-response messaging.
-//
-// This struct sends role validation requests through Kafka and listens for asynchronous responses.
-// It includes logic to manage concurrent access to response channels and timeout control.
 type RoleValidator struct {
-	// kafka is the Kafka client used to send role validation requests and listen for responses.
-	kafka *kafka.Kafka
-	// logger provides structured logging for tracking validator behavior and errors.
-	logger logger.LoggerInterface
-	// requestTopic is the Kafka topic where role validation requests are published.
-	requestTopic string
-	// responseTopic is the Kafka topic where role validation responses are received.
+	kafka         *kafka.Kafka
+	logger        logger.LoggerInterface
+	requestTopic  string
 	responseTopic string
-	// timeout defines how long the validator waits for a response before timing out.
-	timeout time.Duration
-	// responseChans is a map of correlation IDs to channels used for receiving responses.
-	// It enables concurrent request-response tracking for each role validation request.
+	timeout       time.Duration
+
 	responseChans map[string]chan *response.RoleResponsePayload
-	// mu is a read-write mutex used to safely access the responseChans map concurrently.
+
 	mu sync.RWMutex
 
 	cache mencache.RoleCache
 }
 
-// NewRoleValidator creates a new RoleValidator instance.
-//
-// It starts a Kafka consumer that listens to the given response topic and waits
-// for a response to the validation request published to the given request topic.
-// The validator is used as a middleware to validate the role ID in the request
-// header and store the role data in the Echo context.
-//
-// It panics if the Kafka consumer cannot be started.
 func NewRoleValidator(k *kafka.Kafka, requestTopic, responseTopic string, timeout time.Duration, logger logger.LoggerInterface, cache mencache.RoleCache) *RoleValidator {
 	v := &RoleValidator{
 		kafka:         k,
@@ -71,11 +53,6 @@ func NewRoleValidator(k *kafka.Kafka, requestTopic, responseTopic string, timeou
 	return v
 }
 
-// Middleware returns an Echo middleware that validates the user role by publishing
-// a message to a Kafka topic and waiting for a response. If the validation is
-// successful, the role names are stored in the Echo context and the request is
-// passed to the next handler. If the validation fails or times out, an HTTP error
-// is returned.
 func (v *RoleValidator) Middleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

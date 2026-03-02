@@ -93,7 +93,7 @@ func (h *roleKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 
 		if errResp == nil && len(roles) > 0 {
 			for _, r := range roles {
-				resp.RoleNames = append(resp.RoleNames, r.Name)
+				resp.RoleNames = append(resp.RoleNames, r.RoleName)
 			}
 			h.logger.Info("Role validation successful",
 				zap.Int("user_id", payload.UserID),

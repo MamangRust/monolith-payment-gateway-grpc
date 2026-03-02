@@ -3,269 +3,262 @@ package service
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/user"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-user/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-user/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// UserQueryDeps defines the required dependencies to initialize userQueryService.
+// userQueryDeps defines dependencies for userQueryService.
 type userQueryDeps struct {
-	// Ctx is the context used across service operations.
-	Ctx context.Context
-
-	// ErrorHandler handles domain-level errors for user queries.
-	ErrorHandler errorhandler.UserQueryError
-
-	// Cache provides caching layer for user query results.
-	Cache mencache.UserQueryCache
-
-	// Repository provides access to user query data in the persistence layer.
-	Repository repository.UserQueryRepository
-
-	// Logger is used to log service activities and errors.
-	Logger logger.LoggerInterface
-
-	// Mapper maps internal user entities to response models.
-	Mapper responseservice.UserQueryResponseMapper
+	Cache         mencache.UserQueryCache
+	Repository    repository.UserQueryRepository
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
-// userQueryService provides methods to query user data with caching, tracing, and metrics support.
+// userQueryService implements user query operations.
 type userQueryService struct {
-	// ctx is the context passed throughout service operations.
-	ctx context.Context
-
-	// errorhandler handles user query-related errors.
-	errorhandler errorhandler.UserQueryError
-
-	// mencache provides caching for query results.
-	mencache mencache.UserQueryCache
-
-	// userQueryRepository is the repository used to access user data.
+	cache               mencache.UserQueryCache
 	userQueryRepository repository.UserQueryRepository
-
-	// logger is used for logging service events and errors.
-	logger logger.LoggerInterface
-
-	// mapper maps internal data to response models.
-	mapper responseservice.UserQueryResponseMapper
-
-	observability observability.TraceLoggerObservability
+	logger              logger.LoggerInterface
+	observability       observability.TraceLoggerObservability
 }
 
-// NewUserQueryService initializes a new instance of userQueryService with the provided parameters.
-//
-// It sets up the prometheus metrics for counting and measuring the duration of user query requests.
-//
-// Parameters:
-// - params: A pointer to userQueryDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created userQueryService.
+// NewUserQueryService creates a new UserQueryService.
 func NewUserQueryService(
 	params *userQueryDeps,
 ) UserQueryService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "user_query_service_request_total",
-			Help: "Total number of requests to the UserQueryService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "user_query_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the UserQueryService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(
-		otel.Tracer("user-query-service"), params.Logger, requestCounter, requestDuration)
-
 	return &userQueryService{
-		ctx:                 params.Ctx,
-		errorhandler:        params.ErrorHandler,
-		mencache:            params.Cache,
+		cache:               params.Cache,
 		userQueryRepository: params.Repository,
 		logger:              params.Logger,
-		mapper:              params.Mapper,
-		observability:       observability,
+		observability:       params.Observability,
 	}
 }
 
-// FindAll retrieves all users based on the given request filter.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter parameters for users.
-//
-// Returns:
-//   - []*response.UserResponse: List of user data.
-//   - *int: Total count of users.
-//   - *response.ErrorResponse: Error response if query fails.
-func (s *userQueryService) FindAll(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponse, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindAll(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersWithPaginationRow, *int, error) {
+	const method = "FindAll"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindAll"
+	if page <= 0 {
+		page = 1
+	}
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedUsersCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedUsersCache(ctx, req); found {
 		logSuccess("Successfully retrieved all user records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindAllUsers(ctx, req)
-
+	users, err := s.userQueryRepository.FindAllUsers(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetUsersWithPaginationRow](
+			s.logger,
+			user_errors.ErrFailedFindAll,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	userResponses := s.mapper.ToUsersResponse(users)
+	var totalCount int
 
-	s.mencache.SetCachedUsersCache(ctx, req, userResponses, totalRecords)
+	if len(users) > 0 {
+		totalCount = int(users[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved all user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedUsersCache(ctx, req, users, &totalCount)
 
-	return userResponses, totalRecords, nil
+	logSuccess("Successfully fetched user",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return users, &totalCount, nil
 }
 
-// FindByID retrieves a specific user by ID.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - id: The ID of the user.
-//
-// Returns:
-//   - *response.UserResponse: The user data.
-//   - *response.ErrorResponse: Error response if retrieval fails.
-func (s *userQueryService) FindByID(ctx context.Context, id int) (*response.UserResponse, *response.ErrorResponse) {
+func (s *userQueryService) FindByID(ctx context.Context, id int) (*db.GetUserByIDRow, error) {
 	const method = "FindByID"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("user.id", id))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user_id", id))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedUserCache(ctx, id); found {
+	if data, found := s.cache.GetCachedUserCache(ctx, id); found {
 		logSuccess("Successfully retrieved user record from cache", zap.Int("user.id", id))
 		return data, nil
 	}
 
 	user, err := s.userQueryRepository.FindById(ctx, id)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.GetUserByIDRow](
+			s.logger,
+			user_errors.ErrUserNotFoundRes,
+			method,
+			span,
+
+			zap.Int("user_id", id),
+		)
 	}
 
-	userRes := s.mapper.ToUserResponse(user)
+	s.cache.SetCachedUserCache(ctx, user)
 
-	s.mencache.SetCachedUserCache(ctx, userRes)
+	logSuccess("Successfully fetched user", zap.Int("user_id", id))
 
-	logSuccess("Successfully retrieved user record", zap.Int("user.id", id))
-
-	return userRes, nil
+	return user, nil
 }
 
-// FindByActive retrieves all active users (not soft-deleted).
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter parameters.
-//
-// Returns:
-//   - []*response.UserResponseDeleteAt: List of active user data.
-//   - *int: Total count of active users.
-//   - *response.ErrorResponse: Error response if query fails.
-func (s *userQueryService) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetActiveUsersWithPaginationRow, *int, error) {
+	const method = "FindByActive"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindByActive"
+	if page <= 0 {
+		page = 1
+	}
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedUserActiveCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedUserActiveCache(ctx, req); found {
 		logSuccess("Successfully retrieved active user records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindByActive(ctx, req)
-
+	users, err := s.userQueryRepository.FindByActive(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_ACTIVE_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetActiveUsersWithPaginationRow](
+			s.logger,
+			user_errors.ErrFailedFindActive,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToUsersResponseDeleteAt(users)
+	var totalCount int
 
-	s.mencache.SetCachedUserActiveCache(ctx, req, so, totalRecords)
+	if len(users) > 0 {
+		totalCount = int(users[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved active user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedUserActiveCache(ctx, req, users, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched active user",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return users, &totalCount, nil
 }
 
-// FindByTrashed retrieves all soft-deleted (trashed) users.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter parameters.
-//
-// Returns:
-//   - []*response.UserResponseDeleteAt: List of trashed user data.
-//   - *int: Total count of trashed users.
-//   - *response.ErrorResponse: Error response if query fails.
-func (s *userQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetTrashedUsersWithPaginationRow, *int, error) {
+	const method = "FindByTrashed"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindByTrashed"
+	if page <= 0 {
+		page = 1
+	}
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedUserTrashedCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedUserTrashedCache(ctx, req); found {
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindByTrashed(ctx, req)
-
+	users, err := s.userQueryRepository.FindByTrashed(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTrashedUsersWithPaginationRow](
+			s.logger,
+			user_errors.ErrFailedFindTrashed,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToUsersResponseDeleteAt(users)
+	var totalCount int
 
-	logSuccess("Successfully retrieved trashed user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	if len(users) > 0 {
+		totalCount = int(users[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	return so, totalRecords, nil
+	s.cache.SetCachedUserTrashedCache(ctx, req, users, &totalCount)
+
+	logSuccess("Successfully fetched trashed user",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return users, &totalCount, nil
 }
 
 // normalizePagination validates and normalizes pagination parameters.

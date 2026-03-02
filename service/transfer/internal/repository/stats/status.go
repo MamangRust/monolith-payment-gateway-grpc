@@ -5,34 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transfer/stats"
 )
 
 type transferStatsStatusRepository struct {
-	db     *db.Queries
-	mapper recordmapper.TransferStatisticStatusRecordMapper
+	db *db.Queries
 }
 
-func NewTransferStatsStatusRepository(db *db.Queries, mapper recordmapper.TransferStatisticStatusRecordMapper) TransferStatsStatusRepository {
+func NewTransferStatsStatusRepository(db *db.Queries) TransferStatsStatusRepository {
 	return &transferStatsStatusRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthTransferStatusSuccess retrieves successful transfer statistics per month.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The month and year filter for the statistics.
-//
-// Returns:
-//   - []*record.TransferRecordMonthStatusSuccess: List of monthly successful transfer records.
-//   - error: Any error encountered during the operation.
-func (r *transferStatsStatusRepository) GetMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer) ([]*record.TransferRecordMonthStatusSuccess, error) {
+func (r *transferStatsStatusRepository) GetMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer) ([]*db.GetMonthTransferStatusSuccessRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -50,42 +37,20 @@ func (r *transferStatsStatusRepository) GetMonthTransferStatusSuccess(ctx contex
 		return nil, transfer_errors.ErrGetMonthTransferStatusSuccessFailed
 	}
 
-	so := r.mapper.ToTransferRecordsMonthStatusSuccess(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetYearlyTransferStatusSuccess retrieves successful transfer statistics per year.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the statistics are requested.
-//
-// Returns:
-//   - []*record.TransferRecordYearStatusSuccess: List of yearly successful transfer records.
-//   - error: Any error encountered during the operation.
-func (r *transferStatsStatusRepository) GetYearlyTransferStatusSuccess(ctx context.Context, year int) ([]*record.TransferRecordYearStatusSuccess, error) {
+func (r *transferStatsStatusRepository) GetYearlyTransferStatusSuccess(ctx context.Context, year int) ([]*db.GetYearlyTransferStatusSuccessRow, error) {
 	res, err := r.db.GetYearlyTransferStatusSuccess(ctx, int32(year))
 
 	if err != nil {
 		return nil, transfer_errors.ErrGetYearlyTransferStatusSuccessFailed
 	}
 
-	so := r.mapper.ToTransferRecordsYearStatusSuccess(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetMonthTransferStatusFailed retrieves failed transfer statistics per month.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The month and year filter for the statistics.
-//
-// Returns:
-//   - []*record.TransferRecordMonthStatusFailed: List of monthly failed transfer records.
-//   - error: Any error encountered during the operation.
-func (r *transferStatsStatusRepository) GetMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer) ([]*record.TransferRecordMonthStatusFailed, error) {
+func (r *transferStatsStatusRepository) GetMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer) ([]*db.GetMonthTransferStatusFailedRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -103,28 +68,15 @@ func (r *transferStatsStatusRepository) GetMonthTransferStatusFailed(ctx context
 		return nil, transfer_errors.ErrGetMonthTransferStatusFailedFailed
 	}
 
-	so := r.mapper.ToTransferRecordsMonthStatusFailed(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetYearlyTransferStatusFailed retrieves failed transfer statistics per year.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the statistics are requested.
-//
-// Returns:
-//   - []*record.TransferRecordYearStatusFailed: List of yearly failed transfer records.
-//   - error: Any error encountered during the operation.
-func (r *transferStatsStatusRepository) GetYearlyTransferStatusFailed(ctx context.Context, year int) ([]*record.TransferRecordYearStatusFailed, error) {
+func (r *transferStatsStatusRepository) GetYearlyTransferStatusFailed(ctx context.Context, year int) ([]*db.GetYearlyTransferStatusFailedRow, error) {
 	res, err := r.db.GetYearlyTransferStatusFailed(ctx, int32(year))
 
 	if err != nil {
 		return nil, transfer_errors.ErrGetYearlyTransferStatusFailedFailed
 	}
 
-	so := r.mapper.ToTransferRecordsYearStatusFailed(res)
-
-	return so, nil
+	return res, nil
 }

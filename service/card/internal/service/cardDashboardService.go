@@ -3,50 +3,31 @@ package service
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis/dashboard"
 	repository "github.com/MamangRust/monolith-payment-gateway-card/internal/repository/dashboard"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// cardDashboardDeps holds the dependencies required to initialize the cardDashboardService.
-// This struct is typically used for dependency injection when constructing the service.
+// cardDashboardDeps defines dependencies for cardDashboardService.
 type cardDashboardDeps struct {
-	// ErrorHandler handles errors specific to card dashboard operations.
-	ErrorHandler errorhandler.CardDashboardErrorHandler
-
-	// Cache provides a caching mechanism for dashboard-related data.
-	Cache mencache.CardDashboardCache
-
-	// CardDashboardRepository provides access to dashboard-related data from the data store.
+	Cache                   mencache.CardDashboardCache
 	CardDashboardRepository repository.CardDashboardRepository
-
-	// Logger is used to log operational and error information.
-	Logger logger.LoggerInterface
+	Logger                  logger.LoggerInterface
+	Observability           observability.TraceLoggerObservability
 }
 
-// cardDashboardService implements the CardDashboardService interface.
-// It provides business logic and access to card dashboard data with support
-// for caching, logging, metrics, and tracing.
+// cardDashboardService implements CardDashboardService.
 type cardDashboardService struct {
-	// errorhandler handles service-specific error formatting and propagation.
-	errorhandler errorhandler.CardDashboardErrorHandler
-
-	// mencache provides caching capabilities to reduce load on the repository.
-	mencache mencache.CardDashboardCache
-
-	// cardDashboardRepository interfaces with the database or data store.
+	cache                   mencache.CardDashboardCache
 	cardDashboardRepository repository.CardDashboardRepository
-
-	// logger is used for structured and contextual logging.
-	logger logger.LoggerInterface
-
-	observability observability.TraceLoggerObservability
+	logger                  logger.LoggerInterface
+	observability           observability.TraceLoggerObservability
 }
 
 // NewCardDashboardService initializes a new instance of cardDashboardService.
@@ -66,45 +47,15 @@ type cardDashboardService struct {
 func NewCardDashboardService(
 	params *cardDashboardDeps,
 ) CardDashboardService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "card_dashboard_request_count",
-		Help: "Number of card dashboard requests CardDashboardService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "card_dashboard_request_duration_seconds",
-		Help:    "Duration of card dashboard requests CardDashboardService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("card-dashboard-service"), params.Logger, requestCounter, requestDuration)
-
 	return &cardDashboardService{
-		errorhandler:            params.ErrorHandler,
-		mencache:                params.Cache,
+		cache:                   params.Cache,
 		cardDashboardRepository: params.CardDashboardRepository,
 		logger:                  params.Logger,
-		observability:           observability,
+		observability:           params.Observability,
 	}
 }
 
-// DashboardCard retrieves the total balance, topup, withdraw, transaction, and transfer amounts.
-//
-// It first checks if the data is available in the cache. If it is, it returns the data.
-// If not, it retrieves the data from the database.
-//
-// If any of the retrievals fail, it returns an error with the error message and the status code.
-//
-// If all retrievals succeed, it sets the data in the cache and returns the result.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//
-// Returns:
-// - *response.DashboardCard, *response.ErrorResponse
-func (s *cardDashboardService) DashboardCard(ctx context.Context) (*response.DashboardCard, *response.ErrorResponse) {
+func (s *cardDashboardService) DashboardCard(ctx context.Context) (*response.DashboardCard, error) {
 	const method = "DashboardCard"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -113,34 +64,64 @@ func (s *cardDashboardService) DashboardCard(ctx context.Context) (*response.Das
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetDashboardCardCache(ctx); found {
+	if data, found := s.cache.GetDashboardCardCache(ctx); found {
 		s.logger.Debug("DashboardCard cache hit")
 		return data, nil
 	}
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalances(ctx)
 	if err != nil {
-		return s.errorhandler.HandleTotalBalanceError(err, "DashboardCard", "FAILED_FIND_TOTAL_BALANCE", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCard](
+			s.logger,
+			card_errors.ErrFailedFindTotalBalances,
+			method,
+			span,
+		)
 	}
 
 	totalTopup, err := s.cardDashboardRepository.GetTotalTopAmount(ctx)
 	if err != nil {
-		return s.errorhandler.HandleTotalTopupAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TOPUP", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCard](
+			s.logger,
+			card_errors.ErrFailedFindTotalTopAmount,
+			method,
+			span,
+		)
 	}
 
 	totalWithdraw, err := s.cardDashboardRepository.GetTotalWithdrawAmount(ctx)
 	if err != nil {
-		return s.errorhandler.HandleTotalWithdrawAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_WITHDRAW", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCard](
+			s.logger,
+			card_errors.ErrFailedFindTotalWithdrawAmount,
+			method,
+			span,
+		)
 	}
 
 	totalTransaction, err := s.cardDashboardRepository.GetTotalTransactionAmount(ctx)
 	if err != nil {
-		return s.errorhandler.HandleTotalTransactionAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TRANSACTION", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCard](
+			s.logger,
+			card_errors.ErrFailedFindTotalTransactionAmount,
+			method,
+			span,
+		)
 	}
 
 	totalTransfer, err := s.cardDashboardRepository.GetTotalTransferAmount(ctx)
 	if err != nil {
-		return s.errorhandler.HandleTotalTransferAmountError(err, "DashboardCard", "FAILED_FIND_TOTAL_TRANSFER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCard](
+			s.logger,
+			card_errors.ErrFailedFindTotalTransferAmount,
+			method,
+			span,
+		)
 	}
 
 	result := &response.DashboardCard{
@@ -151,71 +132,105 @@ func (s *cardDashboardService) DashboardCard(ctx context.Context) (*response.Das
 		TotalTransfer:    totalTransfer,
 	}
 
-	s.mencache.SetDashboardCardCache(ctx, result)
+	s.cache.SetDashboardCardCache(ctx, result)
 
-	logSuccess("Success find dashboard card", zap.Bool("success", true))
+	logSuccess("Completed DashboardCard service",
+		zap.Int64("total_balance", *totalBalance),
+		zap.Int64("total_topup", *totalTopup),
+		zap.Int64("total_withdraw", *totalWithdraw),
+		zap.Int64("total_transaction", *totalTransaction),
+		zap.Int64("total_transfer", *totalTransfer),
+	)
 
 	return result, nil
 }
 
-// DashboardCardCardNumber retrieves the total balance, topup, withdraw, transaction, and transfer amounts of a specific card.
-//
-// It first checks if the data is available in the cache. If it is, it returns the data.
-// If not, it retrieves the data from the database.
-//
-// If any of the retrievals fail, it returns an error with the error message and the status code.
-//
-// If all retrievals succeed, it sets the data in the cache and returns the result.
-//
-// Parameters:
-// - ctx: The context for request-scoped values, cancellation, and deadlines.
-// - cardNumber: The card number of the card to retrieve data for.
-//
-// Returns:
-// - *response.DashboardCardCardNumber, *response.ErrorResponse
-func (s *cardDashboardService) DashboardCardCardNumber(ctx context.Context, cardNumber string) (*response.DashboardCardCardNumber, *response.ErrorResponse) {
+func (s *cardDashboardService) DashboardCardCardNumber(ctx context.Context, cardNumber string) (*response.DashboardCardCardNumber, error) {
 	const method = "DashboardCardCardNumber"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("card_number", cardNumber))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetDashboardCardCardNumberCache(ctx, cardNumber); found {
+	if data, found := s.cache.GetDashboardCardCardNumberCache(ctx, cardNumber); found {
 		s.logger.Debug("DashboardCardCardNumber cache hit", zap.String("card_number", cardNumber))
 		return data, nil
 	}
-	s.logger.Debug("DashboardCardCardNumber cache miss", zap.String("card_number", cardNumber))
 
 	totalBalance, err := s.cardDashboardRepository.GetTotalBalanceByCardNumber(ctx, cardNumber)
+
 	if err != nil {
-		return s.errorhandler.HandleTotalBalanceCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_BALANCE_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalBalanceByCard,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	totalTopup, err := s.cardDashboardRepository.GetTotalTopupAmountByCardNumber(ctx, cardNumber)
 	if err != nil {
-		return s.errorhandler.HandleTotalTopupAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TOPUP_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalTopupAmountByCard,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	totalWithdraw, err := s.cardDashboardRepository.GetTotalWithdrawAmountByCardNumber(ctx, cardNumber)
 	if err != nil {
-		return s.errorhandler.HandleTotalWithdrawAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_WITHDRAW_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalWithdrawAmountByCard,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	totalTransaction, err := s.cardDashboardRepository.GetTotalTransactionAmountByCardNumber(ctx, cardNumber)
 	if err != nil {
-		return s.errorhandler.HandleTotalTransactionAmountCardNumberError(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSACTION_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalTransactionAmountByCard,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	totalTransferSent, err := s.cardDashboardRepository.GetTotalTransferAmountBySender(ctx, cardNumber)
 	if err != nil {
-		return s.errorhandler.HandleTotalTransferAmountBySender(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSFER_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalTransferAmountBySender,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	totalTransferReceived, err := s.cardDashboardRepository.GetTotalTransferAmountByReceiver(ctx, cardNumber)
 	if err != nil {
-		return s.errorhandler.HandleTotalTransferAmountByReceiver(err, "DashboardCardCardNumber", "FAILED_FIND_TOTAL_TRANSFER_BY_CARD", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*response.DashboardCardCardNumber](
+			s.logger,
+			card_errors.ErrFailedFindTotalTransferAmountByReceiver,
+			method,
+			span,
+			zap.String("card_number", cardNumber),
+		)
 	}
 
 	result := &response.DashboardCardCardNumber{
@@ -227,9 +242,17 @@ func (s *cardDashboardService) DashboardCardCardNumber(ctx context.Context, card
 		TotalTransferReceiver: totalTransferReceived,
 	}
 
-	s.mencache.SetDashboardCardCardNumberCache(ctx, cardNumber, result)
+	s.cache.SetDashboardCardCardNumberCache(ctx, cardNumber, result)
 
-	logSuccess("Success find dashboard card card number", zap.Bool("success", true))
+	logSuccess("Completed DashboardCardCardNumber service",
+		zap.String("card_number", cardNumber),
+		zap.Int64("total_balance", *totalBalance),
+		zap.Int64("total_topup", *totalTopup),
+		zap.Int64("total_withdraw", *totalWithdraw),
+		zap.Int64("total_transaction", *totalTransaction),
+		zap.Int64("total_transfer_sent", *totalTransferSent),
+		zap.Int64("total_transfer_received", *totalTransferReceived),
+	)
 
 	return result, nil
 }

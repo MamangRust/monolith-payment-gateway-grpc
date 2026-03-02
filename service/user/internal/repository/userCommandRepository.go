@@ -4,16 +4,14 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
+	"github.com/google/uuid"
 )
 
 // userCommandRepository is a struct that implements the UserCommandRepository interface
 type userCommandRepository struct {
-	db     *db.Queries
-	mapper recordmapper.UserCommandRecordMapper
+	db *db.Queries
 }
 
 // NewUserCommandRepository creates a new instance of userCommandRepository with the provided
@@ -26,10 +24,9 @@ type userCommandRepository struct {
 //
 // Returns:
 //   - A pointer to the newly created userCommandRepository instance.
-func NewUserCommandRepository(db *db.Queries, mapper recordmapper.UserCommandRecordMapper) UserCommandRepository {
+func NewUserCommandRepository(db *db.Queries) UserCommandRepository {
 	return &userCommandRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
@@ -42,12 +39,17 @@ func NewUserCommandRepository(db *db.Queries, mapper recordmapper.UserCommandRec
 // Returns:
 //   - *record.UserRecord: The created user record.
 //   - error: Error if creation fails.
-func (r *userCommandRepository) CreateUser(ctx context.Context, request *requests.CreateUserRequest) (*record.UserRecord, error) {
+func (r *userCommandRepository) CreateUser(ctx context.Context, request *requests.CreateUserRequest) (*db.CreateUserRow, error) {
+	verified := false
+	verifyCode := uuid.New().String()
+
 	req := db.CreateUserParams{
-		Firstname: request.FirstName,
-		Lastname:  request.LastName,
-		Email:     request.Email,
-		Password:  request.Password,
+		Firstname:        request.FirstName,
+		Lastname:         request.LastName,
+		Email:            request.Email,
+		Password:         request.Password,
+		VerificationCode: verifyCode,
+		IsVerified:       &verified,
 	}
 
 	user, err := r.db.CreateUser(ctx, req)
@@ -56,9 +58,7 @@ func (r *userCommandRepository) CreateUser(ctx context.Context, request *request
 		return nil, user_errors.ErrCreateUser
 	}
 
-	so := r.mapper.ToUserRecord(user)
-
-	return so, nil
+	return user, nil
 }
 
 // UpdateUser updates an existing user record in the database.
@@ -70,7 +70,7 @@ func (r *userCommandRepository) CreateUser(ctx context.Context, request *request
 // Returns:
 //   - *record.UserRecord: The updated user record.
 //   - error: Error if update fails.
-func (r *userCommandRepository) UpdateUser(ctx context.Context, request *requests.UpdateUserRequest) (*record.UserRecord, error) {
+func (r *userCommandRepository) UpdateUser(ctx context.Context, request *requests.UpdateUserRequest) (*db.UpdateUserRow, error) {
 	req := db.UpdateUserParams{
 		UserID:    int32(*request.UserID),
 		Firstname: request.FirstName,
@@ -85,9 +85,7 @@ func (r *userCommandRepository) UpdateUser(ctx context.Context, request *request
 		return nil, user_errors.ErrUpdateUser
 	}
 
-	so := r.mapper.ToUserRecord(res)
-
-	return so, nil
+	return res, nil
 }
 
 // TrashedUser soft-deletes a user by marking it as trashed.
@@ -99,16 +97,14 @@ func (r *userCommandRepository) UpdateUser(ctx context.Context, request *request
 // Returns:
 //   - *record.UserRecord: The trashed user record.
 //   - error: Error if deletion fails.
-func (r *userCommandRepository) TrashedUser(ctx context.Context, user_id int) (*record.UserRecord, error) {
+func (r *userCommandRepository) TrashedUser(ctx context.Context, user_id int) (*db.TrashUserRow, error) {
 	res, err := r.db.TrashUser(ctx, int32(user_id))
 
 	if err != nil {
 		return nil, user_errors.ErrTrashedUser
 	}
 
-	so := r.mapper.ToUserRecord(res)
-
-	return so, nil
+	return res, nil
 }
 
 // RestoreUser restores a soft-deleted (trashed) user.
@@ -120,16 +116,14 @@ func (r *userCommandRepository) TrashedUser(ctx context.Context, user_id int) (*
 // Returns:
 //   - *record.UserRecord: The restored user record.
 //   - error: Error if restoration fails.
-func (r *userCommandRepository) RestoreUser(ctx context.Context, user_id int) (*record.UserRecord, error) {
+func (r *userCommandRepository) RestoreUser(ctx context.Context, user_id int) (*db.RestoreUserRow, error) {
 	res, err := r.db.RestoreUser(ctx, int32(user_id))
 
 	if err != nil {
 		return nil, user_errors.ErrRestoreUser
 	}
 
-	so := r.mapper.ToUserRecord(res)
-
-	return so, nil
+	return res, nil
 }
 
 // DeleteUserPermanent permanently deletes a user from the database.

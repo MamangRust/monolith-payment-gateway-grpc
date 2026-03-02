@@ -3,15 +3,13 @@ package merchantstatsservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/stats"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/merchant"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
@@ -19,133 +17,98 @@ import (
 type merchantStatsAmountDeps struct {
 	Cache mencache.MerchantStatsAmountCache
 
-	ErrorHandler errorhandler.MerchantStatisticErrorHandler
-
 	Repository repository.MerchantStatsAmountRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.MerchantAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type merchantStatsAmountService struct {
-	mencache mencache.MerchantStatsAmountCache
+	cache mencache.MerchantStatsAmountCache
 
 	repository repository.MerchantStatsAmountRepository
 
-	errorHandler errorhandler.MerchantStatisticErrorHandler
-
 	logger logger.LoggerInterface
-
-	mapper responseservice.MerchantAmountResponseMapper
 
 	observability observability.TraceLoggerObservability
 }
 
 func NewMerchantStatsAmountService(params *merchantStatsAmountDeps) MerchantStatsAmountService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "merchant_stats_amount_service_request_total",
-		Help: "The total number of requests MerchantStatisticService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "merchant_stats_amount_service_request_duration_seconds",
-		Help:    "The duration of requests MerchantStatisticService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("merchant-stats-amount-service"), params.Logger, requestCounter, requestDuration)
-
 	return &merchantStatsAmountService{
-		mencache:      params.Cache,
+		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		errorHandler:  params.ErrorHandler,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyAmountMerchant retrieves the monthly transaction amount statistics for a merchant.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the monthly amount statistics should be retrieved.
-//
-// Returns:
-//   - []*response.MerchantResponseMonthlyAmount: A slice of monthly amount statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsAmountService) FindMonthlyAmountMerchant(ctx context.Context, year int) ([]*response.MerchantResponseMonthlyAmount, *response.ErrorResponse) {
+func (s *merchantStatsAmountService) FindMonthlyAmountMerchant(ctx context.Context, year int) ([]*db.GetMonthlyAmountMerchantRow, error) {
 	const method = "FindMonthlyAmountMerchant"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetMonthlyAmountMerchantCache(ctx, year); found {
+	if cachedMerchant, found := s.cache.GetMonthlyAmountMerchantCache(ctx, year); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetMonthlyAmountMerchant(ctx, year)
+	s.logger.Debug("Cache miss for monthly amount for merchant, fetching from DB", zap.Int("year", year))
 
+	dbRows, err := s.repository.GetMonthlyAmountMerchant(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyAmountMerchantError(
-			err, method, "FAILED_FIND_MONTHLY_AMOUNT_MERCHANT", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthlyAmountMerchantRow](
+			s.logger,
+			merchant_errors.ErrFailedFindMonthlyAmountMerchant,
+			method,
+			span,
+
+			zap.Int("year", year),
 		)
 	}
 
-	so := s.mapper.ToMerchantMonthlyAmounts(res)
+	s.cache.SetMonthlyAmountMerchantCache(ctx, year, dbRows)
 
-	s.mencache.SetMonthlyAmountMerchantCache(ctx, year, so)
-
-	logSuccess("Successfully found monthly amount for merchant", zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found monthly amount for merchant (from DB)", zap.Int("year", year))
+	return dbRows, nil
 }
 
-// FindYearlyAmountMerchant retrieves the yearly transaction amount statistics for a merchant.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which the yearly amount statistics should be retrieved.
-//
-// Returns:
-//   - []*response.MerchantResponseYearlyAmount: A slice of yearly amount statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsAmountService) FindYearlyAmountMerchant(ctx context.Context, year int) ([]*response.MerchantResponseYearlyAmount, *response.ErrorResponse) {
+func (s *merchantStatsAmountService) FindYearlyAmountMerchant(ctx context.Context, year int) ([]*db.GetYearlyAmountMerchantRow, error) {
 	const method = "FindYearlyAmountMerchant"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetYearlyAmountMerchantCache(ctx, year); found {
+	if cachedMerchant, found := s.cache.GetYearlyAmountMerchantCache(ctx, year); found {
 		logSuccess("Successfully fetched merchant from cache", zap.Int("year", year))
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetYearlyAmountMerchant(ctx, year)
-
+	dbRows, err := s.repository.GetYearlyAmountMerchant(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleYearlyAmountMerchantError(
-			err, method, "FAILED_FIND_YEARLY_AMOUNT_MERCHANT", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyAmountMerchantRow](
+			s.logger,
+			merchant_errors.ErrFailedFindYearlyAmountMerchant,
+			method,
+			span,
+
+			zap.Int("year", year),
 		)
 	}
 
-	so := s.mapper.ToMerchantYearlyAmounts(res)
+	s.cache.SetYearlyAmountMerchantCache(ctx, year, dbRows)
 
-	s.mencache.SetYearlyAmountMerchantCache(ctx, year, so)
-
-	logSuccess("Successfully found yearly amount for merchant", zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found yearly amount for merchant (from DB)", zap.Int("year", year))
+	return dbRows, nil
 }

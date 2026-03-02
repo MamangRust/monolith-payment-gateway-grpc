@@ -3,60 +3,44 @@ package mencache
 import (
 	"context"
 	"fmt"
-	"time"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
-// cache keys
-const (
-	topupAllCacheKey     = "topup:all:page:%d:pageSize:%d:search:%s"
-	topupByCardCacheKey  = "topup:card_number:%s:page:%d:pageSize:%d:search:%s"
-	topupByIdCacheKey    = "topup:id:%d"
-	topupActiveCacheKey  = "topup:active:page:%d:pageSize:%d:search:%s"
-	topupTrashedCacheKey = "topup:trashed:page:%d:pageSize:%d:search:%s"
+type topupCachedResponseAll struct {
+	Data  []*db.GetTopupsRow `json:"data"`
+	Total *int               `json:"total_records"`
+}
 
-	ttlDefault = 5 * time.Minute
-)
+type topupCachedResponseByCard struct {
+	Data  []*db.GetTopupsByCardNumberRow `json:"data"`
+	Total *int                           `json:"total_records"`
+}
 
-// topupCachedResponse is a struct that represents the cached response
-type topupCachedResponse struct {
-	Data  []*response.TopupResponse `json:"data"`
+type topupCachedResponseActive struct {
+	Data  []*db.GetActiveTopupsRow `json:"data"`
+	Total *int                     `json:"total_records"`
+}
+
+type topupCachedResponseTrashed struct {
+	Data  []*db.GetTrashedTopupsRow `json:"data"`
 	Total *int                      `json:"total_records"`
 }
 
-// topupCachedResponseDeleteAt is a struct that represents the cached response
-type topupCachedResponseDeleteAt struct {
-	Data  []*response.TopupResponseDeleteAt `json:"data"`
-	Total *int                              `json:"total_records"`
-}
-
-// topupQueryCache is a struct that represents the topup query cache
 type topupQueryCache struct {
 	store *sharedcachehelpers.CacheStore
 }
 
-// NewTopupQueryCache creates a new instance of topupQueryCache with the provided sharedcachehelpers.CacheStore.
 func NewTopupQueryCache(store *sharedcachehelpers.CacheStore) TopupQueryCache {
 	return &topupQueryCache{store: store}
 }
 
-// GetCachedTopupsCache retrieves cached list of topups based on the given filter request.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request filter including pagination and search.
-//
-// Returns:
-//   - []*response.TopupResponse: Cached topup responses.
-//   - *int: Total number of records.
-//   - bool: Whether the cache was found.
-func (c *topupQueryCache) GetCachedTopupsCache(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponse, *int, bool) {
+func (c *topupQueryCache) GetCachedTopupsCache(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetTopupsRow, *int, bool) {
 	key := fmt.Sprintf(topupAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := sharedcachehelpers.GetFromCache[topupCachedResponse](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseAll](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -65,43 +49,24 @@ func (c *topupQueryCache) GetCachedTopupsCache(ctx context.Context, req *request
 	return result.Data, result.Total, true
 }
 
-// SetCachedTopupsCache stores the topup responses and total record count in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The original request used as the cache key.
-//   - data: The topup response data to cache.
-//   - total: The total number of records.
-func (c *topupQueryCache) SetCachedTopupsCache(ctx context.Context, req *requests.FindAllTopups, data []*response.TopupResponse, total *int) {
+func (c *topupQueryCache) SetCachedTopupsCache(ctx context.Context, req *requests.FindAllTopups, data []*db.GetTopupsRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
-
 	if data == nil {
-		data = []*response.TopupResponse{}
+		data = []*db.GetTopupsRow{}
 	}
 
 	key := fmt.Sprintf(topupAllCacheKey, req.Page, req.PageSize, req.Search)
-
-	payload := &topupCachedResponse{Data: data, Total: total}
+	payload := &topupCachedResponseAll{Data: data, Total: total}
 	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-// GetCacheTopupByCardCache retrieves cached topups by card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the card number and optional filters.
-//
-// Returns:
-//   - []*response.TopupResponse: Cached topups associated with the card.
-//   - *int: Total number of records.
-//   - bool: Whether the cache was found.
-func (c *topupQueryCache) GetCacheTopupByCardCache(ctx context.Context, req *requests.FindAllTopupsByCardNumber) ([]*response.TopupResponse, *int, bool) {
+func (c *topupQueryCache) GetCacheTopupByCardCache(ctx context.Context, req *requests.FindAllTopupsByCardNumber) ([]*db.GetTopupsByCardNumberRow, *int, bool) {
 	key := fmt.Sprintf(topupByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
 
-	result, found := sharedcachehelpers.GetFromCache[topupCachedResponse](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseByCard](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -110,43 +75,24 @@ func (c *topupQueryCache) GetCacheTopupByCardCache(ctx context.Context, req *req
 	return result.Data, result.Total, true
 }
 
-// SetCacheTopupByCardCache stores the topups associated with a card number in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request used to generate the cache key.
-//   - data: Topup response data to cache.
-//   - total: Total number of records.
-func (c *topupQueryCache) SetCacheTopupByCardCache(ctx context.Context, req *requests.FindAllTopupsByCardNumber, data []*response.TopupResponse, total *int) {
+func (c *topupQueryCache) SetCacheTopupByCardCache(ctx context.Context, req *requests.FindAllTopupsByCardNumber, data []*db.GetTopupsByCardNumberRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
-
 	if data == nil {
-		data = []*response.TopupResponse{}
+		data = []*db.GetTopupsByCardNumberRow{}
 	}
 
 	key := fmt.Sprintf(topupByCardCacheKey, req.CardNumber, req.Page, req.PageSize, req.Search)
-
-	payload := &topupCachedResponse{Data: data, Total: total}
+	payload := &topupCachedResponseByCard{Data: data, Total: total}
 	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-// GetCachedTopupActiveCache retrieves cached list of active topups.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request used to generate the cache key.
-//
-// Returns:
-//   - []*response.TopupResponseDeleteAt: List of active (non-deleted) topups.
-//   - *int: Total records.
-//   - bool: Whether the cache was found.
-func (c *topupQueryCache) GetCachedTopupActiveCache(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponseDeleteAt, *int, bool) {
+func (c *topupQueryCache) GetCachedTopupActiveCache(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetActiveTopupsRow, *int, bool) {
 	key := fmt.Sprintf(topupActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseDeleteAt](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseActive](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -155,43 +101,24 @@ func (c *topupQueryCache) GetCachedTopupActiveCache(ctx context.Context, req *re
 	return result.Data, result.Total, true
 }
 
-// SetCachedTopupActiveCache stores the active topups in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The original request used as the cache key.
-//   - data: Topup response data to cache.
-//   - total: Total number of records.
-func (c *topupQueryCache) SetCachedTopupActiveCache(ctx context.Context, req *requests.FindAllTopups, data []*response.TopupResponseDeleteAt, total *int) {
+func (c *topupQueryCache) SetCachedTopupActiveCache(ctx context.Context, req *requests.FindAllTopups, data []*db.GetActiveTopupsRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
-
 	if data == nil {
-		data = []*response.TopupResponseDeleteAt{}
+		data = []*db.GetActiveTopupsRow{}
 	}
 
 	key := fmt.Sprintf(topupActiveCacheKey, req.Page, req.PageSize, req.Search)
-
-	payload := &topupCachedResponseDeleteAt{Data: data, Total: total}
+	payload := &topupCachedResponseActive{Data: data, Total: total}
 	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-// GetCachedTopupTrashedCache retrieves cached list of trashed (soft-deleted) topups.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request used to generate the cache key.
-//
-// Returns:
-//   - []*response.TopupResponseDeleteAt: List of trashed topups.
-//   - *int: Total records.
-//   - bool: Whether the cache was found.
-func (c *topupQueryCache) GetCachedTopupTrashedCache(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponseDeleteAt, *int, bool) {
+func (c *topupQueryCache) GetCachedTopupTrashedCache(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetTrashedTopupsRow, *int, bool) {
 	key := fmt.Sprintf(topupTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseDeleteAt](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[topupCachedResponseTrashed](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -200,42 +127,24 @@ func (c *topupQueryCache) GetCachedTopupTrashedCache(ctx context.Context, req *r
 	return result.Data, result.Total, true
 }
 
-// SetCachedTopupTrashedCache stores the trashed (soft-deleted) topups in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request used to generate the cache key.
-//   - data: Topup response data to cache.
-//   - total: Total number of records.
-func (c *topupQueryCache) SetCachedTopupTrashedCache(ctx context.Context, req *requests.FindAllTopups, data []*response.TopupResponseDeleteAt, total *int) {
+func (c *topupQueryCache) SetCachedTopupTrashedCache(ctx context.Context, req *requests.FindAllTopups, data []*db.GetTrashedTopupsRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
-
 	if data == nil {
-		data = []*response.TopupResponseDeleteAt{}
+		data = []*db.GetTrashedTopupsRow{}
 	}
 
 	key := fmt.Sprintf(topupTrashedCacheKey, req.Page, req.PageSize, req.Search)
-
-	payload := &topupCachedResponseDeleteAt{Data: data, Total: total}
+	payload := &topupCachedResponseTrashed{Data: data, Total: total}
 	sharedcachehelpers.SetToCache(ctx, c.store, key, payload, ttlDefault)
 }
 
-// GetCachedTopupCache retrieves a single topup record from the cache by ID.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - id: The unique topup ID.
-//
-// Returns:
-//   - *response.TopupResponse: The cached topup response.
-//   - bool: Whether the cache was found.
-func (c *topupQueryCache) GetCachedTopupCache(ctx context.Context, id int) (*response.TopupResponse, bool) {
+func (c *topupQueryCache) GetCachedTopupCache(ctx context.Context, id int) (*db.GetTopupByIDRow, bool) {
 	key := fmt.Sprintf(topupByIdCacheKey, id)
 
-	result, found := sharedcachehelpers.GetFromCache[*response.TopupResponse](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[*db.GetTopupByIDRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -244,16 +153,11 @@ func (c *topupQueryCache) GetCachedTopupCache(ctx context.Context, id int) (*res
 	return *result, true
 }
 
-// SetCachedTopupCache stores a single topup response in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - data: The topup response to be cached.
-func (c *topupQueryCache) SetCachedTopupCache(ctx context.Context, data *response.TopupResponse) {
+func (c *topupQueryCache) SetCachedTopupCache(ctx context.Context, data *db.GetTopupByIDRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(topupByIdCacheKey, data.ID)
+	key := fmt.Sprintf(topupByIdCacheKey, data.TopupID)
 	sharedcachehelpers.SetToCache(ctx, c.store, key, data, ttlDefault)
 }

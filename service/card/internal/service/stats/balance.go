@@ -3,83 +3,52 @@ package cardstatsservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	cardstatsmencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-card/internal/repository/stats"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 )
 
 type cardStatsBalanceService struct {
-	errorHandler errorhandler.CardStatisticErrorHandler
-
 	cache cardstatsmencache.CardStatsBalanceCache
 
 	repository repository.CardStatsBalanceRepository
 
 	logger logger.LoggerInterface
 
-	mapper responseservice.CardStatisticBalanceResponseMapper
-
 	observability observability.TraceLoggerObservability
 }
 
 type cardStatsBalanceServiceDeps struct {
-	ErrorHandler errorhandler.CardStatisticErrorHandler
-
 	Cache cardstatsmencache.CardStatsBalanceCache
 
 	Repository repository.CardStatsBalanceRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.CardStatisticBalanceResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewCardStatsBalanceService(params *cardStatsBalanceServiceDeps) CardStatsBalanceService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "card_stats_balance_request_count",
-		Help: "Number of card statistic requests CardStatsBalanceService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "card_stats_balance_request_duration_seconds",
-		Help:    "Duration of card statistic requests CardStatsBalanceService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("card-stats-balance-service"), params.Logger, requestCounter, requestDuration)
-
 	return &cardStatsBalanceService{
-		errorHandler:  params.ErrorHandler,
 		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyBalance retrieves monthly balance statistics across all card numbers for a given year.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the monthly balances are requested
-//
-// Returns:
-//   - A slice of CardResponseMonthBalance or an error response if the operation fails.
-func (s *cardStatsBalanceService) FindMonthlyBalance(ctx context.Context, year int) ([]*response.CardResponseMonthBalance, *response.ErrorResponse) {
+func (s *cardStatsBalanceService) FindMonthlyBalance(ctx context.Context, year int) ([]*db.GetMonthlyBalancesRow, error) {
 	const method = "FindMonthlyBalance"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -92,33 +61,31 @@ func (s *cardStatsBalanceService) FindMonthlyBalance(ctx context.Context, year i
 
 	res, err := s.repository.GetMonthlyBalance(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyBalanceError(err, method, "FAILED_MONTHLY_BALANCE", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyBalancesRow](
+			s.logger,
+			card_errors.ErrFailedFindMonthlyBalance,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetMonthlyBalances(res)
-
-	s.cache.SetMonthlyBalanceCache(ctx, year, so)
+	s.cache.SetMonthlyBalanceCache(ctx, year, res)
 
 	logSuccess("Monthly balance retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }
 
-// FindYearlyBalance retrieves yearly balance statistics across all card numbers for a given year.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the yearly balances are requested
-//
-// Returns:
-//   - A slice of CardResponseYearlyBalance or an error response if the operation fails.
-func (s *cardStatsBalanceService) FindYearlyBalance(ctx context.Context, year int) ([]*response.CardResponseYearlyBalance, *response.ErrorResponse) {
+func (s *cardStatsBalanceService) FindYearlyBalance(ctx context.Context, year int) ([]*db.GetYearlyBalancesRow, error) {
 	const method = "FindYearlyBalance"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -131,17 +98,22 @@ func (s *cardStatsBalanceService) FindYearlyBalance(ctx context.Context, year in
 
 	res, err := s.repository.GetYearlyBalance(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleYearlyBalanceError(err, method, "FAILED_YEARLY_BALANCE", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyBalancesRow](
+			s.logger,
+			card_errors.ErrFailedFindYearlyBalance,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetYearlyBalances(res)
-
-	s.cache.SetYearlyBalanceCache(ctx, year, so)
+	s.cache.SetYearlyBalanceCache(ctx, year, res)
 
 	logSuccess("Yearly balance retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }

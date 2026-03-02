@@ -1,88 +1,68 @@
 package withdrawhandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
+	withdraw_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/withdraw"
+	pbwithdraw "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	withdraw_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/withdraw"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/withdraw"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type withdrawStatsStatusHandleApi struct {
-	client pb.WithdrawStatsStatusClient
+	client pb.WithdrawStatsStatusServiceClient
 
 	logger logger.LoggerInterface
 
 	mapper apimapper.WithdrawStatsStatusResponseMapper
 
-	trace trace.Tracer
+	cache withdraw_cache.WithdrawMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type withdrawStatsStatusHandleDeps struct {
-	client pb.WithdrawStatsStatusClient
+	client pb.WithdrawStatsStatusServiceClient
 
 	router *echo.Echo
 
 	logger logger.LoggerInterface
 
 	mapper apimapper.WithdrawStatsStatusResponseMapper
+
+	cache withdraw_cache.WithdrawMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewWithdrawStatsStatusHandleApi(params *withdrawStatsStatusHandleDeps) *withdrawStatsStatusHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "withdraw_stats_status_handler_requests_total",
-			Help: "Total number of withdraw stats status requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "withdraw_stats_status_handler_request_duration_seconds",
-			Help:    "Duration of withdraw stats status requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
 	withdrawStatsStatusHandleApi := &withdrawStatsStatusHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("withdraw-stats-status-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerWithdraw := params.router.Group("/api/withdraw-stats-status")
 
-	routerWithdraw.GET("/monthly-success", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusSuccess)
-	routerWithdraw.GET("/yearly-success", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusSuccess)
-	routerWithdraw.GET("/monthly-failed", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusFailed)
-	routerWithdraw.GET("/yearly-failed", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusFailed)
+	routerWithdraw.GET("/monthly-success", params.apiHandler.Handle("find-monthly-withdraw-status-success", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusSuccess))
+	routerWithdraw.GET("/yearly-success", params.apiHandler.Handle("find-yearly-withdraw-status-success", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusSuccess))
+	routerWithdraw.GET("/monthly-failed", params.apiHandler.Handle("find-monthly-withdraw-status-failed", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusFailed))
+	routerWithdraw.GET("/yearly-failed", params.apiHandler.Handle("find-yearly-withdraw-status-failed", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusFailed))
 
-	routerWithdraw.GET("/monthly-success-by-card", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusSuccessByCardNumber)
-	routerWithdraw.GET("/yearly-success-by-card", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusSuccessByCardNumber)
-	routerWithdraw.GET("/monthly-failed-by-card", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusFailedByCardNumber)
-	routerWithdraw.GET("/yearly-failed-by-card", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusFailedByCardNumber)
+	routerWithdraw.GET("/monthly-success-by-card", params.apiHandler.Handle("find-monthly-withdraw-status-success-by-card", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusSuccessByCardNumber))
+	routerWithdraw.GET("/yearly-success-by-card", params.apiHandler.Handle("find-yearly-withdraw-status-success-by-card", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusSuccessByCardNumber))
+	routerWithdraw.GET("/monthly-failed-by-card", params.apiHandler.Handle("find-monthly-withdraw-status-failed-by-card", withdrawStatsStatusHandleApi.FindMonthlyWithdrawStatusFailedByCardNumber))
+	routerWithdraw.GET("/yearly-failed-by-card", params.apiHandler.Handle("find-yearly-withdraw-status-failed-by-card", withdrawStatsStatusHandleApi.FindYearlyWithdrawStatusFailedByCardNumber))
 
 	return withdrawStatsStatusHandleApi
 }
@@ -101,43 +81,44 @@ func NewWithdrawStatsStatusHandleApi(params *withdrawStatsStatusHandleDeps) *wit
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly withdraw status for successful transactions"
 // @Router /api/withdraw-stats-status/monthly-success [get]
 func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccess(c echo.Context) error {
-	const method = "FindMonthlyWithdrawStatusSuccess"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusWithdraw{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedMonthWithdrawStatusSuccessCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyWithdrawStatusSuccess(ctx, &pb.FindMonthlyWithdrawStatus{
+	res, err := h.client.FindMonthlyWithdrawStatusSuccess(ctx, &pbwithdraw.FindMonthlyWithdrawStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly withdraw status success", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve monthly withdraw status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
+	h.cache.SetCachedMonthWithdrawStatusSuccessCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly withdraw status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawStatusSuccess retrieves the yearly withdraw status for successful transactions.
@@ -153,36 +134,32 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccess(c echo.C
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly withdraw status for successful transactions"
 // @Router /api/withdraw-stats-status/yearly-success [get]
 func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccess(c echo.Context) error {
-	const method = "FindYearlyWithdrawStatusSuccess"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedYearlyWithdrawStatusSuccessCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyWithdrawStatusSuccess(ctx, &pb.FindYearWithdrawStatus{
+	res, err := h.client.FindYearlyWithdrawStatusSuccess(ctx, &pbwithdraw.FindYearWithdrawStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly withdraw status success", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve yearly withdraw status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyWithdrawStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
+	h.cache.SetCachedYearlyWithdrawStatusSuccessCache(ctx, year, apiResponse)
 
-	logSuccess("success retrieve yearly withdraw status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyWithdrawStatusFailed retrieves the monthly withdraw status for failed transactions.
@@ -199,43 +176,44 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccess(c echo.Co
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly withdraw status for failed transactions"
 // @Router /api/withdraw-stats-status/monthly-failed [get]
 func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailed(c echo.Context) error {
-	const method = "FindMonthlyWithdrawStatusFailed"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusWithdraw{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedMonthWithdrawStatusFailedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyWithdrawStatusFailed(ctx, &pb.FindMonthlyWithdrawStatus{
+	res, err := h.client.FindMonthlyWithdrawStatusFailed(ctx, &pbwithdraw.FindMonthlyWithdrawStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly withdraw status failed", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusFailed(c)
+		h.logger.Debug("Failed to retrieve monthly withdraw status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
+	h.cache.SetCachedMonthWithdrawStatusFailedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly withdraw status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawStatusFailed retrieves the yearly withdraw status for failed transactions.
@@ -251,36 +229,32 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailed(c echo.Co
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly withdraw status for failed transactions"
 // @Router /api/withdraw-stats-status/yearly-failed [get]
 func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusFailed(c echo.Context) error {
-	const method = "FindYearlyWithdrawStatusFailed"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedYearlyWithdrawStatusFailedCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyWithdrawStatusFailed(ctx, &pb.FindYearWithdrawStatus{
+	res, err := h.client.FindYearlyWithdrawStatusFailed(ctx, &pbwithdraw.FindYearWithdrawStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly withdraw status failed", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusFailed(c)
+		h.logger.Debug("Failed to retrieve yearly withdraw status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyWithdrawStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
+	h.cache.SetCachedYearlyWithdrawStatusFailedCache(ctx, year, apiResponse)
 
-	logSuccess("success retrieve yearly withdraw status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyWithdrawStatusSuccessByCardNumber retrieves the monthly withdraw status for successful transactions.
@@ -298,50 +272,51 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusFailed(c echo.Con
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly withdraw status for successful transactions"
 // @Router /api/withdraw-stats-status/monthly-success-by-card [get]
 func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyWithdrawStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusWithdrawCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedMonthWithdrawStatusSuccessByCardNumber(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyWithdrawStatusSuccessCardNumber(ctx, &pb.FindMonthlyWithdrawStatusCardNumber{
+	res, err := h.client.FindMonthlyWithdrawStatusSuccessCardNumber(ctx, &pbwithdraw.FindMonthlyWithdrawStatusCardNumber{
 		Year:       int32(year),
 		Month:      int32(month),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly withdraw status for successful transactions", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusSuccessCardNumber(c)
+		h.logger.Debug("Failed to retrieve monthly withdraw status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
+	h.cache.SetCachedMonthWithdrawStatusSuccessByCardNumber(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve monthly withdraw status for successful transactions", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawStatusSuccessByCardNumber retrieves the yearly withdraw status for successful transactions.
@@ -358,43 +333,43 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccessByCardNum
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly withdraw status for successful transactions"
 // @Router /api/withdraw-stats-status/yearly-success-by-card-number [get]
 func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindYearlyWithdrawStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearStatusWithdrawCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedYearlyWithdrawStatusSuccessByCardNumber(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyWithdrawStatusSuccessCardNumber(ctx, &pb.FindYearWithdrawStatusCardNumber{
+	res, err := h.client.FindYearlyWithdrawStatusSuccessCardNumber(ctx, &pbwithdraw.FindYearWithdrawStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly withdraw status for successful transactions", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusSuccessCardNumber(c)
+		h.logger.Debug("Failed to retrieve yearly withdraw status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyWithdrawStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
+	h.cache.SetCachedYearlyWithdrawStatusSuccessByCardNumber(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve yearly withdraw status for successful transactions", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyWithdrawStatusFailedByCardNumber retrieves the monthly withdraw status for failed transactions.
@@ -412,50 +387,51 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccessByCardNumb
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly withdraw status for failed transactions"
 // @Router /api/withdraw-stats-status/monthly-failed-by-card [get]
 func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyWithdrawStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusWithdrawCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedMonthWithdrawStatusFailedByCardNumber(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyWithdrawStatusFailedCardNumber(ctx, &pb.FindMonthlyWithdrawStatusCardNumber{
+	res, err := h.client.FindMonthlyWithdrawStatusFailedCardNumber(ctx, &pbwithdraw.FindMonthlyWithdrawStatusCardNumber{
 		Year:       int32(year),
 		Month:      int32(month),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly withdraw status for failed transactions", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindMonthlyWithdrawStatusFailedCardNumber(c)
+		h.logger.Debug("Failed to retrieve monthly withdraw status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
+	h.cache.SetCachedMonthWithdrawStatusFailedByCardNumber(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve monthly withdraw status for failed transactions", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawStatusFailedByCardNumber retrieves the yearly withdraw status for failed transactions.
@@ -472,95 +448,77 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailedByCardNumb
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly withdraw status for failed transactions"
 // @Router /api/withdraw-stats-status/yearly-failed-by-card [get]
 func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindYearlyWithdrawStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("invalid card_number parameter")
+	}
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearStatusWithdrawCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedYearlyWithdrawStatusFailedByCardNumber(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyWithdrawStatusFailedCardNumber(ctx, &pb.FindYearWithdrawStatusCardNumber{
+	res, err := h.client.FindYearlyWithdrawStatusFailedCardNumber(ctx, &pbwithdraw.FindYearWithdrawStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly withdraw status for failed transactions", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindYearlyWithdrawStatusFailedCardNumber(c)
+		h.logger.Debug("Failed to retrieve yearly withdraw status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyWithdrawStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
+	h.cache.SetCachedYearlyWithdrawStatusFailedByCardNumber(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve yearly withdraw status for failed transactions", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *withdrawStatsStatusHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *withdrawStatsStatusHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Withdraw").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Withdraw already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Withdraw service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *withdrawStatsStatusHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

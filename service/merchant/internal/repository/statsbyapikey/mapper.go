@@ -2,7 +2,6 @@ package merchantstatsapikeyrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/merchant/statsByApiKey"
 )
 
 type MerchantStatsByApiKeyRepository interface {
@@ -17,11 +16,11 @@ type repository struct {
 	MerchantStatsTotalAmountByApiKeyRepository
 }
 
-func NewMerchantStatsByApiKeyRepository(db *db.Queries, mapper recordmapper.MerchantStatisticByApiKeyMapper) MerchantStatsByApiKeyRepository {
+func NewMerchantStatsByApiKeyRepository(db *db.Queries) MerchantStatsByApiKeyRepository {
 
 	return &repository{
-		MerchantStatsAmountByApiKeyRepository:      NewMerchantStatsAmountByApiKeyRepository(db, mapper),
-		MerchantStatsMethodByApiKeyRepository:      NewMerchantStatsMethodByApiKeyRepository(db, mapper),
-		MerchantStatsTotalAmountByApiKeyRepository: NewMerchantStatsTotalAmountByApiKeyRepository(db, mapper),
+		MerchantStatsAmountByApiKeyRepository:      NewMerchantStatsAmountByApiKeyRepository(db),
+		MerchantStatsMethodByApiKeyRepository:      NewMerchantStatsMethodByApiKeyRepository(db),
+		MerchantStatsTotalAmountByApiKeyRepository: NewMerchantStatsTotalAmountByApiKeyRepository(db),
 	}
 }

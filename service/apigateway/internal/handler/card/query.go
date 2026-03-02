@@ -1,118 +1,73 @@
 package cardhandler
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pbhelpers "github.com/MamangRust/monolith-payment-gateway-pb"
+	card_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/card"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	cardapierrors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
+// cardQueryHandleApi handles card query HTTP APIs.
 type cardQueryHandleApi struct {
-	// card is the gRPC client used to interact with the CardService.
 	card pb.CardQueryServiceClient
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
-
-	// mapper transforms gRPC responses into standardized HTTP API responses.
 	mapper apimapper.CardQueryResponseMapper
 
-	// trace is the OpenTelemetry tracer for distributed tracing.
-	trace trace.Tracer
+	cache card_cache.CardMencache
 
-	// requestCounter records the number of HTTP requests handled by this service.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of HTTP request handling in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// cardQueryHandleApiDeps contains the necessary dependencies for initializing a cardQueryHandleApi.
+// cardQueryHandleApiDeps defines dependencies for cardQueryHandleApi.
 type cardQueryHandleApiDeps struct {
-	// client is the gRPC client used to interact with the CardService.
 	client pb.CardQueryServiceClient
-
-	// router is the Echo HTTP router used to register endpoints.
 	router *echo.Echo
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
-
-	// mapper transforms gRPC responses into standardized HTTP API responses.
 	mapper apimapper.CardQueryResponseMapper
+
+	cache card_cache.CardMencache
+
+	apiHandler errors.ApiHandler
 }
 
-// NewCardQueryHandleApi initializes a new instance of cardQueryHandleApi with the provided parameters.
-//
-// It sets up Prometheus metrics for counting and measuring the duration of card query requests.
-//
-// Parameters:
-// - params: A pointer to cardQueryHandleApiDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created cardQueryHandleApi.
 func NewCardQueryHandleApi(
 	params *cardQueryHandleApiDeps,
 ) *cardQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "card_query_handler_requests_total",
-			Help: "Total number of Card Query requests",
-		},
-		[]string{"method", "status"},
-	)
 
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "card_query_handler_request_duration_seconds",
-			Help:    "Duration of Card Query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	cardQueryHandler := &cardQueryHandleApi{
-		card:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("card-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+	cardHandler := &cardQueryHandleApi{
+		card:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerCard := params.router.Group("/api/card-query")
 
-	routerCard.GET("", cardQueryHandler.FindAll)
-	routerCard.GET("/:id", cardQueryHandler.FindById)
+	routerCard.GET("", params.apiHandler.Handle("find-all", cardHandler.FindAll))
+	routerCard.GET("/:id", params.apiHandler.Handle("find-by-id", cardHandler.FindById))
+	routerCard.GET("/user", params.apiHandler.Handle("find-by-user-id", cardHandler.FindByUserID))
+	routerCard.GET("/active", params.apiHandler.Handle("find-by-active", cardHandler.FindByActive))
+	routerCard.GET("/trashed", params.apiHandler.Handle("find-by-trashed", cardHandler.FindByTrashed))
+	routerCard.GET("/card_number/:card_number", params.apiHandler.Handle("find-by-card-number", cardHandler.FindByCardNumber))
 
-	routerCard.GET("/user", cardQueryHandler.FindByUserID)
-	routerCard.GET("/active", cardQueryHandler.FindByActive)
-	routerCard.GET("/trashed", cardQueryHandler.FindByTrashed)
-	routerCard.GET("/card_number/:card_number", cardQueryHandler.FindByCardNumber)
-
-	return cardQueryHandler
+	return cardHandler
 }
 
 // FindAll godoc
 // @Summary Retrieve all cards
-// @Tags Card-Query
+// @Tags Card Query
 // @Security Bearer
 // @Description Retrieve all cards with pagination
 // @Accept json
@@ -122,58 +77,52 @@ func NewCardQueryHandleApi(
 // @Param search query string false "Search keyword"
 // @Success 200 {object} response.ApiResponsePaginationCard "Card data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card data"
-// @Router /api/card [get]
+// @Router /api/card-query [get]
 func (h *cardQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
 
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllCards{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetFindAllCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllCardRequest{
+	reqGrpc := &pb.FindAllCardRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	cards, err := h.card.FindAllCard(ctx, req)
-
+	cards, err := h.card.FindAllCard(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to find all cards", err,
-			zap.Int("page", page),
-			zap.Int("page_size", pageSize),
-			zap.String("search", search),
-		)
-		return cardapierrors.ErrApiFailedFindAllCards(c)
+		return h.handleGrpcError(err, "FindAllCard")
 	}
 
-	response := h.mapper.ToApiResponsesCard(cards)
+	apiResponse := h.mapper.ToApiResponsesCard(cards)
+	h.cache.SetFindAllCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved card list",
-		zap.Int("count", len(response.Data)),
-		zap.Int("page", page),
-		zap.Int("page_size", pageSize),
-		zap.Bool("success", true),
-	)
-
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindById godoc
 // @Summary Retrieve card by ID
-// @Tags Card-Query
+// @Tags Card Query
 // @Security Bearer
 // @Description Retrieve a card by its ID
 // @Accept json
@@ -182,44 +131,38 @@ func (h *cardQueryHandleApi) FindAll(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Card data"
 // @Failure 400 {object} response.ErrorResponse "Invalid card ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
-// @Router /api/card/{id} [get]
+// @Router /api/card-query/{id} [get]
 func (h *cardQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil {
-		logError("Invalid card ID", err, zap.Error(err))
-		return cardapierrors.ErrApiInvalidCardID(c)
+		return errors.NewBadRequestError("id is required and must be an integer")
 	}
 
-	req := &pb.FindByIdCardRequest{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetByIdCache(ctx, id)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pb.FindByIdCardRequest{
 		CardId: int32(id),
 	}
 
-	card, err := h.card.FindByIdCard(ctx, req)
+	card, err := h.card.FindByIdCard(ctx, reqGrpc)
 	if err != nil {
-		logError("FindByIdCard failed", err, zap.Int("card.id", id), zap.Error(err))
-		return cardapierrors.ErrApiFailedFindByIdCard(c)
+		return h.handleGrpcError(err, "FindByIdCard")
 	}
 
-	response := h.mapper.ToApiResponseCard(card)
+	apiResponse := h.mapper.ToApiResponseCard(card)
+	h.cache.SetByIdCache(ctx, id, apiResponse)
 
-	logSuccess("Successfully retrieved card record", zap.Int("card.id", id), zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindByUserID godoc
 // @Summary Retrieve cards by user ID
-// @Tags Card-Query
+// @Tags Card Query
 // @Security Bearer
 // @Description Retrieve a list of cards associated with a user by their ID
 // @Accept json
@@ -227,99 +170,95 @@ func (h *cardQueryHandleApi) FindById(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Card data"
 // @Failure 400 {object} response.ErrorResponse "Invalid user ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
-// @Router /api/card/user [get]
+// @Router /api/card-query/user [get]
 func (h *cardQueryHandleApi) FindByUserID(c echo.Context) error {
-	const method = "FindByUserID"
+	userIDStr, ok := c.Get("userID").(string)
+	if !ok {
+		return errors.NewBadRequestError("user_id is required")
+	}
+
+	uid, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return errors.NewBadRequestError("invalid user ID format")
+	}
+	userID := int(uid)
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	userIDRaw := c.Get("user_id")
-	userID, ok := userIDRaw.(int32)
-	if !ok {
-		err := errors.New("user id not found in context")
-
-		logError("Invalid user id", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidUserID(c)
+	cachedData, found := h.cache.GetByUserIDCache(ctx, userID)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindByUserIdCardRequest{
-		UserId: userID,
+	reqGrpc := &pb.FindByUserIdCardRequest{
+		UserId: int32(userID),
 	}
 
-	card, err := h.card.FindByUserIdCard(ctx, req)
-
+	card, err := h.card.FindByUserIdCard(ctx, reqGrpc)
 	if err != nil {
-		logError("FindByUserIdCard failed", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindByUserIdCard(c)
+		return h.handleGrpcError(err, "FindByUserIdCard")
 	}
 
-	so := h.mapper.ToApiResponseCard(card)
+	apiResponse := h.mapper.ToApiResponseCard(card)
+	h.cache.SetByUserIDCache(ctx, userID, apiResponse)
 
-	logSuccess("Success retrieve card record", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Security Bearer
 // @Summary Retrieve active card by Saldo ID
-// @Tags Card-Query
+// @Tags Card Query
 // @Description Retrieve an active card associated with a Saldo ID
 // @Accept json
 // @Produce json
-// @Success 200 {object} response.ApiResponsePaginationCardDeleteAt "Card data"
+// @Success 200 {object} pb.ApiResponsePaginationCardDeleteAt "Card data"
 // @Failure 400 {object} response.ErrorResponse "Invalid Saldo ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
-// @Router /api/card/active [get]
+// @Router /api/card-query/active [get]
 func (h *cardQueryHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
 
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllCards{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetByActiveCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllCardRequest{
+	reqGrpc := &pb.FindAllCardRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.card.FindByActiveCard(ctx, req)
-
+	res, err := h.card.FindByActiveCard(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve card record", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindByActiveCard(c)
+		return h.handleGrpcError(err, "FindByActiveCard")
 	}
 
-	so := h.mapper.ToApiResponsesCardDeletedAt(res)
+	apiResponse := h.mapper.ToApiResponsesCardDeletedAt(res)
+	h.cache.SetByActiveCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve card record", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve trashed cards
-// @Tags Card-Query
+// @Tags Card Query
 // @Security Bearer
 // @Description Retrieve a list of trashed cards
 // @Accept json
@@ -329,50 +268,52 @@ func (h *cardQueryHandleApi) FindByActive(c echo.Context) error {
 // @Param search query string false "Search keyword"
 // @Success 200 {object} response.ApiResponsePaginationCardDeleteAt "Card data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
-// @Router /api/card/trashed [get]
+// @Router /api/card-query/trashed [get]
 func (h *cardQueryHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
 
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllCards{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetByTrashedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllCardRequest{
+	reqGrpc := &pb.FindAllCardRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.card.FindByTrashedCard(ctx, req)
-
+	res, err := h.card.FindByTrashedCard(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve card record", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindByTrashedCard(c)
+		return h.handleGrpcError(err, "FindByTrashedCard")
 	}
 
-	so := h.mapper.ToApiResponsesCardDeletedAt(res)
+	apiResponse := h.mapper.ToApiResponsesCardDeletedAt(res)
+	h.cache.SetByTrashedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve card record", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Security Bearer
 // @Summary Retrieve card by card number
-// @Tags Card-Query
+// @Tags Card Query
 // @Description Retrieve a card by its card number
 // @Accept json
 // @Produce json
@@ -380,97 +321,60 @@ func (h *cardQueryHandleApi) FindByTrashed(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Card data"
 // @Failure 400 {object} response.ErrorResponse "Failed to fetch card record"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve card record"
-// @Router /api/card/{card_number} [get]
+// @Router /api/card-query/{card_number} [get]
 func (h *cardQueryHandleApi) FindByCardNumber(c echo.Context) error {
-	const method = "FindByCardNumber"
+	cardNumber := c.Param("card_number")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber := c.Param("card_number")
-
-	if cardNumber == "" {
-		err := errors.New("invalid card number")
-
-		logError("Failed to fetch card record", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidCardNumber(c)
-	}
-
-	req := &pbhelpers.FindByCardNumberRequest{
+	req := &pb.FindByCardNumberRequest{
 		CardNumber: cardNumber,
 	}
 
 	res, err := h.card.FindByCardNumber(ctx, req)
 
 	if err != nil {
-		logError("Failed to retrieve card record", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindByCardNumber(c)
+		h.logger.Debug("Failed to fetch card record", zap.Error(err))
+		return err
 	}
 
 	so := h.mapper.ToApiResponseCard(res)
 
-	logSuccess("Success retrieve card record", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *cardQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *cardQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Card").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Card already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *cardQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

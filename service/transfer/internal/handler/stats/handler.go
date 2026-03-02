@@ -1,20 +1,8 @@
 package transferstatshandler
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/transfer"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/service"
 )
-
-type DepsStats struct {
-	Service service.Service
-
-	Logger logger.LoggerInterface
-
-	MapperAmount protomapper.TransferStatsAmountProtoMapper
-
-	MapperStatus protomapper.TransferStatsStatusProtoMapper
-}
 
 type HandleStats interface {
 	TransferStatsAmountHandleGrpc
@@ -26,10 +14,10 @@ type handleStats struct {
 	TransferStatsStatusHandleGrpc
 }
 
-func NewTransferStatsHandleGrpc(deps *DepsStats) HandleStats {
+func NewTransferStatsHandleGrpc(service service.Service) HandleStats {
 
 	return &handleStats{
-		TransferStatsAmountHandleGrpc: NewTransferStatsAmountHandler(deps.Service, deps.Logger, deps.MapperAmount),
-		TransferStatsStatusHandleGrpc: NewTransferStatsStatusHandler(deps.Service, deps.Logger, deps.MapperStatus),
+		TransferStatsAmountHandleGrpc: NewTransferStatsAmountHandler(service),
+		TransferStatsStatusHandleGrpc: NewTransferStatsStatusHandler(service),
 	}
 }

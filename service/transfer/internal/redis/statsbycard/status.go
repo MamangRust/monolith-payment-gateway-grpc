@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transferStatsByCardStatusCache struct {
@@ -17,34 +17,18 @@ func NewTransferStatsByCardStatusCache(store *sharedcachehelpers.CacheStore) Tra
 	return &transferStatsByCardStatusCache{store: store}
 }
 
-// GetMonthTransferStatusSuccessByCard retrieves cached monthly successful transfers for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and month.
-//
-// Returns:
-//   - []*response.TransferResponseMonthStatusSuccess: List of monthly successful transfers.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardStatusCache) GetMonthTransferStatusSuccessByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber) ([]*response.TransferResponseMonthStatusSuccess, bool) {
+func (t *transferStatsByCardStatusCache) GetMonthTransferStatusSuccessByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber) ([]*db.GetMonthTransferStatusSuccessCardNumberRow, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusSuccessByCardKey, req.CardNumber, req.Month, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseMonthStatusSuccess](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransferStatusSuccessCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
 	}
 
 	return *result, true
-
 }
 
-// SetMonthTransferStatusSuccessByCard stores monthly successful transfers for a specific card number into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and month.
-//   - data: List of monthly successful transfers to cache.
-func (t *transferStatsByCardStatusCache) SetMonthTransferStatusSuccessByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber, data []*response.TransferResponseMonthStatusSuccess) {
+func (t *transferStatsByCardStatusCache) SetMonthTransferStatusSuccessByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber, data []*db.GetMonthTransferStatusSuccessCardNumberRow) {
 	if data == nil {
 		return
 	}
@@ -53,18 +37,9 @@ func (t *transferStatsByCardStatusCache) SetMonthTransferStatusSuccessByCard(ctx
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTransferStatusSuccessByCard retrieves cached yearly successful transfers for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and year.
-//
-// Returns:
-//   - []*response.TransferResponseYearStatusSuccess: List of yearly successful transfers.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusSuccessByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber) ([]*response.TransferResponseYearStatusSuccess, bool) {
+func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusSuccessByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber) ([]*db.GetYearlyTransferStatusSuccessCardNumberRow, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusSuccessByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseYearStatusSuccess](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferStatusSuccessCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -73,13 +48,7 @@ func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusSuccessByCard(ct
 	return *result, true
 }
 
-// SetYearlyTransferStatusSuccessByCard stores yearly successful transfers for a specific card number into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and year.
-//   - data: List of yearly successful transfers to cache.
-func (t *transferStatsByCardStatusCache) SetYearlyTransferStatusSuccessByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber, data []*response.TransferResponseYearStatusSuccess) {
+func (t *transferStatsByCardStatusCache) SetYearlyTransferStatusSuccessByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber, data []*db.GetYearlyTransferStatusSuccessCardNumberRow) {
 	if data == nil {
 		return
 	}
@@ -88,18 +57,9 @@ func (t *transferStatsByCardStatusCache) SetYearlyTransferStatusSuccessByCard(ct
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetMonthTransferStatusFailedByCard retrieves cached monthly failed transfers for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and month.
-//
-// Returns:
-//   - []*response.TransferResponseMonthStatusFailed: List of monthly failed transfers.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardStatusCache) GetMonthTransferStatusFailedByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber) ([]*response.TransferResponseMonthStatusFailed, bool) {
+func (t *transferStatsByCardStatusCache) GetMonthTransferStatusFailedByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber) ([]*db.GetMonthTransferStatusFailedCardNumberRow, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusFailedByCardKey, req.CardNumber, req.Month, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseMonthStatusFailed](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransferStatusFailedCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -108,13 +68,7 @@ func (t *transferStatsByCardStatusCache) GetMonthTransferStatusFailedByCard(ctx 
 	return *result, true
 }
 
-// SetMonthTransferStatusFailedByCard stores monthly failed transfers for a specific card number into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and month.
-//   - data: List of monthly failed transfers to cache.
-func (t *transferStatsByCardStatusCache) SetMonthTransferStatusFailedByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber, data []*response.TransferResponseMonthStatusFailed) {
+func (t *transferStatsByCardStatusCache) SetMonthTransferStatusFailedByCard(ctx context.Context, req *requests.MonthStatusTransferCardNumber, data []*db.GetMonthTransferStatusFailedCardNumberRow) {
 	if data == nil {
 		return
 	}
@@ -123,18 +77,9 @@ func (t *transferStatsByCardStatusCache) SetMonthTransferStatusFailedByCard(ctx 
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTransferStatusFailedByCard retrieves cached yearly failed transfers for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and year.
-//
-// Returns:
-//   - []*response.TransferResponseYearStatusFailed: List of yearly failed transfers.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusFailedByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber) ([]*response.TransferResponseYearStatusFailed, bool) {
+func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusFailedByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber) ([]*db.GetYearlyTransferStatusFailedCardNumberRow, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusFailedByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseYearStatusFailed](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferStatusFailedCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -142,13 +87,7 @@ func (t *transferStatsByCardStatusCache) GetYearlyTransferStatusFailedByCard(ctx
 	return *result, true
 }
 
-// SetYearlyTransferStatusFailedByCard stores yearly failed transfers for a specific card number into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains card number and year.
-//   - data: List of yearly failed transfers to cache.
-func (t *transferStatsByCardStatusCache) SetYearlyTransferStatusFailedByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber, data []*response.TransferResponseYearStatusFailed) {
+func (t *transferStatsByCardStatusCache) SetYearlyTransferStatusFailedByCard(ctx context.Context, req *requests.YearStatusTransferCardNumber, data []*db.GetYearlyTransferStatusFailedCardNumberRow) {
 	if data == nil {
 		return
 	}

@@ -6,16 +6,13 @@ import (
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
 )
 
 // userRepository is a struct that represents a user repository
 type userRepository struct {
-	db     *db.Queries
-	mapper recordmapper.UserQueryRecordMapper
+	db *db.Queries
 }
 
 // NewUserRepository returns a new instance of userRepository.
@@ -25,10 +22,9 @@ type userRepository struct {
 // database records to the domain level record.UserRecord.
 //
 // It returns a new instance of userRepository for use in the application.
-func NewUserRepository(db *db.Queries, mapper recordmapper.UserQueryRecordMapper) *userRepository {
+func NewUserRepository(db *db.Queries) *userRepository {
 	return &userRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
@@ -40,18 +36,18 @@ func NewUserRepository(db *db.Queries, mapper recordmapper.UserQueryRecordMapper
 //
 // Returns:
 //   - A UserRecord if found, or an error if the operation fails or user is not found.
-func (r *userRepository) FindById(ctx context.Context, user_id int) (*record.UserRecord, error) {
+func (r *userRepository) FindById(ctx context.Context, user_id int) (*db.GetUserByIDRow, error) {
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, user_errors.ErrUserNotFound
 		}
 
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }
 
 // FindByEmail retrieves a user by their email address.
@@ -62,18 +58,18 @@ func (r *userRepository) FindById(ctx context.Context, user_id int) (*record.Use
 //
 // Returns:
 //   - A UserRecord if found, or an error if the operation fails or user does not exist.
-func (r *userRepository) FindByEmail(ctx context.Context, email string) (*record.UserRecord, error) {
+func (r *userRepository) FindByEmail(ctx context.Context, email string) (*db.GetUserByEmailRow, error) {
 	res, err := r.db.GetUserByEmail(ctx, email)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, user_errors.ErrUserNotFound
 		}
 
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }
 
 // FindByEmailAndVerify retrieves a verified user by their email address.
@@ -84,7 +80,7 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*record
 //
 // Returns:
 //   - A UserRecord if found and verified, or an error otherwise.
-func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string) (*record.UserRecord, error) {
+func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string) (*db.GetUserByEmailAndVerifiedRow, error) {
 	res, err := r.db.GetUserByEmailAndVerified(ctx, email)
 
 	if err != nil {
@@ -95,7 +91,7 @@ func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string)
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }
 
 // FindByVerificationCode retrieves a user by their verification code.
@@ -106,7 +102,7 @@ func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string)
 //
 // Returns:
 //   - A UserRecord if found, or an error if invalid or not found.
-func (r *userRepository) FindByVerificationCode(ctx context.Context, verification_code string) (*record.UserRecord, error) {
+func (r *userRepository) FindByVerificationCode(ctx context.Context, verification_code string) (*db.GetUserByVerificationCodeRow, error) {
 	res, err := r.db.GetUserByVerificationCode(ctx, verification_code)
 
 	if err != nil {
@@ -118,7 +114,7 @@ func (r *userRepository) FindByVerificationCode(ctx context.Context, verificatio
 
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }
 
 // CreateUser inserts a new user into the database.
@@ -129,14 +125,16 @@ func (r *userRepository) FindByVerificationCode(ctx context.Context, verificatio
 //
 // Returns:
 //   - The created UserRecord, or an error if the operation fails.
-func (r *userRepository) CreateUser(ctx context.Context, request *requests.RegisterRequest) (*record.UserRecord, error) {
+func (r *userRepository) CreateUser(ctx context.Context, request *requests.RegisterRequest) (*db.CreateUserRow, error) {
+	isVerified := true
+
 	req := db.CreateUserParams{
 		Firstname:        request.FirstName,
 		Lastname:         request.LastName,
 		Email:            request.Email,
 		Password:         request.Password,
 		VerificationCode: request.VerifiedCode,
-		IsVerified:       sql.NullBool{Bool: request.IsVerified, Valid: true},
+		IsVerified:       &isVerified,
 	}
 
 	user, err := r.db.CreateUser(ctx, req)
@@ -145,7 +143,7 @@ func (r *userRepository) CreateUser(ctx context.Context, request *requests.Regis
 		return nil, user_errors.ErrCreateUser
 	}
 
-	return r.mapper.ToUserRecord(user), nil
+	return user, nil
 }
 
 // UpdateUserIsVerified updates the verification status of a user.
@@ -157,20 +155,17 @@ func (r *userRepository) CreateUser(ctx context.Context, request *requests.Regis
 //
 // Returns:
 //   - The updated UserRecord, or an error if the operation fails.
-func (r *userRepository) UpdateUserIsVerified(ctx context.Context, user_id int, is_verified bool) (*record.UserRecord, error) {
+func (r *userRepository) UpdateUserIsVerified(ctx context.Context, user_id int, is_verified bool) (*db.UpdateUserIsVerifiedRow, error) {
 	res, err := r.db.UpdateUserIsVerified(ctx, db.UpdateUserIsVerifiedParams{
-		UserID: int32(user_id),
-		IsVerified: sql.NullBool{
-			Bool:  is_verified,
-			Valid: true,
-		},
+		UserID:     int32(user_id),
+		IsVerified: &is_verified,
 	})
 
 	if err != nil {
 		return nil, user_errors.ErrUpdateUserVerificationCode
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }
 
 // UpdateUserPassword updates a user's password.
@@ -182,7 +177,7 @@ func (r *userRepository) UpdateUserIsVerified(ctx context.Context, user_id int, 
 //
 // Returns:
 //   - The updated UserRecord, or an error if the operation fails.
-func (r *userRepository) UpdateUserPassword(ctx context.Context, user_id int, password string) (*record.UserRecord, error) {
+func (r *userRepository) UpdateUserPassword(ctx context.Context, user_id int, password string) (*db.UpdateUserPasswordRow, error) {
 	res, err := r.db.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
 		UserID:   int32(user_id),
 		Password: password,
@@ -192,5 +187,5 @@ func (r *userRepository) UpdateUserPassword(ctx context.Context, user_id int, pa
 		return nil, user_errors.ErrUpdateUserPassword
 	}
 
-	return r.mapper.ToUserRecord(res), nil
+	return res, nil
 }

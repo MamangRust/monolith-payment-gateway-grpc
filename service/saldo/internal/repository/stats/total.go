@@ -5,36 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
 )
 
 type saldoStatsTotalBalanceRepository struct {
-	db     *db.Queries
-	mapper recordmapper.SaldoStatisticRecordMapping
+	db *db.Queries
 }
 
-func NewSaldoStatsTotalBalanceRepository(db *db.Queries, mapper recordmapper.SaldoStatisticRecordMapping) SaldoStatsTotalSaldoRepository {
+func NewSaldoStatsTotalBalanceRepository(db *db.Queries) SaldoStatsTotalSaldoRepository {
 	return &saldoStatsTotalBalanceRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthlyTotalSaldoBalance retrieves the total saldo balance grouped by month
-// based on the given request (e.g., year, card number).
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request object containing the year and other filters.
-//
-// Returns:
-//   - []*record.SaldoMonthTotalBalance: List of saldo totals per month.
-//   - error: An error if the query fails.
-
-func (r *saldoStatsTotalBalanceRepository) GetMonthlyTotalSaldoBalance(ctx context.Context, req *requests.MonthTotalSaldoBalance) ([]*record.SaldoMonthTotalBalance, error) {
+func (r *saldoStatsTotalBalanceRepository) GetMonthlyTotalSaldoBalance(ctx context.Context, req *requests.MonthTotalSaldoBalance) ([]*db.GetMonthlyTotalSaldoBalanceRow, error) {
 	year := req.Year
 	month := req.Month
 
@@ -55,27 +40,15 @@ func (r *saldoStatsTotalBalanceRepository) GetMonthlyTotalSaldoBalance(ctx conte
 		return nil, saldo_errors.ErrGetMonthlyTotalSaldoBalanceFailed
 	}
 
-	so := r.mapper.ToSaldoMonthTotalBalances(res)
-	return so, nil
+	return res, nil
 }
 
-// GetYearTotalSaldoBalance retrieves the total saldo balance for a given year.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The target year for the statistics.
-//
-// Returns:
-//   - []*record.SaldoYearTotalBalance: List of saldo totals for the year.
-//   - error: An error if the query fails.
-func (r *saldoStatsTotalBalanceRepository) GetYearTotalSaldoBalance(ctx context.Context, year int) ([]*record.SaldoYearTotalBalance, error) {
+func (r *saldoStatsTotalBalanceRepository) GetYearTotalSaldoBalance(ctx context.Context, year int) ([]*db.GetYearlyTotalSaldoBalancesRow, error) {
 	res, err := r.db.GetYearlyTotalSaldoBalances(ctx, int32(year))
 
 	if err != nil {
 		return nil, saldo_errors.ErrGetYearTotalSaldoBalanceFailed
 	}
 
-	so := r.mapper.ToSaldoYearTotalBalances(res)
-
-	return so, nil
+	return res, nil
 }

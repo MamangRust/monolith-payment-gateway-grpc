@@ -1,11 +1,10 @@
 package cardstatsbycard
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis/statsbycard"
 	repositorystats "github.com/MamangRust/monolith-payment-gateway-card/internal/repository/statsbycard"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 )
 
 type CardStatsByCardService interface {
@@ -26,49 +25,42 @@ type cardStatsByCardService struct {
 
 type DepsStatsByCard struct {
 	Mencache      mencache.CardStatsByCardCache
-	ErrorHandler  errorhandler.CardStatisticByNumberErrorHandler
 	Repositories  repositorystats.CardStatsByCardRepository
 	Logger        logger.LoggerInterface
-	MapperBalance responseservice.CardStatisticBalanceResponseMapper
-	MapperAmount  responseservice.CardStatisticAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewCardStatsByCardService(deps *DepsStatsByCard) CardStatsByCardService {
 	return &cardStatsByCardService{
 		NewCardStatsBalanceByCardService(&cardStatsBalanceByCardServiceDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Mencache,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperBalance,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewCardStatsTopupByCardService(&cardStatsTopupByCardServiceDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Mencache,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewCardStatsWithdrawByCardService(&cardStatsWithdrawByCardServiceDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Mencache,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewCardStatsTransferByCardService(&cardStatsTransferByCardServiceDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Mencache,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		NewCardStatsTransactionByCardService(&cardStatsTransactionByCardServiceDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Mencache,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperAmount,
+			Cache:         deps.Mencache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

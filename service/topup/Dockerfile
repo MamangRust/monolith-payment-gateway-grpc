@@ -1,4 +1,4 @@
-FROM golang:1.24.4-alpine3.22 AS builder
+FROM golang:1.25.3-alpine3.22 AS builder
 
 
 WORKDIR /app
@@ -27,6 +27,6 @@ RUN chown 1000:1000 ./topup
 
 USER appuser
 
-EXPOSE 50057 8087
+EXPOSE 50057
 
 CMD ["./topup"]

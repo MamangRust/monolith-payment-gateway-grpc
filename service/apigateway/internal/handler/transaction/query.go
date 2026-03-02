@@ -1,23 +1,19 @@
 package transactionhandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	transaction_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transaction"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transaction"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transaction"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type transactionQueryHandleApi struct {
@@ -27,11 +23,9 @@ type transactionQueryHandleApi struct {
 
 	mapper apimapper.TransactionQueryResponseMapper
 
-	trace trace.Tracer
+	cache transaction_cache.TransactionMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transactionQueryHandleDeps struct {
@@ -42,35 +36,20 @@ type transactionQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransactionQueryResponseMapper
+
+	cache transaction_cache.TransactionMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTransactionQueryHandleApi(params *transactionQueryHandleDeps) *transactionQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transaction_query_handler_requests_total",
-			Help: "Total number of transaction query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transaction_query_handler_request_duration_seconds",
-			Help:    "Duration of transaction query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transactionQueryHandleApi := &transactionQueryHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transaction-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTransaction := params.router.Group("/api/transaction-query")
@@ -98,43 +77,47 @@ func NewTransactionQueryHandleApi(params *transactionQueryHandleDeps) *transacti
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transaction-query [get]
 func (h *transactionQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransactions{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransactionsCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransactionRequest{
+	reqGrpc := &pb.FindAllTransactionRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindAllTransaction(ctx, req)
-
+	res, err := h.client.FindAllTransaction(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindAllTransactions(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransaction(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransaction(res)
+	h.cache.SetCachedTransactionsCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Any("data", so))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find all transactions by card number
@@ -151,50 +134,54 @@ func (h *transactionQueryHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transaction-query/card-number/{card_number} [get]
 func (h *transactionQueryHandleApi) FindAllTransactionByCardNumber(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllTransactionByCardNumber"
-	)
+	cardNumber := c.Param("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.FindAllTransactionCardNumber{
+		CardNumber: cardNumber,
+		Page:       page,
+		PageSize:   pageSize,
+		Search:     search,
 	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
+	cachedData, found := h.cache.GetCachedTransactionByCardNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	req := &pb.FindAllTransactionCardNumberRequest{
+	reqGrpc := &pb.FindAllTransactionCardNumberRequest{
 		CardNumber: cardNumber,
 		Page:       int32(page),
 		PageSize:   int32(pageSize),
 		Search:     search,
 	}
 
-	res, err := h.client.FindAllTransactionByCardNumber(ctx, req)
-
+	res, err := h.client.FindAllTransactionByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindByCardNumber(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAllTransactionByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransaction(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransaction(res)
+	h.cache.SetCachedTransactionByCardNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a transaction by ID
@@ -209,44 +196,36 @@ func (h *transactionQueryHandleApi) FindAllTransactionByCardNumber(c echo.Contex
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transaction-query/{id} [get]
 func (h *transactionQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	idStr := c.Param("id")
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.logger.Debug("Invalid transaction ID", zap.Error(err))
+		return errors.NewBadRequestError("invalid id parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id := c.Param("id")
-
-	idInt, err := strconv.Atoi(id)
-
-	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionID(c)
+	cachedData, found := h.cache.GetCachedTransactionCache(ctx, idInt)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.client.FindByIdTransaction(ctx, &pb.FindByIdTransactionRequest{
 		TransactionId: int32(idInt),
 	})
-
 	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindById(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseTransaction(res)
+	apiResponse := h.mapper.ToApiResponseTransaction(res)
+	h.cache.SetCachedTransactionCache(ctx, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find transactions by merchant ID
-// @Tags Transaction Query
+// @Tags Transaction
 // @Security Bearer
 // @Description Retrieve a list of transactions using the merchant ID
 // @Accept json
@@ -255,44 +234,35 @@ func (h *transactionQueryHandleApi) FindById(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseTransactions "Transaction data"
 // @Failure 400 {object} response.ErrorResponse "Bad Request: Invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
-// @Router /api/transaction-query/merchant/{merchant_id} [get]
+// @Router /api/transactions-query/merchant/{merchant_id} [get]
 func (h *transactionQueryHandleApi) FindByTransactionMerchantId(c echo.Context) error {
-	const method = "FindByTransactionMerchantId"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	merchantId := c.QueryParam("merchant_id")
-
-	merchantIdInt, err := strconv.Atoi(merchantId)
-
+	merchantIdStr := c.Param("merchant_id")
+	merchantIdInt, err := strconv.Atoi(merchantIdStr)
 	if err != nil {
-		logError("Failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionMerchantID(c)
+		return errors.NewBadRequestError("invalid merchant_id parameter")
 	}
 
-	req := &pb.FindTransactionByMerchantIdRequest{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetCachedTransactionByMerchantIdCache(ctx, merchantIdInt)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pb.FindTransactionByMerchantIdRequest{
 		MerchantId: int32(merchantIdInt),
 	}
 
-	res, err := h.client.FindTransactionByMerchantId(ctx, req)
-
+	res, err := h.client.FindTransactionByMerchantId(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindByMerchantID(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTransactionMerchantId")
 	}
 
-	so := h.mapper.ToApiResponseTransactions(res)
+	apiResponse := h.mapper.ToApiResponseTransactions(res)
+	h.cache.SetCachedTransactionByMerchantIdCache(ctx, merchantIdInt, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find active transactions
@@ -308,43 +278,47 @@ func (h *transactionQueryHandleApi) FindByTransactionMerchantId(c echo.Context) 
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transaction-query/active [get]
 func (h *transactionQueryHandleApi) FindByActiveTransaction(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActiveTransaction"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransactions{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransactionActiveCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransactionRequest{
+	reqGrpc := &pb.FindAllTransactionRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByActiveTransaction(ctx, req)
-
+	res, err := h.client.FindByActiveTransaction(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindActive(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByActiveTransaction")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
+	h.cache.SetCachedTransactionActiveCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve trashed transactions
@@ -360,95 +334,81 @@ func (h *transactionQueryHandleApi) FindByActiveTransaction(c echo.Context) erro
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
 // @Router /api/transaction-query/trashed [get]
 func (h *transactionQueryHandleApi) FindByTrashedTransaction(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashedTransaction"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTransactions{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTransactionTrashedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTransactionRequest{
+	reqGrpc := &pb.FindAllTransactionRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByTrashedTransaction(ctx, req)
-
+	res, err := h.client.FindByTrashedTransaction(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve transaction data", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedFindTrashed(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTrashedTransaction")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
+	h.cache.SetCachedTransactionTrashedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve transaction data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *transactionQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transactionQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transaction").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transaction already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transaction service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *transactionQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

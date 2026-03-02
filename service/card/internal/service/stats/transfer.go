@@ -3,82 +3,52 @@ package cardstatsservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	cardstatsmencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-card/internal/repository/stats"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
 type cardStatsTransferService struct {
-	errorHandler errorhandler.CardStatisticErrorHandler
-
 	cache cardstatsmencache.CardStatsTransferCache
 
 	repository repository.CardStatsTransferRepository
 
 	logger logger.LoggerInterface
 
-	mapper responseservice.CardStatisticAmountResponseMapper
-
 	observability observability.TraceLoggerObservability
 }
 
 type cardStatsTransferServiceDeps struct {
-	ErrorHandler errorhandler.CardStatisticErrorHandler
-
 	Cache cardstatsmencache.CardStatsTransferCache
 
 	Repository repository.CardStatsTransferRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.CardStatisticAmountResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 func NewCardStatsTransferService(params *cardStatsTransferServiceDeps) CardStatsTransferService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "card_stats_transfer_amount_request_count",
-		Help: "Number of card statistic requests CardStatsTransferService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "card_stats_transfer_amount_request_duration_seconds",
-		Help:    "Duration of card statistic requests CardStatsTransferService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("card-stats-transfer-amount-service"), params.Logger, requestCounter, requestDuration)
 
 	return &cardStatsTransferService{
-		errorHandler:  params.ErrorHandler,
 		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyTransferAmountSender retrieves total monthly transfer amounts from all cards acting as sender.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the monthly data is requested
-//
-// Returns:
-//   - A slice of CardResponseMonthAmount or an error response if the operation fails.
-func (s *cardStatsTransferService) FindMonthlyTransferAmountSender(ctx context.Context, year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
+func (s *cardStatsTransferService) FindMonthlyTransferAmountSender(ctx context.Context, year int) ([]*db.GetMonthlyTransferAmountSenderRow, error) {
 	const method = "FindMonthlyTransferAmountSender"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -91,32 +61,31 @@ func (s *cardStatsTransferService) FindMonthlyTransferAmountSender(ctx context.C
 
 	res, err := s.repository.GetMonthlyTransferAmountSender(ctx, year)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyTransferAmountSenderError(err, method, "FAILED_MONTHLY_TRANSFER_AMOUNT_SENDER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyTransferAmountSenderRow](
+			s.logger,
+			card_errors.ErrFailedFindMonthlyTransferAmountSender,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetMonthlyAmounts(res)
-
-	s.cache.SetMonthlyTransferSenderCache(ctx, year, so)
+	s.cache.SetMonthlyTransferSenderCache(ctx, year, res)
 
 	logSuccess("Monthly transfer sender amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }
 
-// FindYearlyTransferAmountSender retrieves total yearly transfer amounts from all cards acting as sender.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the yearly data is requested
-//
-// Returns:
-//   - A slice of CardResponseYearAmount or an error response if the operation fails.
-func (s *cardStatsTransferService) FindYearlyTransferAmountSender(ctx context.Context, year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
+func (s *cardStatsTransferService) FindYearlyTransferAmountSender(ctx context.Context, year int) ([]*db.GetYearlyTransferAmountSenderRow, error) {
 	const method = "FindYearlyTransferAmountSender"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -128,34 +97,32 @@ func (s *cardStatsTransferService) FindYearlyTransferAmountSender(ctx context.Co
 	}
 
 	res, err := s.repository.GetYearlyTransferAmountSender(ctx, year)
-
 	if err != nil {
-		return s.errorHandler.HandleYearlyTransferAmountSenderError(err, method, "FAILED_YEARLY_TRANSFER_AMOUNT_SENDER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyTransferAmountSenderRow](
+			s.logger,
+			card_errors.ErrFailedFindYearlyTransferAmountSender,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetYearlyAmounts(res)
-
-	s.cache.SetYearlyTransferSenderCache(ctx, year, so)
+	s.cache.SetYearlyTransferSenderCache(ctx, year, res)
 
 	logSuccess("Yearly transfer sender amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }
 
-// FindMonthlyTransferAmountReceiver retrieves total monthly transfer amounts for all cards acting as receiver.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the monthly data is requested
-//
-// Returns:
-//   - A slice of CardResponseMonthAmount or an error response if the operation fails.
-func (s *cardStatsTransferService) FindMonthlyTransferAmountReceiver(ctx context.Context, year int) ([]*response.CardResponseMonthAmount, *response.ErrorResponse) {
+func (s *cardStatsTransferService) FindMonthlyTransferAmountReceiver(ctx context.Context, year int) ([]*db.GetMonthlyTransferAmountReceiverRow, error) {
 	const method = "FindMonthlyTransferAmountReceiver"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -167,34 +134,32 @@ func (s *cardStatsTransferService) FindMonthlyTransferAmountReceiver(ctx context
 	}
 
 	res, err := s.repository.GetMonthlyTransferAmountReceiver(ctx, year)
-
 	if err != nil {
-		return s.errorHandler.HandleMonthlyTransferAmountReceiverError(err, method, "FAILED_MONTHLY_TRANSFER_AMOUNT_RECEIVER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyTransferAmountReceiverRow](
+			s.logger,
+			card_errors.ErrFailedFindMonthlyTransferAmountReceiver,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetMonthlyAmounts(res)
-
-	s.cache.SetMonthlyTransferReceiverCache(ctx, year, so)
+	s.cache.SetMonthlyTransferReceiverCache(ctx, year, res)
 
 	logSuccess("Monthly transfer receiver amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }
 
-// FindYearlyTransferAmountReceiver retrieves total yearly transfer amounts for all cards acting as receiver.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - year: the year for which the yearly data is requested
-//
-// Returns:
-//   - A slice of CardResponseYearAmount or an error response if the operation fails.
-func (s *cardStatsTransferService) FindYearlyTransferAmountReceiver(ctx context.Context, year int) ([]*response.CardResponseYearAmount, *response.ErrorResponse) {
+func (s *cardStatsTransferService) FindYearlyTransferAmountReceiver(ctx context.Context, year int) ([]*db.GetYearlyTransferAmountReceiverRow, error) {
 	const method = "FindYearlyTransferAmountReceiver"
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
@@ -206,19 +171,23 @@ func (s *cardStatsTransferService) FindYearlyTransferAmountReceiver(ctx context.
 	}
 
 	res, err := s.repository.GetYearlyTransferAmountReceiver(ctx, year)
-
 	if err != nil {
-		return s.errorHandler.HandleYearlyTransferAmountReceiverError(err, method, "FAILED_YEARLY_TRANSFER_AMOUNT_RECEIVER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyTransferAmountReceiverRow](
+			s.logger,
+			card_errors.ErrFailedFindYearlyTransferAmountReceiver,
+			method,
+			span,
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToGetYearlyAmounts(res)
-
-	s.cache.SetYearlyTransferReceiverCache(ctx, year, so)
+	s.cache.SetYearlyTransferReceiverCache(ctx, year, res)
 
 	logSuccess("Yearly transfer receiver amount retrieved successfully",
 		zap.Int("year", year),
-		zap.Int("result_count", len(so)),
+		zap.Int("result_count", len(res)),
 	)
 
-	return so, nil
+	return res, nil
 }

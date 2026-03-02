@@ -166,7 +166,7 @@ func (s *tokenService) createRefreshToken(ctx context.Context, id int) (string, 
 	_, err = s.refreshToken.CreateRefreshToken(ctx, &requests.CreateRefreshToken{
 		Token:     res,
 		UserId:    id,
-		ExpiresAt: time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05"),
+		ExpiresAt: time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
 	if err != nil {
 		status = "error"

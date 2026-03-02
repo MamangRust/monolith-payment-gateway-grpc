@@ -1,18 +1,8 @@
 package withdrawstatshandler
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/withdraw"
 	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/service"
 )
-
-type DepsStats struct {
-	Service service.Service
-	Logger  logger.LoggerInterface
-
-	MapperAmount protomapper.WithdrawaStatsAmountProtoMapper
-	MapperStatus protomapper.WithdrawStatsStatusProtoMapper
-}
 
 type HandleStats interface {
 	WithdrawStatsAmountHandlerGrpc
@@ -24,9 +14,9 @@ type handleStats struct {
 	WithdrawStatsStatusHandleGrpc
 }
 
-func NewWithdrawStatsHandleGrpc(deps *DepsStats) HandleStats {
+func NewWithdrawStatsHandleGrpc(service service.Service) HandleStats {
 	return &handleStats{
-		WithdrawStatsAmountHandlerGrpc: NewWithdrawStatsAmountHandleGrpc(deps.Service, deps.Logger, deps.MapperAmount),
-		WithdrawStatsStatusHandleGrpc:  NewWithdrawStatsStatusHandleGrpc(deps.Service, deps.Logger, deps.MapperStatus),
+		WithdrawStatsAmountHandlerGrpc: NewWithdrawStatsAmountHandleGrpc(service),
+		WithdrawStatsStatusHandleGrpc:  NewWithdrawStatsStatusHandleGrpc(service),
 	}
 }

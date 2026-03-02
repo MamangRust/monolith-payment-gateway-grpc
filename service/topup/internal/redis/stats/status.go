@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type topupStatsStatusCache struct {
@@ -17,19 +17,10 @@ func NewTopupStatsStatusCache(store *sharedcachehelpers.CacheStore) TopupStatsSt
 	return &topupStatsStatusCache{store: store}
 }
 
-// GetMonthTopupStatusSuccessCache retrieves cached monthly topup statistics with status "success".
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and optional month filter.
-//
-// Returns:
-//   - []*response.TopupResponseMonthStatusSuccess: List of monthly successful topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsStatusCache) GetMonthTopupStatusSuccessCache(ctx context.Context, req *requests.MonthTopupStatus) ([]*response.TopupResponseMonthStatusSuccess, bool) {
+func (c *topupStatsStatusCache) GetMonthTopupStatusSuccessCache(ctx context.Context, req *requests.MonthTopupStatus) ([]*db.GetMonthTopupStatusSuccessRow, bool) {
 	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupResponseMonthStatusSuccess](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTopupStatusSuccessRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -38,13 +29,7 @@ func (c *topupStatsStatusCache) GetMonthTopupStatusSuccessCache(ctx context.Cont
 	return *result, true
 }
 
-// SetMonthTopupStatusSuccessCache stores the monthly successful topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The original request used as the cache key.
-//   - data: The data to be cached.
-func (c *topupStatsStatusCache) SetMonthTopupStatusSuccessCache(ctx context.Context, req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusSuccess) {
+func (c *topupStatsStatusCache) SetMonthTopupStatusSuccessCache(ctx context.Context, req *requests.MonthTopupStatus, data []*db.GetMonthTopupStatusSuccessRow) {
 	if data == nil {
 		return
 	}
@@ -53,19 +38,10 @@ func (c *topupStatsStatusCache) SetMonthTopupStatusSuccessCache(ctx context.Cont
 	sharedcachehelpers.SetToCache(ctx, c.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTopupStatusSuccessCache retrieves cached yearly topup statistics with status "success".
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the statistics.
-//
-// Returns:
-//   - []*response.TopupResponseYearStatusSuccess: List of yearly successful topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsStatusCache) GetYearlyTopupStatusSuccessCache(ctx context.Context, year int) ([]*response.TopupResponseYearStatusSuccess, bool) {
+func (c *topupStatsStatusCache) GetYearlyTopupStatusSuccessCache(ctx context.Context, year int) ([]*db.GetYearlyTopupStatusSuccessRow, bool) {
 	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupResponseYearStatusSuccess](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTopupStatusSuccessRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -74,13 +50,7 @@ func (c *topupStatsStatusCache) GetYearlyTopupStatusSuccessCache(ctx context.Con
 	return *result, true
 }
 
-// SetYearlyTopupStatusSuccessCache stores yearly successful topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the data.
-//   - data: The data to cache.
-func (c *topupStatsStatusCache) SetYearlyTopupStatusSuccessCache(ctx context.Context, year int, data []*response.TopupResponseYearStatusSuccess) {
+func (c *topupStatsStatusCache) SetYearlyTopupStatusSuccessCache(ctx context.Context, year int, data []*db.GetYearlyTopupStatusSuccessRow) {
 	if data == nil {
 		return
 	}
@@ -89,19 +59,10 @@ func (c *topupStatsStatusCache) SetYearlyTopupStatusSuccessCache(ctx context.Con
 	sharedcachehelpers.SetToCache(ctx, c.store, key, &data, ttlDefault)
 }
 
-// GetMonthTopupStatusFailedCache retrieves cached monthly topup statistics with status "failed".
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and optional month filter.
-//
-// Returns:
-//   - []*response.TopupResponseMonthStatusFailed: List of monthly failed topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsStatusCache) GetMonthTopupStatusFailedCache(ctx context.Context, req *requests.MonthTopupStatus) ([]*response.TopupResponseMonthStatusFailed, bool) {
+func (c *topupStatsStatusCache) GetMonthTopupStatusFailedCache(ctx context.Context, req *requests.MonthTopupStatus) ([]*db.GetMonthTopupStatusFailedRow, bool) {
 	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupResponseMonthStatusFailed](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTopupStatusFailedRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -110,13 +71,7 @@ func (c *topupStatsStatusCache) GetMonthTopupStatusFailedCache(ctx context.Conte
 	return *result, true
 }
 
-// SetMonthTopupStatusFailedCache stores monthly failed topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The original request used as the cache key.
-//   - data: The data to be cached.
-func (c *topupStatsStatusCache) SetMonthTopupStatusFailedCache(ctx context.Context, req *requests.MonthTopupStatus, data []*response.TopupResponseMonthStatusFailed) {
+func (c *topupStatsStatusCache) SetMonthTopupStatusFailedCache(ctx context.Context, req *requests.MonthTopupStatus, data []*db.GetMonthTopupStatusFailedRow) {
 	if data == nil {
 		return
 	}
@@ -125,19 +80,10 @@ func (c *topupStatsStatusCache) SetMonthTopupStatusFailedCache(ctx context.Conte
 	sharedcachehelpers.SetToCache(ctx, c.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTopupStatusFailedCache retrieves cached yearly topup statistics with status "failed".
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the statistics.
-//
-// Returns:
-//   - []*response.TopupResponseYearStatusFailed: List of yearly failed topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsStatusCache) GetYearlyTopupStatusFailedCache(ctx context.Context, year int) ([]*response.TopupResponseYearStatusFailed, bool) {
+func (c *topupStatsStatusCache) GetYearlyTopupStatusFailedCache(ctx context.Context, year int) ([]*db.GetYearlyTopupStatusFailedRow, bool) {
 	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupResponseYearStatusFailed](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTopupStatusFailedRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -145,13 +91,7 @@ func (c *topupStatsStatusCache) GetYearlyTopupStatusFailedCache(ctx context.Cont
 	return *result, true
 }
 
-// SetYearlyTopupStatusFailedCache stores yearly failed topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the data.
-//   - data: The data to cache.
-func (c *topupStatsStatusCache) SetYearlyTopupStatusFailedCache(ctx context.Context, year int, data []*response.TopupResponseYearStatusFailed) {
+func (c *topupStatsStatusCache) SetYearlyTopupStatusFailedCache(ctx context.Context, year int, data []*db.GetYearlyTopupStatusFailedRow) {
 	if data == nil {
 		return
 	}

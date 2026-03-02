@@ -1,11 +1,11 @@
 package transactionstatshandler
 
 import (
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction/stats"
 )
 
 type TransactionStatsAmountHandlerGrpc interface {
-	pb.TransactionsStatsAmountServiceServer
+	pb.TransactionStatsAmountServiceServer
 }
 
 type TransactionStatsMethodHandleGrpc interface {

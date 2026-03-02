@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transferStatsByCardAmountCache struct {
@@ -17,18 +17,9 @@ func NewTransferStatsByCardAmountCache(store *sharedcachehelpers.CacheStore) Tra
 	return &transferStatsByCardAmountCache{store: store}
 }
 
-// GetMonthlyTransferAmountsBySenderCard retrieves cached monthly transfer amounts for a sender card.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains sender card number and year/month filter.
-//
-// Returns:
-//   - []*response.TransferMonthAmountResponse: Monthly transfer amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*response.TransferMonthAmountResponse, bool) {
-	key := fmt.Sprintf(transferMonthTransferAmountByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferMonthAmountResponse](ctx, t.store, key)
+func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*db.GetMonthlyTransferAmountsBySenderCardNumberRow, bool) {
+	key := fmt.Sprintf(transferMonthTransferAmountBySenderCardKey, req.CardNumber, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyTransferAmountsBySenderCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -37,33 +28,18 @@ func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsBySenderCard(c
 	return *result, true
 }
 
-// SetMonthlyTransferAmountsBySenderCard stores monthly transfer amounts for a sender card into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains sender card number and year/month.
-//   - data: List of amounts to cache.
-func (t *transferStatsByCardAmountCache) SetMonthlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*response.TransferMonthAmountResponse) {
+func (t *transferStatsByCardAmountCache) SetMonthlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*db.GetMonthlyTransferAmountsBySenderCardNumberRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(transferMonthTransferAmountByCardKey, req.CardNumber, req.Year)
+	key := fmt.Sprintf(transferMonthTransferAmountBySenderCardKey, req.CardNumber, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetMonthlyTransferAmountsByReceiverCard retrieves cached monthly transfer amounts for a receiver card.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains receiver card number and year/month filter.
-//
-// Returns:
-//   - []*response.TransferMonthAmountResponse: Monthly transfer amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*response.TransferMonthAmountResponse, bool) {
-	key := fmt.Sprintf(transferMonthTransferAmountByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferMonthAmountResponse](ctx, t.store, key)
+func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*db.GetMonthlyTransferAmountsByReceiverCardNumberRow, bool) {
+	key := fmt.Sprintf(transferMonthTransferAmountByReceiverCardKey, req.CardNumber, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyTransferAmountsByReceiverCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -72,33 +48,18 @@ func (t *transferStatsByCardAmountCache) GetMonthlyTransferAmountsByReceiverCard
 	return *result, true
 }
 
-// SetMonthlyTransferAmountsByReceiverCard stores monthly transfer amounts for a receiver card into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains receiver card number and year/month.
-//   - data: List of amounts to cache.
-func (t *transferStatsByCardAmountCache) SetMonthlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*response.TransferMonthAmountResponse) {
+func (t *transferStatsByCardAmountCache) SetMonthlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*db.GetMonthlyTransferAmountsByReceiverCardNumberRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(transferMonthTransferAmountByCardKey, req.CardNumber, req.Year)
+	key := fmt.Sprintf(transferMonthTransferAmountByReceiverCardKey, req.CardNumber, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTransferAmountsBySenderCard retrieves cached yearly transfer amounts for a sender card.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains sender card number and year.
-//
-// Returns:
-//   - []*response.TransferYearAmountResponse: Yearly transfer amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardAmountCache) GetYearlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*response.TransferYearAmountResponse, bool) {
-	key := fmt.Sprintf(transferYearTransferAmountByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferYearAmountResponse](ctx, t.store, key)
+func (t *transferStatsByCardAmountCache) GetYearlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*db.GetYearlyTransferAmountsBySenderCardNumberRow, bool) {
+	key := fmt.Sprintf(transferYearTransferAmountBySenderCardKey, req.CardNumber, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferAmountsBySenderCardNumberRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -107,50 +68,30 @@ func (t *transferStatsByCardAmountCache) GetYearlyTransferAmountsBySenderCard(ct
 	return *result, true
 }
 
-// SetYearlyTransferAmountsBySenderCard stores yearly transfer amounts for a sender card into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains sender card number and year.
-//   - data: List of yearly transfer amounts to cache.
-func (t *transferStatsByCardAmountCache) SetYearlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*response.TransferYearAmountResponse) {
+func (t *transferStatsByCardAmountCache) SetYearlyTransferAmountsBySenderCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*db.GetYearlyTransferAmountsBySenderCardNumberRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(transferYearTransferAmountByCardKey, req.CardNumber, req.Year)
+	key := fmt.Sprintf(transferYearTransferAmountBySenderCardKey, req.CardNumber, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTransferAmountsByReceiverCard retrieves cached yearly transfer amounts for a receiver card.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains receiver card number and year.
-//
-// Returns:
-//   - []*response.TransferYearAmountResponse: Yearly transfer amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transferStatsByCardAmountCache) GetYearlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*response.TransferYearAmountResponse, bool) {
-	key := fmt.Sprintf(transferYearTransferAmountByCardKey, req.CardNumber, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferYearAmountResponse](ctx, t.store, key)
+func (t *transferStatsByCardAmountCache) GetYearlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber) ([]*db.GetYearlyTransferAmountsByReceiverCardNumberRow, bool) {
+	key := fmt.Sprintf(transferYearTransferAmountByReceiverCardKey, req.CardNumber, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferAmountsByReceiverCardNumberRow](ctx, t.store, key)
+
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
-// SetYearlyTransferAmountsByReceiverCard stores yearly transfer amounts for a receiver card into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Contains receiver card number and year.
-//   - data: List of yearly transfer amounts to cache.
-func (t *transferStatsByCardAmountCache) SetYearlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*response.TransferYearAmountResponse) {
+func (t *transferStatsByCardAmountCache) SetYearlyTransferAmountsByReceiverCard(ctx context.Context, req *requests.MonthYearCardNumber, data []*db.GetYearlyTransferAmountsByReceiverCardNumberRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(transferYearTransferAmountByCardKey, req.CardNumber, req.Year)
+	key := fmt.Sprintf(transferYearTransferAmountByReceiverCardKey, req.CardNumber, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }

@@ -5,36 +5,22 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/topup/statsbycard"
 )
 
 type topupStatsByCardStatusRepository struct {
-	db     *db.Queries
-	mapper recordmapper.TopupStatisticStatusByCardNumberMapper
+	db *db.Queries
 }
 
-func NewTopupStatsByCardStatusRepository(db *db.Queries, mapper recordmapper.TopupStatisticStatusByCardNumberMapper) TopupStatsByCardStatusRepository {
+func NewTopupStatsByCardStatusRepository(db *db.Queries) TopupStatsByCardStatusRepository {
 	return &topupStatsByCardStatusRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthTopupStatusSuccessByCardNumber retrieves monthly statistics of successful topups for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing month, year, and card number.
-//
-// Returns:
-//   - []*record.TopupRecordMonthStatusSuccess: List of monthly successful topup records.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthTopupStatusCardNumber) ([]*record.TopupRecordMonthStatusSuccess, error) {
+func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthTopupStatusCardNumber) ([]*db.GetMonthTopupStatusSuccessCardNumberRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
-
 	prevDate := currentDate.AddDate(0, -1, 0)
 
 	lastDayCurrentMonth := currentDate.AddDate(0, 1, -1)
@@ -52,21 +38,10 @@ func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusSuccessByCardNumbe
 		return nil, topup_errors.ErrGetMonthTopupStatusSuccessByCardFailed
 	}
 
-	so := r.mapper.ToTopupRecordsMonthStatusSuccessByCardNumber(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetYearlyTopupStatusSuccessByCardNumber retrieves yearly statistics of successful topups for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TopupRecordYearStatusSuccess: List of yearly successful topup records.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusSuccessByCardNumber(ctx context.Context, req *requests.YearTopupStatusCardNumber) ([]*record.TopupRecordYearStatusSuccess, error) {
+func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusSuccessByCardNumber(ctx context.Context, req *requests.YearTopupStatusCardNumber) ([]*db.GetYearlyTopupStatusSuccessCardNumberRow, error) {
 	res, err := r.db.GetYearlyTopupStatusSuccessCardNumber(ctx, db.GetYearlyTopupStatusSuccessCardNumberParams{
 		CardNumber: req.CardNumber,
 		Column2:    int32(req.Year),
@@ -76,21 +51,10 @@ func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusSuccessByCardNumb
 		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed
 	}
 
-	so := r.mapper.ToTopupRecordsYearStatusSuccessByCardNumber(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetMonthTopupStatusFailedByCardNumber retrieves monthly statistics of failed topups for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing month, year, and card number.
-//
-// Returns:
-//   - []*record.TopupRecordMonthStatusFailed: List of monthly failed topup records.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusFailedByCardNumber(ctx context.Context, req *requests.MonthTopupStatusCardNumber) ([]*record.TopupRecordMonthStatusFailed, error) {
+func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusFailedByCardNumber(ctx context.Context, req *requests.MonthTopupStatusCardNumber) ([]*db.GetMonthTopupStatusFailedCardNumberRow, error) {
 	cardNumber := req.CardNumber
 	year := req.Year
 	month := req.Month
@@ -113,34 +77,18 @@ func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusFailedByCardNumber
 		return nil, topup_errors.ErrGetMonthTopupStatusFailedByCardFailed
 	}
 
-	so := r.mapper.ToTopupRecordsMonthStatusFailedByCardNumber(res)
-
-	return so, nil
+	return res, nil
 }
 
-// GetYearlyTopupStatusFailedByCardNumber retrieves yearly statistics of failed topups for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TopupRecordYearStatusFailed: List of yearly failed topup records.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusFailedByCardNumber(ctx context.Context, req *requests.YearTopupStatusCardNumber) ([]*record.TopupRecordYearStatusFailed, error) {
-	cardNumber := req.CardNumber
-	year := req.Year
-
+func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusFailedByCardNumber(ctx context.Context, req *requests.YearTopupStatusCardNumber) ([]*db.GetYearlyTopupStatusFailedCardNumberRow, error) {
 	res, err := r.db.GetYearlyTopupStatusFailedCardNumber(ctx, db.GetYearlyTopupStatusFailedCardNumberParams{
-		CardNumber: cardNumber,
-		Column2:    int32(year),
+		CardNumber: req.CardNumber,
+		Column2:    int32(req.Year),
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupStatusFailedByCardFailed
+		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed
 	}
 
-	so := r.mapper.ToTopupRecordsYearStatusFailedByCardNumber(res)
-
-	return so, nil
+	return res, nil
 }

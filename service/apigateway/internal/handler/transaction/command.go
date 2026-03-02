@@ -1,8 +1,6 @@
 package transactionhandler
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,19 +8,18 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
 	mencache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis"
+	transaction_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transaction"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transaction"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transaction"
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -36,11 +33,9 @@ type transactionCommandHandleApi struct {
 
 	mapper apimapper.TransactionCommandResponseMapper
 
-	trace trace.Tracer
+	cache transaction_cache.TransactionMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transactionCommandHandleDeps struct {
@@ -55,51 +50,36 @@ type transactionCommandHandleDeps struct {
 	mapper apimapper.TransactionCommandResponseMapper
 
 	cache mencache.MerchantCache
+
+	cache_transaction transaction_cache.TransactionMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTransactionCommandHandleApi(params *transactionCommandHandleDeps) *transactionCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transaction_command_handler_requests_total",
-			Help: "Total number of transaction command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transaction_command_handler_request_duration_seconds",
-			Help:    "Duration of transaction command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transactionCommandHandleApi := &transactionCommandHandleApi{
-		kafka:           params.kafka,
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transaction-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		kafka:      params.kafka,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache_transaction,
+		apiHandler: params.apiHandler,
 	}
 
 	transactionMiddleware := middlewares.NewApiKeyValidator(params.kafka, "request-transaction", "response-transaction", 5*time.Second, params.logger, params.cache)
 
 	routerTransaction := params.router.Group("/api/transaction-command")
 
-	routerTransaction.POST("/create", transactionMiddleware.Middleware()(transactionCommandHandleApi.Create))
-	routerTransaction.POST("/update/:id", transactionMiddleware.Middleware()(transactionCommandHandleApi.Update))
+	routerTransaction.POST("/create", transactionMiddleware.Middleware()(params.apiHandler.Handle("create-transaction", transactionCommandHandleApi.Create)))
+	routerTransaction.POST("/update/:id", transactionMiddleware.Middleware()(params.apiHandler.Handle("update-transaction", transactionCommandHandleApi.Update)))
 
-	routerTransaction.POST("/restore/:id", transactionCommandHandleApi.RestoreTransaction)
-	routerTransaction.POST("/trashed/:id", transactionCommandHandleApi.TrashedTransaction)
-	routerTransaction.DELETE("/permanent/:id", transactionCommandHandleApi.DeletePermanent)
+	routerTransaction.POST("/restore/:id", params.apiHandler.Handle("restore-transaction", transactionCommandHandleApi.RestoreTransaction))
+	routerTransaction.POST("/trashed/:id", params.apiHandler.Handle("trash-transaction", transactionCommandHandleApi.TrashedTransaction))
+	routerTransaction.DELETE("/permanent/:id", params.apiHandler.Handle("delete-transaction-permanent", transactionCommandHandleApi.DeletePermanent))
 
-	routerTransaction.POST("/restore/all", transactionCommandHandleApi.RestoreAllTransaction)
-	routerTransaction.POST("/permanent/all", transactionCommandHandleApi.DeleteAllTransactionPermanent)
+	routerTransaction.POST("/restore/all", params.apiHandler.Handle("restore-all-transactions", transactionCommandHandleApi.RestoreAllTransaction))
+	routerTransaction.POST("/permanent/all", params.apiHandler.Handle("delete-all-transactions-permanent", transactionCommandHandleApi.DeleteAllTransactionPermanent))
 
 	return transactionCommandHandleApi
 }
@@ -116,93 +96,41 @@ func NewTransactionCommandHandleApi(params *transactionCommandHandleDeps) *trans
 // @Failure 500 {object} response.ErrorResponse "Failed to create transaction"
 // @Router /api/transaction-command/create [post]
 func (h *transactionCommandHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateTransactionRequest
 
-	apiKeyRaw := c.Get("apiKey")
+	apiKey := c.Get("apiKey").(string)
 
-	if apiKeyRaw == nil {
-		err := errors.New("api key not found")
-
-		logError("Failed to create transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionApiKey(c)
-	}
-
-	apiKey, ok := apiKeyRaw.(string)
-	if !ok || apiKey == "" {
-		err := errors.New("invalid api key")
-
-		logError("Failed to create transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionApiKey(c)
+	if apiKey == "" {
+		return errors.NewBadRequestError("apiKey is required")
 	}
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to create transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiBindCreateTransaction(c)
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to create transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiValidateCreateTransaction(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
-	merchantIDRaw := c.Get("merchant_id")
-	h.logger.Debug("Merchant ID raw", zap.Any("merchantID", merchantIDRaw), zap.String("type", fmt.Sprintf("%T", merchantIDRaw)))
-
-	var merchantID int
-	switch id := merchantIDRaw.(type) {
-	case int:
-		merchantID = id
-	case int32:
-		merchantID = int(id)
-	case int64:
-		merchantID = int(id)
-	case float64:
-		merchantID = int(id)
-	case string:
-		parsed, err := strconv.Atoi(id)
-		if err != nil {
-			h.logger.Error("Failed to parse merchant ID string", zap.String("value", id), zap.Error(err))
-			return echo.NewHTTPError(http.StatusInternalServerError, "Invalid merchant ID format")
-		}
-		merchantID = parsed
-	default:
-		h.logger.Error("Unknown merchant ID type", zap.Any("merchantID", merchantIDRaw))
-		return echo.NewHTTPError(http.StatusInternalServerError, "Unknown merchant ID type")
-	}
-
-	h.logger.Debug("Merchant ID parsed", zap.Int("merchant.id", merchantID))
+	ctx := c.Request().Context()
 
 	res, err := h.client.CreateTransaction(ctx, &pb.CreateTransactionRequest{
 		ApiKey:          apiKey,
 		CardNumber:      body.CardNumber,
 		Amount:          int32(body.Amount),
 		PaymentMethod:   body.PaymentMethod,
-		MerchantId:      int32(merchantID),
+		MerchantId:      int32(*body.MerchantID),
 		TransactionTime: timestamppb.New(body.TransactionTime),
 	})
 
 	if err != nil {
-		logError("Failed to create transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedCreateTransaction(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
 	so := h.mapper.ToApiResponseTransaction(res)
 
-	logSuccess("success create transaction", zap.Bool("success", true))
+	h.cache.SetCachedTransactionCache(ctx, so)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -219,21 +147,10 @@ func (h *transactionCommandHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update transaction"
 // @Router /api/transaction-command/update [post]
 func (h *transactionCommandHandleApi) Update(c echo.Context) error {
-	const method = "Update"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		logError("Failed to update transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionID(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateTransactionRequest
@@ -242,24 +159,19 @@ func (h *transactionCommandHandleApi) Update(c echo.Context) error {
 
 	apiKey, ok := c.Get("apiKey").(string)
 	if !ok {
-		err := errors.New("invalid api key")
-
-		logError("Failed to update transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionApiKey(c)
+		return errors.NewBadRequestError("api-key is required")
 	}
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to update transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiBindUpdateTransaction(c)
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to update transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiValidateUpdateTransaction(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.UpdateTransaction(ctx, &pb.UpdateTransactionRequest{
 		TransactionId:   int32(id),
@@ -272,14 +184,13 @@ func (h *transactionCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to update transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedUpdateTransaction(c)
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseTransaction(res)
 
-	logSuccess("success update transaction", zap.Bool("success", true))
+	h.cache.DeleteTransactionCache(ctx, id)
+	h.cache.SetCachedTransactionCache(ctx, so)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -296,38 +207,27 @@ func (h *transactionCommandHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed transaction"
 // @Router /api/transaction-command/trashed/{id} [post]
 func (h *transactionCommandHandleApi) TrashedTransaction(c echo.Context) error {
-	const method = "TrashedTransaction"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.TrashedTransaction(ctx, &pb.FindByIdTransactionRequest{
 		TransactionId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to trashed transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedTrashTransaction(c)
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseTransactionDeleteAt(res)
 
-	logSuccess("success trashed transaction", zap.Bool("success", true))
+	h.cache.DeleteTransactionCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -344,38 +244,27 @@ func (h *transactionCommandHandleApi) TrashedTransaction(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore transaction:"
 // @Router /api/transaction-command/restore/{id} [post]
 func (h *transactionCommandHandleApi) RestoreTransaction(c echo.Context) error {
-	const method = "RestoreTransaction"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.RestoreTransaction(ctx, &pb.FindByIdTransactionRequest{
 		TransactionId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to restore transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedRestoreTransaction(c)
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseTransaction(res)
+	so := h.mapper.ToApiResponseTransactionDeleteAt(res)
 
-	logSuccess("success restore transaction", zap.Bool("success", true))
+	h.cache.DeleteTransactionCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -392,38 +281,27 @@ func (h *transactionCommandHandleApi) RestoreTransaction(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete transaction:"
 // @Router /api/transaction-command/permanent/{id} [delete]
 func (h *transactionCommandHandleApi) DeletePermanent(c echo.Context) error {
-	const method = "DeletePermanent"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return transaction_errors.ErrApiInvalidTransactionID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.DeleteTransactionPermanent(ctx, &pb.FindByIdTransactionRequest{
 		TransactionId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to delete transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedDeletePermanent(c)
+		return h.handleGrpcError(err, "DeleteTransaction")
 	}
 
 	so := h.mapper.ToApiResponseTransactionDelete(res)
 
-	logSuccess("success delete transaction", zap.Bool("success", true))
+	h.cache.DeleteTransactionCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -439,26 +317,18 @@ func (h *transactionCommandHandleApi) DeletePermanent(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore transaction:"
 // @Router /api/transaction-command/restore/all [post]
 func (h *transactionCommandHandleApi) RestoreAllTransaction(c echo.Context) error {
-	const method = "RestoreAllTransaction"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.RestoreAllTransaction(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to restore all transaction", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedRestoreAllTransactions(c)
+		h.logger.Error("Failed to restore all transaction", zap.Error(err))
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
-	so := h.mapper.ToApiResponseTransactionAll(res)
+	h.logger.Debug("Successfully restored all transaction")
 
-	logSuccess("success restore all transaction", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTransactionAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -474,80 +344,97 @@ func (h *transactionCommandHandleApi) RestoreAllTransaction(c echo.Context) erro
 // @Failure 500 {object} response.ErrorResponse "Failed to delete transaction:"
 // @Router /api/transaction-command/delete/all [post]
 func (h *transactionCommandHandleApi) DeleteAllTransactionPermanent(c echo.Context) error {
-	const method = "DeleteAllTransactionPermanent"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.DeleteAllTransactionPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all transaction permanently", err, zap.Error(err))
+		h.logger.Error("Failed to permanently delete all transaction", zap.Error(err))
 
-		return transaction_errors.ErrApiFailedDeleteAllPermanent(c)
+		return h.handleGrpcError(err, "DeleteAll")
 	}
 
-	so := h.mapper.ToApiResponseTransactionAll(res)
+	h.logger.Debug("Successfully deleted all transaction permanently")
 
-	logSuccess("success delete all transaction", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTransactionAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *transactionCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transactionCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transaction").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transaction already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transaction service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *transactionCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *transactionCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *transactionCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

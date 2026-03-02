@@ -1,4 +1,4 @@
-FROM golang:1.24.4-alpine3.22 AS builder
+FROM golang:1.25.3-alpine3.22 AS builder
 
 WORKDIR /app
 
@@ -26,5 +26,5 @@ RUN chown 1000:1000 ./transfer
 
 USER appuser
 
-EXPOSE 50059 8089
+EXPOSE 50059
 CMD ["./transfer"]

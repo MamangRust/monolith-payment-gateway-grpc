@@ -1,22 +1,20 @@
 package transferhandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
+	transfer_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transfer"
+	pbtransfer "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transfer"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transfer"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type transferStatsAmountHandleApi struct {
@@ -26,11 +24,9 @@ type transferStatsAmountHandleApi struct {
 
 	mapper apimapper.TransferStatsAmountResponseMapper
 
-	trace trace.Tracer
+	cache transfer_cache.TransferMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transferStatsAmountHandleDeps struct {
@@ -41,53 +37,37 @@ type transferStatsAmountHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransferStatsAmountResponseMapper
+
+	cache transfer_cache.TransferMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTransferStatsAmountHandleApi(params *transferStatsAmountHandleDeps) *transferStatsAmountHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transfer_stats_amount_handler_requests_total",
-			Help: "Total number of transfer stats amount requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transfer_stats_amount_handler_request_duration_seconds",
-			Help:    "Duration of transfer stats amount requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transferStatsAmountHandleApi := &transferStatsAmountHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transfer-stats-amount-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTransfer := params.router.Group("/api/transfer-stats-amount")
 
-	routerTransfer.GET("/monthly-amount", transferStatsAmountHandleApi.FindMonthlyTransferAmounts)
-	routerTransfer.GET("/yearly-amount", transferStatsAmountHandleApi.FindYearlyTransferAmounts)
-
-	routerTransfer.GET("/monthly-by-sender", transferStatsAmountHandleApi.FindMonthlyTransferAmountsBySenderCardNumber)
-	routerTransfer.GET("/monthly-by-receiver", transferStatsAmountHandleApi.FindMonthlyTransferAmountsByReceiverCardNumber)
-	routerTransfer.GET("/yearly-by-sender", transferStatsAmountHandleApi.FindYearlyTransferAmountsBySenderCardNumber)
-	routerTransfer.GET("/yearly-by-receiver", transferStatsAmountHandleApi.FindYearlyTransferAmountsByReceiverCardNumber)
+	routerTransfer.GET("/monthly-amount", params.apiHandler.Handle("find-monthly-transfer-amounts", transferStatsAmountHandleApi.FindMonthlyTransferAmounts))
+	routerTransfer.GET("/yearly-amount", params.apiHandler.Handle("find-yearly-transfer-amounts", transferStatsAmountHandleApi.FindYearlyTransferAmounts))
+	routerTransfer.GET("/monthly-by-sender", params.apiHandler.Handle("find-monthly-transfer-amounts-by-sender", transferStatsAmountHandleApi.FindMonthlyTransferAmountsBySenderCardNumber))
+	routerTransfer.GET("/monthly-by-receiver", params.apiHandler.Handle("find-monthly-transfer-amounts-by-receiver", transferStatsAmountHandleApi.FindMonthlyTransferAmountsByReceiverCardNumber))
+	routerTransfer.GET("/yearly-by-sender", params.apiHandler.Handle("find-yearly-transfer-amounts-by-sender", transferStatsAmountHandleApi.FindYearlyTransferAmountsBySenderCardNumber))
+	routerTransfer.GET("/yearly-by-receiver", params.apiHandler.Handle("find-yearly-transfer-amounts-by-receiver", transferStatsAmountHandleApi.FindYearlyTransferAmountsByReceiverCardNumber))
 
 	return transferStatsAmountHandleApi
 }
 
 // FindMonthlyTransferAmounts retrieves the monthly transfer amounts for a specific year.
 // @Summary Get monthly transfer amounts
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the monthly transfer amounts for a specific year.
 // @Accept json
@@ -98,40 +78,36 @@ func NewTransferStatsAmountHandleApi(params *transferStatsAmountHandleDeps) *tra
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transfer amounts"
 // @Router /api/transfer-stats-amount/monthly-amounts [get]
 func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmounts(c echo.Context) error {
-	const method = "FindMonthlyTransferAmounts"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
 	}
 
-	res, err := h.client.FindMonthlyTransferAmounts(ctx, &pb.FindYearTransferStatus{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetCachedMonthTransferAmounts(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	res, err := h.client.FindMonthlyTransferAmounts(ctx, &pbtransfer.FindYearTransferStatus{
 		Year: int32(year),
 	})
 	if err != nil {
-		logError("Failed to retrieve monthly transfer amounts", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindMonthlyTransferAmounts(c)
+		h.logger.Debug("Failed to retrieve monthly transfer amounts", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransferAmounts")
 	}
 
-	so := h.mapper.ToApiResponseTransferMonthAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
+	h.cache.SetCachedMonthTransferAmounts(ctx, year, apiResponse)
 
-	logSuccess("Successfully retrieved monthly transfer amounts", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransferAmounts retrieves the yearly transfer amounts for a specific year.
 // @Summary Get yearly transfer amounts
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the yearly transfer amounts for a specific year.
 // @Accept json
@@ -142,41 +118,36 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmounts(c echo.Context
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transfer amounts"
 // @Router /api/transfer-stats-amount/yearly-amounts [get]
 func (h *transferStatsAmountHandleApi) FindYearlyTransferAmounts(c echo.Context) error {
-	const method = "FindYearlyTransferAmounts"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetCachedYearlyTransferAmounts(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransferAmounts(ctx, &pb.FindYearTransferStatus{
+	res, err := h.client.FindYearlyTransferAmounts(ctx, &pbtransfer.FindYearTransferStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly transfer amounts", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindYearlyTransferAmounts(c)
+		h.logger.Debug("Failed to retrieve yearly transfer amounts", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransferAmounts")
 	}
 
-	so := h.mapper.ToApiResponseTransferYearAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
+	h.cache.SetCachedYearlyTransferAmounts(ctx, year, apiResponse)
 
-	logSuccess("Successfully retrieved yearly transfer amounts", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTransferAmountsBySenderCardNumber retrieves the monthly transfer amounts for a specific sender card number and year.
 // @Summary Get monthly transfer amounts by sender card number
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the monthly transfer amounts for a specific sender card number and year.
 // @Accept json
@@ -188,48 +159,48 @@ func (h *transferStatsAmountHandleApi) FindYearlyTransferAmounts(c echo.Context)
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transfer amounts by sender card number"
 // @Router /api/transfer-stats-amount/monthly-amounts-by-sender-card [get]
 func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsBySenderCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTransferAmountsBySenderCardNumber"
+	cardNumber := c.QueryParam("card_number")
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyTransferAmountsBySenderCard(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTransferAmountsBySenderCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
+	res, err := h.client.FindMonthlyTransferAmountsBySenderCardNumber(ctx, &pbtransfer.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly transfer amounts by sender card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindMonthlyTransferAmountsBySenderCardNumber(c)
+		h.logger.Debug("Failed to retrieve monthly transfer amounts by sender card number", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransferAmountsBySenderCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransferMonthAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
+	h.cache.SetMonthlyTransferAmountsBySenderCard(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved monthly transfer amounts by sender card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTransferAmountsByReceiverCardNumber retrieves the monthly transfer amounts for a specific receiver card number and year.
 // @Summary Get monthly transfer amounts by receiver card number
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the monthly transfer amounts for a specific receiver card number and year.
 // @Accept json
@@ -241,48 +212,48 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsBySenderCardNum
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transfer amounts by receiver card number"
 // @Router /api/transfer-stats-amount/monthly-amounts-by-receiver-card [get]
 func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsByReceiverCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTransferAmountsByReceiverCardNumber"
+	cardNumber := c.QueryParam("card_number")
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyTransferAmountsByReceiverCard(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTransferAmountsByReceiverCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
+	res, err := h.client.FindMonthlyTransferAmountsByReceiverCardNumber(ctx, &pbtransfer.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly transfer amounts by receiver card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindMonthlyTransferAmountsByReceiverCardNumber(c)
+		h.logger.Debug("Failed to retrieve monthly transfer amounts by receiver card number", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransferAmountsByReceiverCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransferMonthAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
+	h.cache.SetMonthlyTransferAmountsByReceiverCard(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved monthly transfer amounts by receiver card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransferAmountsBySenderCardNumber retrieves the yearly transfer amounts for a specific sender card number and year.
 // @Summary Get yearly transfer amounts by sender card number
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the yearly transfer amounts for a specific sender card number and year.
 // @Accept json
@@ -294,48 +265,48 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsByReceiverCardN
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transfer amounts by sender card number"
 // @Router /api/transfer-stats-amount/yearly-amounts-by-sender-card [get]
 func (h *transferStatsAmountHandleApi) FindYearlyTransferAmountsBySenderCardNumber(c echo.Context) error {
-	const method = "FindYearlyTransferAmountsBySenderCardNumber"
+	cardNumber := c.QueryParam("card_number")
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTransferAmountsBySenderCard(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransferAmountsBySenderCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
+	res, err := h.client.FindYearlyTransferAmountsBySenderCardNumber(ctx, &pbtransfer.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly transfer amounts by sender card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindYearlyTransferAmountsBySenderCardNumber(c)
+		h.logger.Debug("Failed to retrieve yearly transfer amounts by sender card number", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransferAmountsBySenderCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransferYearAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
+	h.cache.SetYearlyTransferAmountsBySenderCard(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved yearly transfer amounts by sender card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransferAmountsByReceiverCardNumber retrieves the yearly transfer amounts for a specific receiver card number and year.
 // @Summary Get yearly transfer amounts by receiver card number
-// @Tags Transfer Stats Amount
+// @Tags Transfer Amount
 // @Security Bearer
 // @Description Retrieve the yearly transfer amounts for a specific receiver card number and year.
 // @Accept json
@@ -347,95 +318,77 @@ func (h *transferStatsAmountHandleApi) FindYearlyTransferAmountsBySenderCardNumb
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transfer amounts by receiver card number"
 // @Router /api/transfer-stats-amount/yearly-amounts-by-receiver-card [get]
 func (h *transferStatsAmountHandleApi) FindYearlyTransferAmountsByReceiverCardNumber(c echo.Context) error {
-	const method = "FindYearlyTransferAmountsByReceiverCardNumber"
+	cardNumber := c.QueryParam("card_number")
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTransferAmountsByReceiverCard(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransferAmountsByReceiverCardNumber(ctx, &pb.FindByCardNumberTransferRequest{
+	res, err := h.client.FindYearlyTransferAmountsByReceiverCardNumber(ctx, &pbtransfer.FindByCardNumberTransferRequest{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly transfer amounts by receiver card number", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedFindYearlyTransferAmountsByReceiverCardNumber(c)
+		h.logger.Debug("Failed to retrieve yearly transfer amounts by receiver card number", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransferAmountsByReceiverCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransferYearAmount(res)
+	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
+	h.cache.SetYearlyTransferAmountsByReceiverCard(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieved yearly transfer amounts by receiver card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *transferStatsAmountHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transferStatsAmountHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transfer").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transfer already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *transferStatsAmountHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

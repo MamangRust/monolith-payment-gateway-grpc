@@ -75,7 +75,7 @@ func (m *merchantKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 		merchant, err := m.merchantService.FindByApiKey(ctx, payload.ApiKey)
 		if err == nil && merchant != nil {
 			resp.Valid = true
-			resp.MerchantID = int64(merchant.ID)
+			resp.MerchantID = int64(merchant.MerchantID)
 		}
 
 		respBytes, _ := json.Marshal(resp)

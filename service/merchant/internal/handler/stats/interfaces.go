@@ -1,17 +1,17 @@
 package merchantstatshandler
 
 import (
-	pbmerchant "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant/stats"
 )
 
 type MerchantStatsAmountHandleGrpc interface {
-	pbmerchant.MerchantStatsAmountServiceServer
+	pb.MerchantStatsAmountServiceServer
 }
 
 type MerchantStatsMethodHandleGrpc interface {
-	pbmerchant.MerchantStatsMethodServiceServer
+	pb.MerchantStatsMethodServiceServer
 }
 
 type MerchantStatsTotalAmountHandleGrpc interface {
-	pbmerchant.MerchantStatsTotalAmountServiceServer
+	pb.MerchantStatsTotalAmountServiceServer
 }

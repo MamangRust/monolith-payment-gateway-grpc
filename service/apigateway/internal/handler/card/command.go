@@ -1,117 +1,75 @@
 package cardhandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
+
+	card_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/card"
+	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"github.com/go-playground/validator/v10"
 
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	cardapierrors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/card"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type cardCommandHandleApi struct {
 	card pb.CardCommandServiceClient
-	// logger provides structured and leveled logging capabilities.
-	logger logger.LoggerInterface
 
-	// mapper transforms gRPC responses into standardized HTTP API responses.
+	logger logger.LoggerInterface
 	mapper apimapper.CardCommandResponseMapper
 
-	// trace is the OpenTelemetry tracer for distributed tracing.
-	trace trace.Tracer
+	cache card_cache.CardMencache
 
-	// requestCounter records the number of HTTP requests handled by this service.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of HTTP request handling in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// cardHandleDeps contains the dependencies required to initialize the card handler.
-//
-// This struct is typically passed to a constructor function to set up routes
-// and initialize the `cardCommandHandleDeps`.
 type cardCommandHandleApiDeps struct {
-	// client is the gRPC CardService client used for communication.
 	client pb.CardCommandServiceClient
 
-	// router is the Echo HTTP router instance used to register endpoints.
 	router *echo.Echo
 
-	// logger is used for logging inside the card handler.
 	logger logger.LoggerInterface
 
-	// mapper provides a way to transform internal gRPC data into HTTP response models.
+	cache card_cache.CardMencache
+
+	apiHandler errors.ApiHandler
+
 	mapper apimapper.CardCommandResponseMapper
 }
 
-// NewCardCommandHandleApi initializes a new instance of cardCommandHandleApi with the provided parameters.
-// It sets up Prometheus metrics for counting and measuring the duration of card command requests.
-//
-// Parameters:
-// - params: A pointer to cardCommandHandleApiDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created cardCommandHandleApi.
 func NewCardCommandHandleApi(params *cardCommandHandleApiDeps) *cardCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "card_command_handler_requests_total",
-			Help: "Total number of Card command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "card_command_handler_request_duration_seconds",
-			Help:    "Duration of Card command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
 	cardHandler := &cardCommandHandleApi{
-		card:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("card-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		card:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	routerCard := params.router.Group("/api/card-command")
 
-	routerCard.POST("/create", cardHandler.CreateCard)
-	routerCard.POST("/update/:id", cardHandler.UpdateCard)
-	routerCard.POST("/trashed/:id", cardHandler.TrashedCard)
-	routerCard.POST("/restore/:id", cardHandler.RestoreCard)
-	routerCard.DELETE("/permanent/:id", cardHandler.DeleteCardPermanent)
-
-	routerCard.POST("/restore/all", cardHandler.RestoreAllCard)
-	routerCard.POST("/permanent/all", cardHandler.DeleteAllCardPermanent)
+	routerCard.POST("/create", params.apiHandler.Handle("create-card", cardHandler.CreateCard))
+	routerCard.POST("/update/:id", params.apiHandler.Handle("update-card", cardHandler.UpdateCard))
+	routerCard.POST("/trashed/:id", params.apiHandler.Handle("trashed-card", cardHandler.TrashedCard))
+	routerCard.POST("/restore/:id", params.apiHandler.Handle("restore-card", cardHandler.RestoreCard))
+	routerCard.DELETE("/permanent/:id", params.apiHandler.Handle("delete-card-permanent", cardHandler.DeleteCardPermanent))
+	routerCard.POST("/restore/all", params.apiHandler.Handle("restore-all-card", cardHandler.RestoreAllCard))
+	routerCard.POST("/permanent/all", params.apiHandler.Handle("delete-all-card-permanent", cardHandler.DeleteAllCardPermanent))
 
 	return cardHandler
 }
 
 // @Security Bearer
 // @Summary Create a new card
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Create a new card for a user
 // @Accept json
 // @Produce json
@@ -119,28 +77,20 @@ func NewCardCommandHandleApi(params *cardCommandHandleApiDeps) *cardCommandHandl
 // @Success 200 {object} response.ApiResponseCard "Created card"
 // @Failure 400 {object} response.ErrorResponse "Bad request or validation error"
 // @Failure 500 {object} response.ErrorResponse "Failed to create card"
-// @Router /api/card/create [post]
+// @Router /api/card-command/create [post]
 func (h *cardCommandHandleApi) CreateCard(c echo.Context) error {
-	const method = "CreateCard"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateCardRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind CreateCard request", err, zap.Error(err))
-		return cardapierrors.ErrApiBindCreateCard(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Validation failed for CreateCard", err, zap.Error(err))
-		return cardapierrors.ErrApiValidateCreateCard(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.CreateCardRequest{
 		UserId:       int32(body.UserID),
@@ -153,20 +103,17 @@ func (h *cardCommandHandleApi) CreateCard(c echo.Context) error {
 	res, err := h.card.CreateCard(ctx, req)
 
 	if err != nil {
-		logError("CreateCard service failed", err)
-		return cardapierrors.ErrApiFailedCreateCard(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
-	response := h.mapper.ToApiResponseCard(res)
+	so := h.mapper.ToApiResponseCard(res)
 
-	logSuccess("Successfully created card", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
 // @Summary Update a card
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Update a card for a user
 // @Accept json
 // @Produce json
@@ -175,41 +122,28 @@ func (h *cardCommandHandleApi) CreateCard(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Updated card"
 // @Failure 400 {object} response.ErrorResponse "Bad request or validation error"
 // @Failure 500 {object} response.ErrorResponse "Failed to update card"
-// @Router /api/card/update/{id} [post]
+// @Router /api/card-command/update/{id} [post]
 func (h *cardCommandHandleApi) UpdateCard(c echo.Context) error {
-	const method = "UpdateCard"
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid card id", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidCardID(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateCardRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateCard request", err, zap.Error(err))
-
-		return cardapierrors.ErrApiBindUpdateCard(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Validation failed for UpdateCard", err, zap.Error(err))
-
-		return cardapierrors.ErrApiValidateUpdateCard(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.UpdateCardRequest{
 		CardId:       int32(idInt),
@@ -223,21 +157,17 @@ func (h *cardCommandHandleApi) UpdateCard(c echo.Context) error {
 	res, err := h.card.UpdateCard(ctx, req)
 
 	if err != nil {
-		logError("UpdateCard service failed", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedUpdateCard(c)
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseCard(res)
-
-	logSuccess("Successfully updated card", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
 // @Summary Trashed a card
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Trashed a card by its ID
 // @Accept json
 // @Produce json
@@ -245,27 +175,17 @@ func (h *cardCommandHandleApi) UpdateCard(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Trashed card"
 // @Failure 400 {object} response.ErrorResponse "Bad request or invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed card"
-// @Router /api/card/trashed/{id} [post]
+// @Router /api/card-command/trashed/{id} [post]
 func (h *cardCommandHandleApi) TrashedCard(c echo.Context) error {
-	const method = "TrashedCard"
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid card id", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidCardID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdCardRequest{
 		CardId: int32(idInt),
@@ -274,21 +194,17 @@ func (h *cardCommandHandleApi) TrashedCard(c echo.Context) error {
 	res, err := h.card.TrashedCard(ctx, req)
 
 	if err != nil {
-		logError("TrashedCard service failed", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedTrashCard(c)
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseCardDeleteAt(res)
-
-	logSuccess("Successfully trashed card", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
 // @Summary Restore a card
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Restore a card by its ID
 // @Accept json
 // @Produce json
@@ -296,27 +212,17 @@ func (h *cardCommandHandleApi) TrashedCard(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCard "Restored card"
 // @Failure 400 {object} response.ErrorResponse "Bad request or invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to restore card"
-// @Router /api/card/restore/{id} [post]
+// @Router /api/card-command/restore/{id} [post]
 func (h *cardCommandHandleApi) RestoreCard(c echo.Context) error {
-	const method = "RestoreCard"
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid card id", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidCardID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdCardRequest{
 		CardId: int32(idInt),
@@ -325,21 +231,17 @@ func (h *cardCommandHandleApi) RestoreCard(c echo.Context) error {
 	res, err := h.card.RestoreCard(ctx, req)
 
 	if err != nil {
-		logError("RestoreCard service failed", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedRestoreCard(c)
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseCard(res)
-
-	logSuccess("Successfully restored card", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseCardDeleteAt(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
 // @Summary Delete a card permanently
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Delete a card by its ID permanently
 // @Accept json
 // @Produce json
@@ -347,27 +249,17 @@ func (h *cardCommandHandleApi) RestoreCard(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseCardDelete "Deleted card"
 // @Failure 400 {object} response.ErrorResponse "Bad request or invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to delete card"
-// @Router /api/card/permanent/{id} [delete]
+// @Router /api/card-command/permanent/{id} [delete]
 func (h *cardCommandHandleApi) DeleteCardPermanent(c echo.Context) error {
-	const method = "DeleteCardPermanent"
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid card id", err, zap.Error(err))
-
-		return cardapierrors.ErrApiInvalidCardID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdCardRequest{
 		CardId: int32(idInt),
@@ -376,140 +268,137 @@ func (h *cardCommandHandleApi) DeleteCardPermanent(c echo.Context) error {
 	res, err := h.card.DeleteCardPermanent(ctx, req)
 
 	if err != nil {
-		logError("Failed to delete card permanently", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedDeleteCardPermanent(c)
+		return h.handleGrpcError(err, "DeleteCard")
 	}
 
 	so := h.mapper.ToApiResponseCardDelete(res)
-
-	logSuccess("Successfully deleted card permanently", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
 // @Summary Restore all card records
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Restore all card records that were previously deleted.
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.ApiResponseCardAll "Successfully restored all card records"
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all card records"
-// @Router /api/card/restore/all [post]
+// @Router /api/card-command/restore/all [post]
 func (h *cardCommandHandleApi) RestoreAllCard(c echo.Context) error {
-	const method = "RestoreAllCard"
-
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	res, err := h.card.RestoreAllCard(ctx, &emptypb.Empty{})
-
 	if err != nil {
-		logError("Failed to restore all cards", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedRestoreAllCard(c)
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
 	h.logger.Debug("Successfully restored all cards")
 
 	so := h.mapper.ToApiResponseCardAll(res)
 
-	logSuccess("Successfully restored all cards", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer.
 // @Summary Permanently delete all card records
-// @Tags Card-Command
+// @Tags Card Command
 // @Description Permanently delete all card records from the database.
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.ApiResponseCardAll "Successfully deleted all card records permanently"
 // @Failure 500 {object} response.ErrorResponse "Failed to permanently delete all card records"
-// @Router /api/card/permanent/all [post]
+// @Router /api/card-command/permanent/all [post]
 func (h *cardCommandHandleApi) DeleteAllCardPermanent(c echo.Context) error {
-	const method = "DeleteAllCardPermanent"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.card.DeleteAllCardPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all cards permanently", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedDeleteAllCardPermanent(c)
+		return h.handleGrpcError(err, "DeleteAll")
 	}
 
-	so := h.mapper.ToApiResponseCardAll(res)
+	h.logger.Debug("Successfully deleted all cards permanently")
 
-	logSuccess("Successfully deleted all cards permanently", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseCardAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *cardCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *cardCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Card").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Card already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *cardCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *cardCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *cardCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

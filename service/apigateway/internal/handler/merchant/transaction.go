@@ -1,22 +1,19 @@
 package merchanthandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	merchant_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/merchant"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/merchant"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -27,11 +24,9 @@ type merchantTransactionHandleApi struct {
 
 	mapper apimapper.MerchantTransactionResponseMapper
 
-	trace trace.Tracer
+	cache merchant_cache.MerchantMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type merchantTransactionHandleDeps struct {
@@ -42,48 +37,34 @@ type merchantTransactionHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.MerchantTransactionResponseMapper
+
+	cache merchant_cache.MerchantMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewMerchantTransactionHandleApi(params *merchantTransactionHandleDeps) *merchantTransactionHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "merchant_transactions_handler_requests_total",
-			Help: "Total number of merchant transactions requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "merchant_transactions_handler_request_duration_seconds",
-			Help:    "Duration of merchant transactions requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	merchantHandler := &merchantTransactionHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("merchant-transactions-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerMerchant := params.router.Group("/api/merchant-transactions")
 
-	routerMerchant.GET("/transactions", merchantHandler.FindAllTransactions)
-	routerMerchant.GET("/transactions/:merchant_id", merchantHandler.FindAllTransactionByMerchant)
-	routerMerchant.GET("/transactions/api-key/:api_key", merchantHandler.FindAllTransactionByApikey)
+	routerMerchant.GET("/transactions", params.apiHandler.Handle("find-all-transactions", merchantHandler.FindAllTransactions))
+	routerMerchant.GET("/transactions/:merchant_id", params.apiHandler.Handle("find-all-transactions-by-merchant", merchantHandler.FindAllTransactionByMerchant))
+	routerMerchant.GET("/transactions/api-key/:api_key", params.apiHandler.Handle("find-all-transactions-by-apikey", merchantHandler.FindAllTransactionByApikey))
+
 	return merchantHandler
 }
 
 // FindAllTransactions godoc
 // @Summary Find all transactions
-// @Tags Merchant
+// @Tags Merchant Transaction
 // @Security Bearer
 // @Description Retrieve a list of all transactions
 // @Accept json
@@ -93,25 +74,32 @@ func NewMerchantTransactionHandleApi(params *merchantTransactionHandleDeps) *mer
 // @Param search query string false "Search query"
 // @Success 200 {object} response.ApiResponsePaginationTransaction "List of transactions"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
-// @Router /api/merchants/transaction [get]
+// @Router /api/merchant-transactions [get]
 func (h *merchantTransactionHandleApi) FindAllTransactions(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllTransactions"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cacheReq := &requests.FindAllMerchantTransactions{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
+	cachedData, found := h.cache.GetCacheAllMerchantTransactions(ctx, cacheReq)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
 	req := &pb.FindAllMerchantRequest{
 		Page:     int32(page),
@@ -122,21 +110,20 @@ func (h *merchantTransactionHandleApi) FindAllTransactions(c echo.Context) error
 	res, err := h.client.FindAllTransactionMerchant(ctx, req)
 
 	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindAllTransactions(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return err
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
 
-	logSuccess("transaction data retrieved successfully", zap.Bool("success", true))
+	h.cache.SetCacheAllMerchantTransactions(ctx, cacheReq, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // FindAllTransactionByMerchant godoc
 // @Summary Find all transactions by merchant ID
-// @Tags Merchant
+// @Tags Merchant Transaction
 // @Security Bearer
 // @Description Retrieve a list of transactions for a specific merchant
 // @Accept json
@@ -147,32 +134,38 @@ func (h *merchantTransactionHandleApi) FindAllTransactions(c echo.Context) error
 // @Param search query string false "Search query"
 // @Success 200 {object} response.ApiResponsePaginationTransaction "List of transactions"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
-// @Router /api/merchant-transactions/:merchant_id [get]
+// @Router /api/merchant-transactionss/:merchant_id [get]
 func (h *merchantTransactionHandleApi) FindAllTransactionByMerchant(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllTransactionByMerchant"
-	)
+	merchantID, err := strconv.Atoi(c.Param("merchant_id"))
+	if err != nil || merchantID <= 0 {
+		return err
+	}
+
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	merchantID, err := strconv.Atoi(c.Param("merchant_id"))
-
-	if err != nil || merchantID <= 0 {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+	cacheReq := &requests.FindAllMerchantTransactionsById{
+		MerchantID: merchantID,
+		Page:       page,
+		PageSize:   pageSize,
+		Search:     search,
 	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
+	cachedData, found := h.cache.GetCacheMerchantTransactions(ctx, cacheReq)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
 	req := &pb.FindAllMerchantTransaction{
 		MerchantId: int32(merchantID),
@@ -184,21 +177,20 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByMerchant(c echo.Conte
 	res, err := h.client.FindAllTransactionByMerchant(ctx, req)
 
 	if err != nil {
-		logError("failed to retrieve transaction data", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindAllTransactionByMerchant(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return err
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
 
-	logSuccess("transaction data retrieved successfully", zap.Bool("success", true))
+	h.cache.SetCacheMerchantTransactions(ctx, cacheReq, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // FindAllTransactionByApikey godoc
 // @Summary Find all transactions by api_key
-// @Tags Merchant
+// @Tags Merchant Transaction
 // @Security Bearer
 // @Description Retrieve a list of transactions for a specific merchant
 // @Accept json
@@ -209,27 +201,35 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByMerchant(c echo.Conte
 // @Param search query string false "Search query"
 // @Success 200 {object} response.ApiResponsePaginationTransaction "List of transactions"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve transaction data"
-// @Router /api/merchant-transactions/api-key/:api_key [get]
+// @Router /api/merchant-transactionss/api-key/:api_key [get]
 func (h *merchantTransactionHandleApi) FindAllTransactionByApikey(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllTransactionByApikey"
-	)
+	api_key := c.Param("api_key")
+
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cacheReq := &requests.FindAllMerchantTransactionsByApiKey{
+		ApiKey:   api_key,
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
-
-	api_key := c.Param("api_key")
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
+	cachedData, found := h.cache.GetCacheMerchantTransactionApikey(ctx, cacheReq)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
 	req := &pb.FindAllMerchantApikey{
 		ApiKey:   api_key,
@@ -241,68 +241,49 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByApikey(c echo.Context
 	res, err := h.client.FindAllTransactionByApikey(ctx, req)
 
 	if err != nil {
-		logError("failed to find all transaction by api key", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindAllTransactionByApikey(c)
+		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
+		return err
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
 
-	logSuccess("transaction retrieved successfully", zap.Bool("success", true))
+	h.cache.SetCacheMerchantTransactionApikey(ctx, cacheReq, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *merchantTransactionHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *merchantTransactionHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Merchant").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Merchant already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *merchantTransactionHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

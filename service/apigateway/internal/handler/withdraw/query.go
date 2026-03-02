@@ -1,24 +1,20 @@
 package withdrawhandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pbhelpers "github.com/MamangRust/monolith-payment-gateway-pb"
+	withdraw_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/withdraw"
+	pbhelpers "github.com/MamangRust/monolith-payment-gateway-pb/card"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	withdraw_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/withdraw"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/withdraw"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type withdrawQueryHandleApi struct {
@@ -28,11 +24,9 @@ type withdrawQueryHandleApi struct {
 
 	mapper apimapper.WithdrawQueryResponseMapper
 
-	trace trace.Tracer
+	cache withdraw_cache.WithdrawMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type withdrawQueryHandleDeps struct {
@@ -43,47 +37,29 @@ type withdrawQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.WithdrawQueryResponseMapper
+
+	cache withdraw_cache.WithdrawMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewWithdrawQueryHandleApi(params *withdrawQueryHandleDeps) *withdrawQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "withdraw_query_handler_requests_total",
-			Help: "Total number of withdraw query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "withdraw_query_handler_request_duration_seconds",
-			Help:    "Duration of withdraw query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	withdrawQueryHandleApi := &withdrawQueryHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("withdraw-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
-	routerWithdraw := params.router.Group("/api/withdraw-query-query")
+	routerWithdraw := params.router.Group("/api/withdraw-query")
 
-	routerWithdraw.GET("", withdrawQueryHandleApi.FindAll)
-	routerWithdraw.GET("/card-number/:card_number", withdrawQueryHandleApi.FindAllByCardNumber)
-	routerWithdraw.GET("/card/:card_number", withdrawQueryHandleApi.FindByCardNumber)
-
-	routerWithdraw.GET("/:id", withdrawQueryHandleApi.FindById)
-
-	routerWithdraw.GET("/active", withdrawQueryHandleApi.FindByActive)
-	routerWithdraw.GET("/trashed", withdrawQueryHandleApi.FindByTrashed)
+	routerWithdraw.GET("", params.apiHandler.Handle("find-all-withdraws", withdrawQueryHandleApi.FindAll))
+	routerWithdraw.GET("/card-number/:card_number", params.apiHandler.Handle("find-all-withdraws-by-card-number", withdrawQueryHandleApi.FindAllByCardNumber))
+	routerWithdraw.GET("/:id", params.apiHandler.Handle("find-withdraw-by-id", withdrawQueryHandleApi.FindById))
+	routerWithdraw.GET("/active", params.apiHandler.Handle("find-active-withdraws", withdrawQueryHandleApi.FindByActive))
+	routerWithdraw.GET("/trashed", params.apiHandler.Handle("find-trashed-withdraws", withdrawQueryHandleApi.FindByTrashed))
 
 	return withdrawQueryHandleApi
 }
@@ -101,43 +77,46 @@ func NewWithdrawQueryHandleApi(params *withdrawQueryHandleDeps) *withdrawQueryHa
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw-query [get]
 func (h *withdrawQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllWithdraws{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedWithdrawsCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllWithdrawRequest{
+	reqGrpc := &pb.FindAllWithdrawRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindAllWithdraw(ctx, req)
-
+	res, err := h.client.FindAllWithdraw(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find all withdraw", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindAllWithdraw(c)
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationWithdraw(res)
+	apiResponse := h.mapper.ToApiResponsePaginationWithdraw(res)
+	h.cache.SetCachedWithdrawsCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find all withdraw", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find all withdraw records by card number
@@ -154,148 +133,53 @@ func (h *withdrawQueryHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw-query/card-number/{card_number} [get]
 func (h *withdrawQueryHandleApi) FindAllByCardNumber(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllByCardNumber"
-	)
+	cardNumber := c.Param("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.FindAllWithdrawCardNumber{
+		CardNumber: cardNumber,
+		Page:       page,
+		PageSize:   pageSize,
+		Search:     search,
 	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
+	cachedData, found := h.cache.GetCachedWithdrawByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	req := &pb.FindAllWithdrawByCardNumberRequest{
+	reqGrpc := &pb.FindAllWithdrawByCardNumberRequest{
 		CardNumber: cardNumber,
 		Page:       int32(page),
 		PageSize:   int32(pageSize),
 		Search:     search,
 	}
 
-	res, err := h.client.FindAllWithdrawByCardNumber(ctx, req)
-
+	res, err := h.client.FindAllWithdrawByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find all withdraw by card number", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindAllWithdrawByCardNumber(c)
+		return h.handleGrpcError(err, "FindAllByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponsePaginationWithdraw(res)
+	apiResponse := h.mapper.ToApiResponsePaginationWithdraw(res)
+	h.cache.SetCachedWithdrawByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find all withdraw by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
-}
-
-// @Summary Retrieve all active withdraw data
-// @Tags Withdraw Query
-// @Security Bearer
-// @Description Retrieve a list of all active withdraw data
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.ApiResponsesWithdraw "List of withdraw data"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
-// @Router /api/withdraw-query-query/active [get]
-func (h *withdrawQueryHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllWithdrawRequest{
-		Page:     int32(page),
-		PageSize: int32(pageSize),
-		Search:   search,
-	}
-
-	res, err := h.client.FindByActive(ctx, req)
-
-	if err != nil {
-		logError("Failed to retrieve withdraw data", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindByActiveWithdraw(c)
-	}
-
-	so := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
-
-	logSuccess("Success retrieve withdraw data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
-}
-
-// @Summary Retrieve trashed withdraw data
-// @Tags Withdraw Query
-// @Security Bearer
-// @Description Retrieve a list of trashed withdraw data
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.ApiResponsesWithdraw "List of trashed withdraw data"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
-// @Router /api/withdraw-query-query/trashed [get]
-func (h *withdrawQueryHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllWithdrawRequest{
-		Page:     int32(page),
-		PageSize: int32(pageSize),
-		Search:   search,
-	}
-
-	res, err := h.client.FindByTrashed(ctx, req)
-
-	if err != nil {
-		logError("Failed to retrieve withdraw data", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindByTrashedWithdraw(c)
-	}
-
-	so := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
-
-	logSuccess("Success retrieve withdraw data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a withdraw by ID
@@ -310,45 +194,35 @@ func (h *withdrawQueryHandleApi) FindByTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw-query/{id} [get]
 func (h *withdrawQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return errors.NewBadRequestError("id is required")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id, err := strconv.Atoi(c.Param("id"))
-
-	if err != nil {
-		logError("failed to retrieve withdraw data", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiWithdrawInvalidID(c)
+	cachedData, found := h.cache.GetCachedWithdrawCache(ctx, id)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindByIdWithdrawRequest{
+	reqGrpc := &pb.FindByIdWithdrawRequest{
 		WithdrawId: int32(id),
 	}
 
-	withdraw, err := h.client.FindByIdWithdraw(ctx, req)
-
+	withdraw, err := h.client.FindByIdWithdraw(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to retrieve withdraw data", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindByIdWithdraw(c)
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseWithdraw(withdraw)
+	apiResponse := h.mapper.ToApiResponseWithdraw(withdraw)
+	h.cache.SetCachedWithdrawCache(ctx, apiResponse)
 
-	logSuccess("success retrieve withdraw data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a withdraw by card number
-// @Tags Withdraw
+// @Tags Withdraw Query
 // @Security Bearer
 // @Description Retrieve a withdraw record using its card number
 // @Accept json
@@ -359,90 +233,163 @@ func (h *withdrawQueryHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
 // @Router /api/withdraw-query/card/{card_number} [get]
 func (h *withdrawQueryHandleApi) FindByCardNumber(c echo.Context) error {
-	const method = "FindByCardNumber"
+	cardNumber := c.QueryParam("card_number")
+
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
-	}
 
 	req := &pbhelpers.FindByCardNumberRequest{
 		CardNumber: cardNumber,
 	}
 
 	withdraw, err := h.client.FindByCardNumber(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve withdraw data", err, zap.Error(err))
-
-		return withdraw_errors.ErrApiFailedFindByCardNumber(c)
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return err
 	}
 
 	so := h.mapper.ToApiResponsesWithdraw(withdraw)
 
-	logSuccess("Success retrieve withdraw data", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *withdrawQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+// @Summary Retrieve all active withdraw data
+// @Tags Withdraw Query
+// @Security Bearer
+// @Description Retrieve a list of all active withdraw data
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.ApiResponsesWithdraw "List of withdraw data"
+// @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
+// @Router /api/withdraw-query/active [get]
+func (h *withdrawQueryHandleApi) FindByActive(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
-
-	status := "success"
-
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
 	}
 
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
+	search := c.QueryParam("search")
+
+	ctx := c.Request().Context()
+
+	reqCache := &requests.FindAllWithdraws{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
 	}
 
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
+	cachedData, found := h.cache.GetCachedWithdrawActiveCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	return end, logSuccess, logError
+	reqGrpc := &pb.FindAllWithdrawRequest{
+		Page:     int32(page),
+		PageSize: int32(pageSize),
+		Search:   search,
+	}
+
+	res, err := h.client.FindByActive(ctx, reqGrpc)
+	if err != nil {
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return err
+	}
+
+	apiResponse := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
+	h.cache.SetCachedWithdrawActiveCache(ctx, reqCache, apiResponse)
+
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *withdrawQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+// @Summary Retrieve trashed withdraw data
+// @Tags Withdraw Query
+// @Security Bearer
+// @Description Retrieve a list of trashed withdraw data
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.ApiResponsesWithdraw "List of trashed withdraw data"
+// @Failure 500 {object} response.ErrorResponse "Failed to retrieve withdraw data"
+// @Router /api/withdraw-query/trashed [get]
+func (h *withdrawQueryHandleApi) FindByTrashed(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
+
+	ctx := c.Request().Context()
+
+	reqCache := &requests.FindAllWithdraws{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
+
+	cachedData, found := h.cache.GetCachedWithdrawTrashedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pb.FindAllWithdrawRequest{
+		Page:     int32(page),
+		PageSize: int32(pageSize),
+		Search:   search,
+	}
+
+	res, err := h.client.FindByTrashed(ctx, reqGrpc)
+	if err != nil {
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return err
+	}
+
+	apiResponse := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
+	h.cache.SetCachedWithdrawTrashedCache(ctx, reqCache, apiResponse)
+
+	return c.JSON(http.StatusOK, apiResponse)
+}
+
+func (h *withdrawQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
+	}
+
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Withdraw").WithInternal(err)
+
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Withdraw already exists").WithInternal(err)
+
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Withdraw service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
+	}
 }

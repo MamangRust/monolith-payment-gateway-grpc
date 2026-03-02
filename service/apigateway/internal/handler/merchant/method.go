@@ -1,116 +1,72 @@
 package merchanthandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
+	merchant_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/merchant"
+	pbmerchant "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/merchant"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type merchantStatsMethodHandleApi struct {
-	// client is the client for the merchant stats method service.
 	client pb.MerchantStatsMethodServiceClient
 
-	// router is the router for the merchant stats method handler.
 	logger logger.LoggerInterface
 
-	// mapper is the mapper for the merchant stats method response.
 	mapper apimapper.MerchantStatsMethodResponseMapper
 
-	// trace is the tracer for the merchant stats method handler.
-	trace trace.Tracer
+	cache merchant_cache.MerchantMencache
 
-	// requestCounter is the counter for the merchant stats method handler.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration is the duration for the merchant stats method handler.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// merchantStatsMethodHandleDeps is a struct that holds the necessary dependencies for the merchantStatsMethodHandleApi.
 type merchantStatsMethodHandleDeps struct {
-	// client is the client for the merchant stats method service.
 	client pb.MerchantStatsMethodServiceClient
 
-	// router is the router for the merchant stats method handler.
 	router *echo.Echo
 
-	// logger is the logger for the merchant stats method handler.
 	logger logger.LoggerInterface
 
-	// mapper is the mapper for the merchant stats method response.
 	mapper apimapper.MerchantStatsMethodResponseMapper
+
+	cache merchant_cache.MerchantMencache
+
+	apiHandler errors.ApiHandler
 }
 
-// NewMerchantStatsMethodHandleApi initializes a new merchantStatsMethodHandleApi and sets up the routes for merchant stats method-related operations.
-//
-// This function registers various HTTP endpoints related to merchant statistics method management, including retrieval of monthly and yearly transaction methods.
-// It also collects Prometheus metrics for tracking the number of requests and their durations, helping to monitor the performance and reliability of the handler.
-// The routes are grouped under "/api/merchant-stats-method".
-//
-// Parameters:
-// - params: A pointer to merchantStatsMethodHandleDeps containing the necessary dependencies such as router, logger, client, and mapper.
-//
-// Returns:
-// - A pointer to a newly created merchantStatsMethodHandleApi.
 func NewMerchantStatsMethodHandleApi(params *merchantStatsMethodHandleDeps) *merchantStatsMethodHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "merchant_stats_method_handler_requests_total",
-			Help: "Total number of merchant stats amount requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "merchant_stats_method_handler_request_duration_seconds",
-			Help:    "Duration of merchant stats amount requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	merchantHandler := &merchantStatsMethodHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("merchant-stats-amount-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		apiHandler: params.apiHandler,
+		cache:      params.cache,
 	}
 
-	routerMerchant := params.router.Group("/api/merchant-stats-amount")
+	routerMerchant := params.router.Group("/api/merchant-stats-method")
 
-	routerMerchant.GET("/monthly-payment-methods", merchantHandler.FindMonthlyPaymentMethodsMerchant)
-	routerMerchant.GET("/yearly-payment-methods", merchantHandler.FindYearlyPaymentMethodMerchant)
+	routerMerchant.GET("/monthly-payment-methods", params.apiHandler.Handle("find-monthly-payment-methods", merchantHandler.FindMonthlyPaymentMethodsMerchant))
+	routerMerchant.GET("/yearly-payment-methods", params.apiHandler.Handle("find-yearly-payment-methods", merchantHandler.FindYearlyPaymentMethodMerchant))
 
-	routerMerchant.GET("/monthly-payment-methods-by-merchant", merchantHandler.FindMonthlyPaymentMethodByMerchants)
-	routerMerchant.GET("/yearly-payment-methods-by-merchant", merchantHandler.FindYearlyPaymentMethodByMerchants)
-	routerMerchant.GET("/monthly-payment-methods-by-apikey", merchantHandler.FindMonthlyPaymentMethodByApikeys)
-	routerMerchant.GET("/yearly-payment-methods-by-apikey", merchantHandler.FindYearlyPaymentMethodByApikeys)
-
+	routerMerchant.GET("/monthly-payment-methods-by-merchant", params.apiHandler.Handle("find-monthly-payment-methods-by-merchant", merchantHandler.FindMonthlyPaymentMethodByMerchants))
+	routerMerchant.GET("/yearly-payment-methods-by-merchant", params.apiHandler.Handle("find-yearly-payment-methods-by-merchant", merchantHandler.FindYearlyPaymentMethodByMerchants))
+	routerMerchant.GET("/monthly-payment-methods-by-apikey", params.apiHandler.Handle("find-monthly-payment-methods-by-apikey", merchantHandler.FindMonthlyPaymentMethodByApikeys))
+	routerMerchant.GET("/yearly-payment-methods-by-apikey", params.apiHandler.Handle("find-yearly-payment-methods-by-apikey", merchantHandler.FindYearlyPaymentMethodByApikeys))
 	return merchantHandler
 }
 
 // FindMonthlyPaymentMethodsMerchant godoc
 // @Summary Find monthly payment methods for a merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve monthly payment methods for a merchant by year.
 // @Accept json
@@ -119,45 +75,39 @@ func NewMerchantStatsMethodHandleApi(params *merchantStatsMethodHandleDeps) *mer
 // @Success 200 {object} response.ApiResponseMerchantMonthlyPaymentMethod "Monthly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly payment methods"
-// @Router /api/merchant-stats-amount/monthly-payment-methods [get]
+// @Router /api/merchant-stats-method/monthly-payment-methods [get]
 func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodsMerchant(c echo.Context) error {
-	const method = "FindMonthlyPaymentMethodsMerchant"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
 	}
 
-	req := &pb.FindYearMerchant{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetMonthlyPaymentMethodsMerchantCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	req := &pbmerchant.FindYearMerchant{
 		Year: int32(year),
 	}
 
 	res, err := h.client.FindMonthlyPaymentMethodsMerchant(ctx, req)
-
 	if err != nil {
-		logError("failed to retrieve monthly payment methods", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodsMerchant(c)
+		return h.handleGrpcError(err, "FindMonthlyPaymentMethodsMerchant")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	h.cache.SetMonthlyPaymentMethodsMerchantCache(ctx, year, apiResponse)
 
-	logSuccess("monthly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyPaymentMethodMerchant godoc.
 // @Summary Find yearly payment methods for a merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve yearly payment methods for a merchant by year.
 // @Accept json
@@ -166,45 +116,39 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodsMerchant(c echo.
 // @Success 200 {object} response.ApiResponseMerchantYearlyPaymentMethod "Yearly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly payment methods"
-// @Router /api/merchant-stats-amount/yearly-payment-methods [get]
+// @Router /api/merchant-stats-method/monthly-amount [get]
 func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodMerchant(c echo.Context) error {
-	const method = "FindYearlyPaymentMethodMerchant"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
 	}
 
-	req := &pb.FindYearMerchant{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetYearlyPaymentMethodMerchantCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	req := &pbmerchant.FindYearMerchant{
 		Year: int32(year),
 	}
 
 	res, err := h.client.FindYearlyPaymentMethodMerchant(ctx, req)
-
 	if err != nil {
-		logError("failed to retrieve yearly payment methods", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodMerchant(c)
+		return h.handleGrpcError(err, "FindYearlyPaymentMethodMerchant")
 	}
 
-	so := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	h.cache.SetYearlyPaymentMethodMerchantCache(ctx, year, apiResponse)
 
-	logSuccess("yearly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyPaymentMethodByMerchants godoc.
 // @Summary Find monthly payment methods for a specific merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve monthly payment methods for a specific merchant by year.
 // @Accept json
@@ -214,56 +158,52 @@ func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodMerchant(c echo.Co
 // @Success 200 {object} response.ApiResponseMerchantMonthlyPaymentMethod "Monthly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly payment methods"
-// @Router /api/merchant-stats-amount/monthly-payment-methods-by-merchant [get]
+// @Router /api/merchant-stats-method/monthly-payment-methods-by-merchant [get]
 func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByMerchants(c echo.Context) error {
-	const method = "FindMonthlyPaymentMethodByMerchants"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	merchantIDStr := c.QueryParam("merchant_id")
+	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
-
 	if err != nil || merchantID <= 0 {
-		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("merchant_id is required and must be a positive integer")
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
 	}
 
-	req := &pb.FindYearMerchantById{
+	ctx := c.Request().Context()
+
+	reqCache := &requests.MonthYearPaymentMethodMerchant{
+		MerchantID: merchantID,
+		Year:       year,
+	}
+
+	cachedData, found := h.cache.GetMonthlyPaymentMethodByMerchantsCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbmerchant.FindYearMerchantById{
 		MerchantId: int32(merchantID),
 		Year:       int32(year),
 	}
 
-	res, err := h.client.FindMonthlyPaymentMethodByMerchants(ctx, req)
-
+	res, err := h.client.FindMonthlyPaymentMethodByMerchants(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodByMerchants(c)
+		return h.handleGrpcError(err, "FindMonthlyPaymentMethodByMerchants")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	h.cache.SetMonthlyPaymentMethodByMerchantsCache(ctx, reqCache, apiResponse)
 
-	logSuccess("monthly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyPaymentMethodByMerchants godoc.
 // @Summary Find yearly payment methods for a specific merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve yearly payment methods for a specific merchant by year.
 // @Accept json
@@ -273,55 +213,52 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByMerchants(c ech
 // @Success 200 {object} response.ApiResponseMerchantYearlyPaymentMethod "Yearly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly payment methods"
-// @Router /api/merchant-stats-amount/yearly-payment-methods-by-merchant [get]
+// @Router /api/merchant-stats-method/yearly-payment-methods-by-merchant [get]
 func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodByMerchants(c echo.Context) error {
-	const method = "FindYearlyPaymentMethodByMerchants"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	merchantIDStr := c.QueryParam("merchant_id")
+	yearStr := c.QueryParam("year")
 
 	merchantID, err := strconv.Atoi(merchantIDStr)
 	if err != nil || merchantID <= 0 {
-		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("merchant_id is required and must be a positive integer")
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
 	}
 
-	req := &pb.FindYearMerchantById{
+	ctx := c.Request().Context()
+
+	reqCache := &requests.MonthYearPaymentMethodMerchant{
+		MerchantID: merchantID,
+		Year:       year,
+	}
+
+	cachedData, found := h.cache.GetYearlyPaymentMethodByMerchantsCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbmerchant.FindYearMerchantById{
 		MerchantId: int32(merchantID),
 		Year:       int32(year),
 	}
 
-	res, err := h.client.FindYearlyPaymentMethodByMerchants(ctx, req)
-
+	res, err := h.client.FindYearlyPaymentMethodByMerchants(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodByMerchants(c)
+		return h.handleGrpcError(err, "FindYearlyPaymentMethodByMerchants")
 	}
 
-	so := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	h.cache.SetYearlyPaymentMethodByMerchantsCache(ctx, reqCache, apiResponse)
 
-	logSuccess("yearly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyPaymentMethodByApikeys godoc.
 // @Summary Find monthly payment methods for a specific merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve monthly payment methods for a specific merchant by year.
 // @Accept json
@@ -331,48 +268,51 @@ func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodByMerchants(c echo
 // @Success 200 {object} response.ApiResponseMerchantMonthlyPaymentMethod "Monthly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly payment methods"
-// @Router /api/merchant-stats-amount/monthly-payment-methods-by-apikey [get]
+// @Router /api/merchant-stats-method/monthly-payment-methods-by-apikey [get]
 func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByApikeys(c echo.Context) error {
-	const method = "FindMonthlyPaymentMethodByApikeys"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	api_key := c.QueryParam("api_key")
+	yearStr := c.QueryParam("year")
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	if api_key == "" {
+		return errors.NewBadRequestError("api_key is required")
 	}
 
-	req := &pb.FindYearMerchantByApikey{
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	ctx := c.Request().Context()
+
+	reqCache := &requests.MonthYearPaymentMethodApiKey{
+		Apikey: api_key,
+		Year:   year,
+	}
+
+	cachedData, found := h.cache.GetMonthlyPaymentMethodByApikeysCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbmerchant.FindYearMerchantByApikey{
 		ApiKey: api_key,
 		Year:   int32(year),
 	}
 
-	res, err := h.client.FindMonthlyPaymentMethodByApikey(ctx, req)
-
+	res, err := h.client.FindMonthlyPaymentMethodByApikey(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find monthly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindMonthlyPaymentMethodsMerchant(c)
+		return h.handleGrpcError(err, "FindMonthlyPaymentMethodByApikey")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
+	h.cache.SetMonthlyPaymentMethodByApikeysCache(ctx, reqCache, apiResponse)
 
-	logSuccess("monthly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyPaymentMethodByApikeys godoc.
 // @Summary Find yearly payment methods for a specific merchant
-// @Tags Merchant
+// @Tags Merchant Stats Method
 // @Security Bearer
 // @Description Retrieve yearly payment methods for a specific merchant by year.
 // @Accept json
@@ -382,95 +322,80 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByApikeys(c echo.
 // @Success 200 {object} response.ApiResponseMerchantYearlyPaymentMethod "Yearly payment methods"
 // @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly payment methods"
-// @Router /api/merchant-stats-amount/yearly-payment-methods-by-apikey [get]
+// @Router /api/merchant-stats-method/yearly-payment-methods-by-apikey [get]
 func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodByApikeys(c echo.Context) error {
-	const method = "FindYearlyPaymentMethodByApikeys"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	api_key := c.QueryParam("api_key")
+	yearStr := c.QueryParam("year")
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	if api_key == "" {
+		return errors.NewBadRequestError("api_key is required")
 	}
 
-	req := &pb.FindYearMerchantByApikey{
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	ctx := c.Request().Context()
+
+	reqCache := &requests.MonthYearPaymentMethodApiKey{
+		Apikey: api_key,
+		Year:   year,
+	}
+
+	cachedData, found := h.cache.GetYearlyPaymentMethodByApikeysCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbmerchant.FindYearMerchantByApikey{
 		ApiKey: api_key,
 		Year:   int32(year),
 	}
 
-	res, err := h.client.FindYearlyPaymentMethodByApikey(ctx, req)
-
+	res, err := h.client.FindYearlyPaymentMethodByApikey(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find yearly payment methods by merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedFindYearlyPaymentMethodMerchant(c)
+		return h.handleGrpcError(err, "FindYearlyPaymentMethodByApikey")
 	}
 
-	so := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
+	h.cache.SetYearlyPaymentMethodByApikeysCache(ctx, reqCache, apiResponse)
 
-	logSuccess("yearly payment methods retrieved successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *merchantStatsMethodHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *merchantStatsMethodHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Merchant").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Merchant already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *merchantStatsMethodHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

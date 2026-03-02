@@ -5,34 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/topup/statsbycard"
 )
 
 type topupStatsByCardAmountRepository struct {
-	db     *db.Queries
-	mapper recordmapper.TopupStatisticAmountByCardNumberMapper
+	db *db.Queries
 }
 
-func NewTopupStatsByCardAmountRepository(db *db.Queries, mapper recordmapper.TopupStatisticAmountByCardNumberMapper) TopupStatsByCardAmountRepository {
+func NewTopupStatsByCardAmountRepository(db *db.Queries) TopupStatsByCardAmountRepository {
 	return &topupStatsByCardAmountRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthlyTopupAmountsByCardNumber retrieves monthly topup amount statistics for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TopupMonthAmount: List of monthly topup amount data.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardAmountRepository) GetMonthlyTopupAmountsByCardNumber(ctx context.Context, req *requests.YearMonthMethod) ([]*record.TopupMonthAmount, error) {
+func (r *topupStatsByCardAmountRepository) GetMonthlyTopupAmountsByCardNumber(ctx context.Context, req *requests.YearMonthMethod) ([]*db.GetMonthlyTopupAmountsByCardNumberRow, error) {
 	year := req.Year
 	cardNumber := req.CardNumber
 
@@ -47,19 +34,10 @@ func (r *topupStatsByCardAmountRepository) GetMonthlyTopupAmountsByCardNumber(ct
 		return nil, topup_errors.ErrGetMonthlyTopupAmountsByCardFailed
 	}
 
-	return r.mapper.ToTopupMonthlyAmountsByCardNumber(res), nil
+	return res, nil
 }
 
-// GetYearlyTopupAmountsByCardNumber retrieves yearly topup amount statistics for a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TopupYearlyAmount: List of yearly topup amount data.
-//   - error: Error if the query fails.
-func (r *topupStatsByCardAmountRepository) GetYearlyTopupAmountsByCardNumber(ctx context.Context, req *requests.YearMonthMethod) ([]*record.TopupYearlyAmount, error) {
+func (r *topupStatsByCardAmountRepository) GetYearlyTopupAmountsByCardNumber(ctx context.Context, req *requests.YearMonthMethod) ([]*db.GetYearlyTopupAmountsByCardNumberRow, error) {
 	year := req.Year
 	cardNumber := req.CardNumber
 
@@ -72,5 +50,5 @@ func (r *topupStatsByCardAmountRepository) GetYearlyTopupAmountsByCardNumber(ctx
 		return nil, topup_errors.ErrGetYearlyTopupAmountsByCardFailed
 	}
 
-	return r.mapper.ToTopupYearlyAmountsByCardNumber(res), nil
+	return res, nil
 }

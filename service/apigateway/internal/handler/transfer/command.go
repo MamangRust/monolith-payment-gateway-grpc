@@ -1,23 +1,21 @@
 package transferhandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
+	transfer_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transfer"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transfer"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transfer"
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -28,11 +26,9 @@ type transferCommandHandleApi struct {
 
 	mapper apimapper.TransferCommandResponseMapper
 
-	trace trace.Tracer
+	cache transfer_cache.TransferMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transferCommandHandleDeps struct {
@@ -43,47 +39,32 @@ type transferCommandHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransferCommandResponseMapper
+
+	cache transfer_cache.TransferMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTransferCommandHandleApi(params *transferCommandHandleDeps) *transferCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transfer_command_handler_requests_total",
-			Help: "Total number of transfer command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transfer_command_handler_request_duration_seconds",
-			Help:    "Duration of transfer command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transferCommandHandleApi := &transferCommandHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transfer-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTransfer := params.router.Group("/api/transfer-command")
 
-	routerTransfer.POST("/create", transferCommandHandleApi.CreateTransfer)
-	routerTransfer.POST("/update/:id", transferCommandHandleApi.UpdateTransfer)
-	routerTransfer.POST("/trashed/:id", transferCommandHandleApi.TrashTransfer)
-	routerTransfer.POST("/restore/:id", transferCommandHandleApi.RestoreTransfer)
-	routerTransfer.DELETE("/permanent/:id", transferCommandHandleApi.DeleteTransferPermanent)
+	routerTransfer.POST("/create", params.apiHandler.Handle("create-transfer", transferCommandHandleApi.CreateTransfer))
+	routerTransfer.POST("/update/:id", params.apiHandler.Handle("update-transfer", transferCommandHandleApi.UpdateTransfer))
+	routerTransfer.POST("/trashed/:id", params.apiHandler.Handle("trash-transfer", transferCommandHandleApi.TrashTransfer))
+	routerTransfer.POST("/restore/:id", params.apiHandler.Handle("restore-transfer", transferCommandHandleApi.RestoreTransfer))
+	routerTransfer.DELETE("/permanent/:id", params.apiHandler.Handle("delete-transfer-permanent", transferCommandHandleApi.DeleteTransferPermanent))
 
-	routerTransfer.POST("/restore/all", transferCommandHandleApi.RestoreAllTransfer)
-	routerTransfer.POST("/permanent/all", transferCommandHandleApi.DeleteAllTransferPermanent)
+	routerTransfer.POST("/restore/all", params.apiHandler.Handle("restore-all-transfers", transferCommandHandleApi.RestoreAllTransfer))
+	routerTransfer.POST("/permanent/all", params.apiHandler.Handle("delete-all-transfers-permanent", transferCommandHandleApi.DeleteAllTransferPermanent))
 
 	return transferCommandHandleApi
 }
@@ -100,28 +81,21 @@ func NewTransferCommandHandleApi(params *transferCommandHandleDeps) *transferCom
 // @Failure 500 {object} response.ErrorResponse "Failed to create transfer"
 // @Router /api/transfer-command/create [post]
 func (h *transferCommandHandleApi) CreateTransfer(c echo.Context) error {
-	const method = "CreateTransfer"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateTransferRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind CreateTransfer request", err, zap.Error(err))
+		h.logger.Debug("Invalid request body: ", zap.Error(err))
 
-		return transfer_errors.ErrApiBindCreateTransfer(c)
+		return err
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate CreateTransfer request", err, zap.Error(err))
+		h.logger.Debug("Validation Error: ", zap.Error(err))
 
-		return transfer_errors.ErrApiValidateCreateTransfer(c)
+		return err
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.CreateTransfer(ctx, &pb.CreateTransferRequest{
 		TransferFrom:   body.TransferFrom,
@@ -130,14 +104,14 @@ func (h *transferCommandHandleApi) CreateTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to create transfer", err, zap.Error(err))
+		h.logger.Debug("Failed to create transfer: ", zap.Error(err))
 
-		return transfer_errors.ErrApiFailedCreateTransfer(c)
+		return err
 	}
 
 	so := h.mapper.ToApiResponseTransfer(res)
 
-	logSuccess("Successfully created transfer", zap.Bool("success", true))
+	h.cache.SetCachedTransferCache(ctx, so)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -155,38 +129,30 @@ func (h *transferCommandHandleApi) CreateTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update transfer"
 // @Router /api/transfer-command/update/{id} [post]
 func (h *transferCommandHandleApi) UpdateTransfer(c echo.Context) error {
-	const method = "UpdateTransfer"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return transfer_errors.ErrApiTransferInvalidID(c)
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
+		return err
 	}
 
 	var body requests.UpdateTransferRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateTransfer request", err, zap.Error(err))
+		h.logger.Debug("Invalid request body: ", zap.Error(err))
 
-		return transfer_errors.ErrApiBindUpdateTransfer(c)
+		return err
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate UpdateTransfer request", err, zap.Error(err))
+		h.logger.Debug("Validation Error: ", zap.Error(err))
 
-		return transfer_errors.ErrApiValidateUpdateTransfer(c)
+		return err
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.UpdateTransfer(ctx, &pb.UpdateTransferRequest{
 		TransferId:     int32(idInt),
@@ -196,14 +162,15 @@ func (h *transferCommandHandleApi) UpdateTransfer(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to update transfer", err, zap.Error(err))
+		h.logger.Debug("Failed to update transfer: ", zap.Error(err))
 
-		return transfer_errors.ErrApiFailedUpdateTransfer(c)
+		return err
 	}
 
 	so := h.mapper.ToApiResponseTransfer(res)
 
-	logSuccess("Successfully updated transfer", zap.Bool("success", true))
+	h.cache.DeleteTransferCache(ctx, idInt)
+	h.cache.SetCachedTransferCache(ctx, so)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -220,38 +187,31 @@ func (h *transferCommandHandleApi) UpdateTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed transfer"
 // @Router /api/transfer-command/trash/{id} [post]
 func (h *transferCommandHandleApi) TrashTransfer(c echo.Context) error {
-	const method = "TrashTransfer"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
 
-		return transfer_errors.ErrApiTransferInvalidID(c)
+		return err
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.TrashedTransfer(ctx, &pb.FindByIdTransferRequest{
 		TransferId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to trashed transfer", err, zap.Error(err))
+		h.logger.Debug("Failed to trash transfer: ", zap.Error(err))
 
-		return transfer_errors.ErrApiFailedTrashedTransfer(c)
+		return err
 	}
 
 	so := h.mapper.ToApiResponseTransferDeleteAt(res)
 
-	logSuccess("Successfully trashed transfer", zap.Bool("success", true))
+	h.cache.DeleteTransferCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -268,38 +228,31 @@ func (h *transferCommandHandleApi) TrashTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore transfer:"
 // @Router /api/transfer-command/restore/{id} [post]
 func (h *transferCommandHandleApi) RestoreTransfer(c echo.Context) error {
-	const method = "RestoreTransfer"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
 
-		return transfer_errors.ErrApiTransferInvalidID(c)
+		return err
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.RestoreTransfer(ctx, &pb.FindByIdTransferRequest{
 		TransferId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to restore transfer", err, zap.Error(err))
+		h.logger.Debug("Failed to restore transfer: ", zap.Error(err))
 
-		return transfer_errors.ErrApiFailedRestoreTransfer(c)
+		return err
 	}
 
-	so := h.mapper.ToApiResponseTransfer(res)
+	so := h.mapper.ToApiResponseTransferDeleteAt(res)
 
-	logSuccess("Successfully restored transfer", zap.Bool("success", true))
+	h.cache.DeleteTransferCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -316,38 +269,29 @@ func (h *transferCommandHandleApi) RestoreTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete transfer:"
 // @Router /api/transfer-command/permanent/{id} [delete]
 func (h *transferCommandHandleApi) DeleteTransferPermanent(c echo.Context) error {
-	const method = "DeleteTransferPermanent"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
 
-		return transfer_errors.ErrApiTransferInvalidID(c)
+		return err
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.DeleteTransferPermanent(ctx, &pb.FindByIdTransferRequest{
 		TransferId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to delete transfer", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedDeleteTransferPermanent(c)
+		return err
 	}
 
 	so := h.mapper.ToApiResponseTransferDelete(res)
 
-	logSuccess("Successfully deleted transfer permanently", zap.Bool("success", true))
+	h.cache.DeleteTransferCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -363,26 +307,18 @@ func (h *transferCommandHandleApi) DeleteTransferPermanent(c echo.Context) error
 // @Failure 500 {object} response.ErrorResponse "Failed to restore transfer:"
 // @Router /api/transfer-command/restore/all [post]
 func (h *transferCommandHandleApi) RestoreAllTransfer(c echo.Context) error {
-	const method = "RestoreAllTransfer"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.RestoreAllTransfer(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to restore all transfer", err, zap.Error(err))
-
-		return transfer_errors.ErrApiFailedRestoreAllTransfer(c)
+		h.logger.Error("Failed to restore all transfer", zap.Error(err))
+		return err
 	}
 
-	so := h.mapper.ToApiResponseTransferAll(res)
+	h.logger.Debug("Successfully restored all transfer")
 
-	logSuccess("Successfully restored all transfer", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTransferAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -399,80 +335,97 @@ func (h *transferCommandHandleApi) RestoreAllTransfer(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete transfer:"
 // @Router /api/transfer-command/permanent/all [post]
 func (h *transferCommandHandleApi) DeleteAllTransferPermanent(c echo.Context) error {
-	const method = "DeleteAllTransferPermanent"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.DeleteAllTransferPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all transfer permanently", err, zap.Error(err))
+		h.logger.Error("Failed to permanently delete all transfer", zap.Error(err))
 
-		return transfer_errors.ErrApiFailedDeleteAllTransferPermanent(c)
+		return err
 	}
 
-	so := h.mapper.ToApiResponseTransferAll(res)
+	h.logger.Debug("Successfully deleted all transfer permanently")
 
-	logSuccess("Successfully deleted all transfer permanently", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTransferAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *transferCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transferCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transfer").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transfer already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *transferCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *transferCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *transferCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

@@ -2,353 +2,289 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/service"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/user"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-user/internal/errorhandler"
+
 	mencache "github.com/MamangRust/monolith-payment-gateway-user/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-user/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// UserCommandDeps defines the required dependencies to construct a userCommandService.
+// userCommandDeps defines dependencies for userCommandService.
 type userCommandDeps struct {
-	// Ctx is the context used across the service.
-	Ctx context.Context
-
-	// ErrorHandler handles domain-level errors for user commands.
-	ErrorHandler errorhandler.UserCommandError
-
-	// Cache provides caching capabilities for user command operations.
-	Cache mencache.UserCommandCache
-
-	// UserQueryRepository provides read access to user data.
-	UserQueryRepository repository.UserQueryRepository
-
-	// UserCommandRepository provides write access to user data.
+	Cache                 mencache.UserCommandCache
+	UserQueryRepository   repository.UserQueryRepository
 	UserCommandRepository repository.UserCommandRepository
-
-	// RoleRepository provides access to role data, used during user-role assignment.
-	RoleRepository repository.RoleRepository
-
-	// Logger is used to log service operations and errors.
-	Logger logger.LoggerInterface
-
-	// Mapper maps internal user entities to response models.
-	Mapper responseservice.UserCommandResponseMapper
-
-	// Hashing provides password hashing utilities.
-	Hashing hash.HashPassword
+	RoleRepository        repository.RoleRepository
+	Logger                logger.LoggerInterface
+	Hashing               hash.HashPassword
+	Observability         observability.TraceLoggerObservability
 }
 
-// userCommandService provides operations for creating, updating, and deleting users.
-//
-// It handles business logic related to user modification, including role assignment,
-// password hashing, and interaction with repository, caching, logging, and metrics.
+// userCommandService implements user command operations.
 type userCommandService struct {
-	// errorhandler handles user command-related errors.
-	errorhandler errorhandler.UserCommandError
-
-	// mencache provides caching for user data.
-	mencache mencache.UserCommandCache
-
-	// userQueryRepository is used to query user data for validations.
-	userQueryRepository repository.UserQueryRepository
-
-	// userCommandRepository is used to create, update, or delete user records.
+	cache                 mencache.UserCommandCache
+	userQueryRepository   repository.UserQueryRepository
 	userCommandRepository repository.UserCommandRepository
-
-	// roleRepository is used to retrieve and validate user roles.
-	roleRepository repository.RoleRepository
-
-	// logger is used for logging service activities and errors.
-	logger logger.LoggerInterface
-
-	// mapper maps user entities to API or response DTOs.
-	mapper responseservice.UserCommandResponseMapper
-
-	// hashing provides utilities for hashing and verifying passwords.
-	hashing hash.HashPassword
-
-	observability observability.TraceLoggerObservability
+	roleRepository        repository.RoleRepository
+	logger                logger.LoggerInterface
+	hashing               hash.HashPassword
+	observability         observability.TraceLoggerObservability
 }
 
-// NewUserCommandService initializes a new instance of userCommandService with the provided parameters.
-// It sets up Prometheus metrics for tracking request counts and durations, and returns a configured
-// userCommandService ready for handling user-related command operations.
-//
-// Parameters:
-// - params: A pointer to userCommandDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to an initialized userCommandService.
+// NewUserCommandService creates a new UserCommandService.
 func NewUserCommandService(
 	params *userCommandDeps,
 ) UserCommandService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "user_command_service_requests_total",
-			Help: "Total number of requests to the UserCommandService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "user_command_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the UserCommandService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observabiliy := observability.NewTraceLoggerObservability(
-		otel.Tracer("user-command-service"), params.Logger, requestCounter, requestDuration)
-
 	return &userCommandService{
-		mencache:              params.Cache,
-		errorhandler:          params.ErrorHandler,
+		cache:                 params.Cache,
 		userQueryRepository:   params.UserQueryRepository,
 		userCommandRepository: params.UserCommandRepository,
 		roleRepository:        params.RoleRepository,
 		logger:                params.Logger,
-		mapper:                params.Mapper,
 		hashing:               params.Hashing,
-		observability:         observabiliy,
+		observability:         params.Observability,
 	}
 }
 
-// CreateUser creates a new user with the provided request data.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - request: The user creation request payload.
-//
-// Returns:
-//   - *response.UserResponse: The created user response.
-//   - *response.ErrorResponse: Error response if creation fails.
-func (s *userCommandService) CreateUser(ctx context.Context, request *requests.CreateUserRequest) (*response.UserResponse, *response.ErrorResponse) {
+func (s *userCommandService) CreateUser(ctx context.Context, request *requests.CreateUserRequest) (*db.CreateUserRow, error) {
 	const method = "CreateUser"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("email", request.Email))
 
 	defer func() {
 		end(status)
 	}()
 
+	s.logger.Debug("Creating new user", zap.String("email", request.Email), zap.Any("request", request))
+
 	existingUser, err := s.userQueryRepository.FindByEmail(ctx, request.Email)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER_BY_EMAIL", span, &status, user_errors.ErrUserEmailAlready, zap.Error(err))
-
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.Debug("Email is available, proceeding to create user", zap.String("email", request.Email))
+		} else {
+			status = "error"
+			return errorhandler.HandleError[*db.CreateUserRow](
+				s.logger,
+				user_errors.ErrUserEmailAlready,
+				method,
+				span,
+				zap.String("email", request.Email),
+			)
+		}
 	} else if existingUser != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER_BY_EMAIL", span, &status, user_errors.ErrUserEmailAlready, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.CreateUserRow](
+			s.logger,
+			user_errors.ErrUserEmailAlready,
+			method,
+			span,
+			zap.String("email", request.Email),
+		)
 	}
 
 	hash, err := s.hashing.HashPassword(request.Password)
 	if err != nil {
-		return errorhandler.HandleErrorPasswordOperation[*response.UserResponse](s.logger, err, method, "FAILED_HASH_PASSWORD", span, &status, user_errors.ErrUserPassword, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.CreateUserRow](
+			s.logger,
+			user_errors.ErrUserPassword,
+			method,
+			span,
+		)
 	}
 
 	request.Password = hash
 
-	const defaultRoleName = "Admin Access 1"
-
-	role, err := s.roleRepository.FindByName(ctx, defaultRoleName)
-
-	if err != nil || role == nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_ROLE", span, &status, role_errors.ErrRoleNotFoundRes, zap.Error(err))
-	}
-
 	res, err := s.userCommandRepository.CreateUser(ctx, request)
-
 	if err != nil {
-		return s.errorhandler.HandleCreateUserError(err, method, "FAILED_CREATE_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.CreateUserRow](
+			s.logger,
+			user_errors.ErrFailedCreateUser,
+			method,
+			span,
+		)
 	}
 
-	so := s.mapper.ToUserResponse(res)
+	logSuccess("Successfully created new user", zap.String("email", res.Email), zap.Int("user_id", int(res.UserID)))
 
-	logSuccess("Successfully created user", zap.Int("user.id", res.ID))
-
-	return so, nil
+	return res, nil
 }
 
-// UpdateUser updates an existing user with the provided request data.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - request: The user update request payload.
-//
-// Returns:
-//   - *response.UserResponse: The updated user response.
-//   - *response.ErrorResponse: Error response if update fails.
-func (s *userCommandService) UpdateUser(ctx context.Context, request *requests.UpdateUserRequest) (*response.UserResponse, *response.ErrorResponse) {
+func (s *userCommandService) UpdateUser(ctx context.Context, request *requests.UpdateUserRequest) (*db.UpdateUserRow, error) {
 	const method = "UpdateUser"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user_id", *request.UserID))
 
 	defer func() {
 		end(status)
 	}()
 
-	existingUser, err := s.userQueryRepository.FindById(ctx, *request.UserID)
+	s.logger.Debug("Updating user", zap.Int("user_id", *request.UserID), zap.Any("request", request))
 
+	existingUser, err := s.userQueryRepository.FindById(ctx, *request.UserID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateUserRow](
+			s.logger,
+			user_errors.ErrUserNotFoundRes,
+			method,
+			span,
+
+			zap.Int("user_id", *request.UserID),
+		)
 	}
 
 	if request.Email != "" && request.Email != existingUser.Email {
 		duplicateUser, _ := s.userQueryRepository.FindByEmail(ctx, request.Email)
-
 		if duplicateUser != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_EMAIL_ALREADY", span, &status, user_errors.ErrUserEmailAlready, zap.Error(err))
+			status = "error"
+			return errorhandler.HandleError[*db.UpdateUserRow](
+				s.logger,
+				user_errors.ErrUserEmailAlready,
+				method,
+				span,
+				zap.String("email", request.Email),
+			)
 		}
-
 		existingUser.Email = request.Email
 	}
 
 	if request.Password != "" {
 		hash, err := s.hashing.HashPassword(request.Password)
 		if err != nil {
-			return errorhandler.HandleErrorPasswordOperation[*response.UserResponse](s.logger, err, method, "FAILED_HASH_PASSWORD", span, &status, user_errors.ErrUserPassword, zap.Error(err))
+			status = "error"
+			return errorhandler.HandleError[*db.UpdateUserRow](
+				s.logger,
+				user_errors.ErrUserPassword,
+				method,
+				span,
+			)
 		}
 		existingUser.Password = hash
 	}
 
-	const defaultRoleName = "Admin Access 1"
-
-	role, err := s.roleRepository.FindByName(ctx, defaultRoleName)
-
-	if err != nil || role == nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_ROLE", span, &status, role_errors.ErrRoleNotFoundRes, zap.Error(err))
-	}
-
 	res, err := s.userCommandRepository.UpdateUser(ctx, request)
-
 	if err != nil {
-		return s.errorhandler.HandleUpdateUserError(err, method, "FAILED_UPDATE_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateUserRow](
+			s.logger,
+			user_errors.ErrFailedUpdateUser,
+			method,
+			span,
+
+			zap.Int("user_id", *request.UserID),
+		)
 	}
 
-	so := s.mapper.ToUserResponse(res)
+	logSuccess("Successfully updated user", zap.Int("user_id", int(res.UserID)))
 
-	s.mencache.DeleteUserCache(ctx, so.ID)
-
-	logSuccess("Successfully updated user", zap.Int("user.id", res.ID))
-
-	return so, nil
+	return res, nil
 }
 
-// TrashedUser soft-deletes a user by marking the user as trashed.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - user_id: The ID of the user to be trashed.
-//
-// Returns:
-//   - *response.UserResponseDeleteAt: Response including soft-delete timestamp.
-//   - *response.ErrorResponse: Error response if trash operation fails.
-func (s *userCommandService) TrashedUser(ctx context.Context, user_id int) (*response.UserResponseDeleteAt, *response.ErrorResponse) {
+func (s *userCommandService) TrashedUser(ctx context.Context, user_id int) (*db.TrashUserRow, error) {
 	const method = "TrashedUser"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user_id", user_id))
 
 	defer func() {
 		end(status)
 	}()
+
+	s.logger.Debug("Trashing user", zap.Int("user_id", user_id))
 
 	res, err := s.userCommandRepository.TrashedUser(ctx, user_id)
-
 	if err != nil {
-		return s.errorhandler.HandleTrashedUserError(err, method, "FAILED_TO_TRASH_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.TrashUserRow](
+			s.logger,
+			user_errors.ErrFailedTrashedUser,
+			method,
+			span,
+
+			zap.Int("user_id", user_id),
+		)
 	}
 
-	so := s.mapper.ToUserResponseDeleteAt(res)
+	logSuccess("Successfully trashed user", zap.Int("user_id", user_id))
 
-	s.mencache.DeleteUserCache(ctx, so.ID)
-
-	logSuccess("Successfully trashed user", zap.Int("user.id", user_id))
-
-	return so, nil
+	return res, nil
 }
 
-// RestoreUser restores a previously soft-deleted user.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - user_id: The ID of the user to be restored.
-//
-// Returns:
-//   - *response.UserResponseDeleteAt: Response with restoration details.
-//   - *response.ErrorResponse: Error response if restore fails.
-func (s *userCommandService) RestoreUser(ctx context.Context, user_id int) (*response.UserResponse, *response.ErrorResponse) {
+func (s *userCommandService) RestoreUser(ctx context.Context, user_id int) (*db.RestoreUserRow, error) {
 	const method = "RestoreUser"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user_id", user_id))
 
 	defer func() {
 		end(status)
 	}()
+
+	s.logger.Debug("Restoring user", zap.Int("user_id", user_id))
 
 	res, err := s.userCommandRepository.RestoreUser(ctx, user_id)
-
 	if err != nil {
-		return s.errorhandler.HandleRestoreUserError(err, "RestoreUser", "FAILED_TO_RESTORE_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.RestoreUserRow](
+			s.logger,
+			user_errors.ErrFailedRestoreUser,
+			method,
+			span,
+
+			zap.Int("user_id", user_id),
+		)
 	}
 
-	so := s.mapper.ToUserResponse(res)
+	logSuccess("Successfully restored user", zap.Int("user_id", user_id))
 
-	logSuccess("Successfully restored user", zap.Int("user.id", user_id))
-
-	return so, nil
+	return res, nil
 }
 
-// DeleteUserPermanent permanently deletes a user by ID.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - user_id: The ID of the user to delete permanently.
-//
-// Returns:
-//   - bool: Whether the deletion was successful.
-//   - *response.ErrorResponse: Error response if deletion fails.
-func (s *userCommandService) DeleteUserPermanent(ctx context.Context, user_id int) (bool, *response.ErrorResponse) {
+func (s *userCommandService) DeleteUserPermanent(ctx context.Context, user_id int) (bool, error) {
 	const method = "DeleteUserPermanent"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user_id", user_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.userCommandRepository.DeleteUserPermanent(ctx, user_id)
+	s.logger.Debug("Deleting user permanently", zap.Int("user_id", user_id))
 
+	_, err := s.userCommandRepository.DeleteUserPermanent(ctx, user_id)
 	if err != nil {
-		return s.errorhandler.HandleDeleteUserError(err, "DeleteUserPermanent", "FAILED_TO_DELETE_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			user_errors.ErrFailedDeletePermanent,
+			method,
+			span,
+
+			zap.Int("user_id", user_id),
+		)
 	}
 
-	logSuccess("Successfully permanently deleted user", zap.Int("user.id", user_id))
+	logSuccess("Successfully deleted user permanently", zap.Int("user_id", user_id))
 
 	return true, nil
 }
 
-// RestoreAllUser restores all soft-deleted users.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//
-// Returns:
-//   - bool: Whether all users were successfully restored.
-//   - *response.ErrorResponse: Error response if restoration fails.
-func (s *userCommandService) RestoreAllUser(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *userCommandService) RestoreAllUser(ctx context.Context) (bool, error) {
 	const method = "RestoreAllUser"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -357,26 +293,25 @@ func (s *userCommandService) RestoreAllUser(ctx context.Context) (bool, *respons
 		end(status)
 	}()
 
-	_, err := s.userCommandRepository.RestoreAllUser(ctx)
+	s.logger.Debug("Restoring all users")
 
+	_, err := s.userCommandRepository.RestoreAllUser(ctx)
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllUserError(err, method, "FAILED_RESTORE_ALL_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			user_errors.ErrFailedRestoreAll,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("Successfully restored all users", zap.Bool("success", true))
+	logSuccess("Successfully restored all users")
 
 	return true, nil
 }
 
-// DeleteAllUserPermanent permanently deletes all trashed users.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//
-// Returns:
-//   - bool: Whether all users were successfully deleted permanently.
-//   - *response.ErrorResponse: Error response if deletion fails.
-func (s *userCommandService) DeleteAllUserPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *userCommandService) DeleteAllUserPermanent(ctx context.Context) (bool, error) {
 	const method = "DeleteAllUserPermanent"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -385,13 +320,20 @@ func (s *userCommandService) DeleteAllUserPermanent(ctx context.Context) (bool, 
 		end(status)
 	}()
 
-	_, err := s.userCommandRepository.DeleteAllUserPermanent(ctx)
+	s.logger.Debug("Permanently deleting all users")
 
+	_, err := s.userCommandRepository.DeleteAllUserPermanent(ctx)
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllUserError(err, method, "FAILED_DELETE_ALL_USER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			user_errors.ErrFailedDeleteAll,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("Successfully permanently deleted all users", zap.Bool("success", true))
+	logSuccess("Successfully deleted all users permanently")
 
 	return true, nil
 }

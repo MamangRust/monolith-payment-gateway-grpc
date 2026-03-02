@@ -3,278 +3,191 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/email"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/service"
-	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/service"
-	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transfer"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/errorhandler"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/service"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transfer/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 )
 
-// transferCommandDeps contains the dependencies required to construct a
-// transferCommandService.
+// transferCommandDeps defines dependencies for transferCommandService.
 type transferCommandDeps struct {
-	// Kafka is a pointer to the Kafka client for producing and consuming messages.
 	Kafka *kafka.Kafka
-
-	// Ctx is the context for the service.
-	Ctx context.Context
-
-	// ErrorHandler is an error handler for the service.
-	ErrorHandler errorhandler.TransferCommandErrorHandler
-
-	// Cache is a pointer to the Redis cache for storing data.
 	Cache mencache.TransferCommandCache
 
-	// CardRepository is a pointer to the card repository for performing database
-	// operations.
-	CardRepository repository.CardRepository
-
-	// SaldoRepository is a pointer to the saldo repository for performing database
-	// operations.
+	CardRepository  repository.CardRepository
 	SaldoRepository repository.SaldoRepository
 
-	// TransferQueryRepository is a pointer to the transfer query repository for
-	// performing database operations.
-	TransferQueryRepository repository.TransferQueryRepository
-
-	// TransferCommandRepository is a pointer to the transfer command repository for
-	// performing database operations.
+	TransferQueryRepository   repository.TransferQueryRepository
 	TransferCommandRepository repository.TransferCommandRepository
 
-	// Logger is a pointer to the logger for logging information.
-	Logger logger.LoggerInterface
-
-	// Mapper is a pointer to the mapper for mapper the response.
-	Mapper responseservice.TransferCommandResponseMapper
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
-// transferCommandService provides command-side business logic related to transfers.
-// It interfaces with various repositories and services to manage transfer operations.
+// transferCommandService handles command-side transfer operations.
 type transferCommandService struct {
-	// kafka is the Kafka client used for producing and consuming messages.
 	kafka *kafka.Kafka
+	cache mencache.TransferCommandCache
 
-	// errorhandler handles errors specific to the transfer command service.
-	errorhandler errorhandler.TransferCommandErrorHandler
-
-	// mencache is the Redis cache for storing transfer command data.
-	mencache mencache.TransferCommandCache
-
-	// ctx is the context used for managing request lifecycle and cancellation.
-	ctx context.Context
-
-	// cardRepository interfaces with the card repository for database operations.
-	cardRepository repository.CardRepository
-
-	// saldoRepository interfaces with the saldo repository for database operations.
+	cardRepository  repository.CardRepository
 	saldoRepository repository.SaldoRepository
 
-	// transferQueryRepository interfaces with the transfer query repository for database operations.
-	transferQueryRepository repository.TransferQueryRepository
-
-	// transferCommandRepository interfaces with the transfer command repository for database operations.
+	transferQueryRepository   repository.TransferQueryRepository
 	transferCommandRepository repository.TransferCommandRepository
 
-	// logger is the logger used for logging information.
-	logger logger.LoggerInterface
-
-	// mapper maps responses from domain models to response objects.
-	mapper responseservice.TransferCommandResponseMapper
-
+	logger        logger.LoggerInterface
 	observability observability.TraceLoggerObservability
 }
 
 func NewTransferCommandService(
 	params *transferCommandDeps,
 ) TransferCommandService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transfer_command_service_request_total",
-			Help: "Total number of requests to the TransferCommandService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transfer_command_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the TransferCommandService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(
-		otel.Tracer("transfer-command-service"), params.Logger, requestCounter, requestDuration)
-
 	return &transferCommandService{
 		kafka:                     params.Kafka,
-		ctx:                       params.Ctx,
-		mencache:                  params.Cache,
-		errorhandler:              params.ErrorHandler,
+		cache:                     params.Cache,
 		cardRepository:            params.CardRepository,
 		saldoRepository:           params.SaldoRepository,
 		transferQueryRepository:   params.TransferQueryRepository,
 		transferCommandRepository: params.TransferCommandRepository,
 		logger:                    params.Logger,
-		mapper:                    params.Mapper,
-		observability:             observability,
+		observability:             params.Observability,
 	}
 }
 
-// CreateTransaction creates a new transfer transaction.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - request: The request containing transfer details.
-//
-// Returns:
-//   - *response.TransferResponse: The created transfer data.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) CreateTransaction(ctx context.Context, request *requests.CreateTransferRequest) (*response.TransferResponse, *response.ErrorResponse) {
-	const method = "CreateTransacton"
+func (s *transferCommandService) CreateTransaction(ctx context.Context, request *requests.CreateTransferRequest) (*db.UpdateTransferStatusRow, error) {
+	const method = "CreateTransaction"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	defer func() { end(status) }()
 
-	defer func() {
-		end(status)
-	}()
-
-	card, err := s.cardRepository.FindUserCardByCardNumber(ctx, request.TransferFrom)
+	senderCard, err := s.cardRepository.FindUserCardByCardNumber(ctx, request.TransferFrom)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("from_card", request.TransferFrom))
 	}
 
 	_, err = s.cardRepository.FindCardByCardNumber(ctx, request.TransferTo)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_CARD_BY_CARD_NUMBER", span, &status, card_errors.ErrFailedFindByCardNumber, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("to_card", request.TransferTo))
 	}
 
 	senderSaldo, err := s.saldoRepository.FindByCardNumber(ctx, request.TransferFrom)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("from_card", request.TransferFrom))
 	}
 
 	receiverSaldo, err := s.saldoRepository.FindByCardNumber(ctx, request.TransferTo)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, saldo_errors.ErrFailedSaldoNotFound, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("to_card", request.TransferTo))
 	}
 
-	if senderSaldo.TotalBalance < request.TransferAmount {
-		return s.errorhandler.HandleSenderInsufficientBalanceError(err, method, "FAILED_FIND_SALDO_BY_CARD_NUMBER", span, &status, request.TransferFrom, zap.Error(err))
+	if int(senderSaldo.TotalBalance) < request.TransferAmount {
+		status = "error"
+		err := errors.New("insufficient balance for transfer")
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("from_card", request.TransferFrom), zap.Float64("balance", float64(senderSaldo.TotalBalance)), zap.Float64("amount", float64(request.TransferAmount)))
 	}
 
-	senderSaldo.TotalBalance -= request.TransferAmount
+	senderNewBalance := int(senderSaldo.TotalBalance) - request.TransferAmount
+
 	_, err = s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   senderSaldo.CardNumber,
-		TotalBalance: senderSaldo.TotalBalance,
+		TotalBalance: senderNewBalance,
 	})
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("from_card", request.TransferFrom))
 	}
 
-	receiverSaldo.TotalBalance += request.TransferAmount
+	receiverNewBalance := int(receiverSaldo.TotalBalance) + request.TransferAmount
 	_, err = s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   receiverSaldo.CardNumber,
-		TotalBalance: receiverSaldo.TotalBalance,
+		TotalBalance: receiverNewBalance,
 	})
 	if err != nil {
-		senderSaldo.TotalBalance += request.TransferAmount
-		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+		status = "error"
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 			CardNumber:   senderSaldo.CardNumber,
-			TotalBalance: senderSaldo.TotalBalance,
-		})
-		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+			TotalBalance: int(senderSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, rollbackErr, method, span, zap.String("rollback_for", "sender"))
 		}
-
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.String("failed_to_credit", "receiver"))
 	}
 
 	transfer, err := s.transferCommandRepository.CreateTransfer(ctx, request)
 	if err != nil {
-		senderSaldo.TotalBalance += request.TransferAmount
-		receiverSaldo.TotalBalance -= request.TransferAmount
-
-		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+		status = "error"
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 			CardNumber:   senderSaldo.CardNumber,
-			TotalBalance: senderSaldo.TotalBalance,
-		})
-		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+			TotalBalance: int(senderSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, rollbackErr, method, span)
 		}
-
-		_, rollbackErr = s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 			CardNumber:   receiverSaldo.CardNumber,
-			TotalBalance: receiverSaldo.TotalBalance,
-		})
-		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(rollbackErr, method, "FAILED_ROLLBACK_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+			TotalBalance: int(receiverSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, rollbackErr, method, span)
 		}
-
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: transfer.ID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return s.errorhandler.HandleCreateTransferError(err, method, "FAILED_CREATE_TRANSFER", span, &status, zap.Error(err))
+		s.markTransferAsFailed(ctx, int(transfer.TransferID), method, span)
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span)
 	}
 
-	res, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-		TransferID: transfer.ID,
+	updatedTransfer, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
+		TransferID: int(transfer.TransferID),
 		Status:     "success",
 	})
-
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferStatusRow](s.logger, err, method, span, zap.Int("transfer_id", int(transfer.TransferID)))
 	}
 
-	htmlBody := email.GenerateEmailHTML(map[string]string{
-		"Title":   "Transfer Successful",
-		"Message": fmt.Sprintf("Your Transfer of %d has been processed successfully.", request.TransferAmount),
-		"Button":  "View History",
-		"Link":    "https://sanedge.example.com/withdraw/history",
-	})
+	go func() {
+		htmlBody := email.GenerateEmailHTML(map[string]string{
+			"Title":   "Transfer Successful",
+			"Message": fmt.Sprintf("Your Transfer of %d has been processed successfully.", request.TransferAmount),
+			"Button":  "View History",
+			"Link":    "https://sanedge.example.com/withdraw/history",
+		})
 
-	emailPayload := map[string]any{
-		"email":   card.Email,
-		"subject": "Transfer Successful - SanEdge",
-		"body":    htmlBody,
-	}
+		emailPayload := map[string]any{
+			"email":   senderCard.Email,
+			"subject": "Transfer Successful - SanEdge",
+			"body":    htmlBody,
+		}
 
-	payloadBytes, err := json.Marshal(emailPayload)
-	if err != nil {
-		return errorhandler.HandleErrorMarshal[*response.TransferResponse](s.logger, err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-	}
+		payloadBytes, err := json.Marshal(emailPayload)
+		if err != nil {
+			s.logger.Error("failed to marshal email payload for transfer", zap.Error(err), zap.Int("transfer_id", int(updatedTransfer.TransferID)))
+			return
+		}
 
-	err = s.kafka.SendMessage("email-service-topic-transfer-create", strconv.Itoa(res.ID), payloadBytes)
-	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_SEND_EMAIL", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-	}
+		err = s.kafka.SendMessage("email-service-topic-transfer-create", strconv.Itoa(int(updatedTransfer.TransferID)), payloadBytes)
+		if err != nil {
+			s.logger.Error("failed to send transfer email via kafka", zap.Error(err), zap.Int("transfer_id", int(updatedTransfer.TransferID)))
+		}
+	}()
 
-	so := s.mapper.ToTransferResponse(transfer)
+	logSuccess("Transfer created successfully", zap.Int("transfer_id", int(updatedTransfer.TransferID)), zap.String("from", request.TransferFrom), zap.String("to", request.TransferTo))
 
-	logSuccess("Transfer created successfully", zap.Bool("success", true))
-
-	return so, nil
+	return updatedTransfer, nil
 }
 
 // UpdateTransaction updates an existing transfer transaction.
@@ -286,265 +199,206 @@ func (s *transferCommandService) CreateTransaction(ctx context.Context, request 
 // Returns:
 //   - *response.TransferResponse: The updated transfer data.
 //   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) UpdateTransaction(ctx context.Context, request *requests.UpdateTransferRequest) (*response.TransferResponse, *response.ErrorResponse) {
+func (s *transferCommandService) UpdateTransaction(ctx context.Context, request *requests.UpdateTransferRequest) (*db.UpdateTransferRow, error) {
 	const method = "UpdateTransaction"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	defer func() { end(status) }()
 
-	defer func() {
-		end(status)
-	}()
-
+	// 1. Dapatkan data transfer yang ada
 	transfer, err := s.transferQueryRepository.FindById(ctx, *request.TransferID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_TRANSFER", span, &status, transfer_errors.ErrTransferNotFound, zap.Error(err))
+		status = "error"
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.Int("transfer_id", *request.TransferID))
 	}
 
-	amountDifference := request.TransferAmount - transfer.TransferAmount
+	amountDifference := request.TransferAmount - int(transfer.TransferAmount)
 
 	senderSaldo, err := s.saldoRepository.FindByCardNumber(ctx, transfer.TransferFrom)
 	if err != nil {
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return nil, saldo_errors.ErrFailedSaldoNotFound
+		status = "error"
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.String("from_card", transfer.TransferFrom))
 	}
 
-	newSenderBalance := senderSaldo.TotalBalance - amountDifference
+	newSenderBalance := int(senderSaldo.TotalBalance) - amountDifference
 	if newSenderBalance < 0 {
-
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return s.errorhandler.HandleSenderInsufficientBalanceError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, senderSaldo.CardNumber, zap.Error(err))
+		status = "error"
+		err := errors.New("insufficient balance for transfer update")
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.Float64("balance", float64(senderSaldo.TotalBalance)), zap.Float64("amount_diff", float64(amountDifference)))
 	}
 
-	senderSaldo.TotalBalance = newSenderBalance
 	_, err = s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   senderSaldo.CardNumber,
-		TotalBalance: senderSaldo.TotalBalance,
+		TotalBalance: newSenderBalance,
 	})
 	if err != nil {
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+		status = "error"
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.String("from_card", transfer.TransferFrom))
 	}
 
 	receiverSaldo, err := s.saldoRepository.FindByCardNumber(ctx, transfer.TransferTo)
 	if err != nil {
-		rollbackSenderBalance := &requests.UpdateSaldoBalance{
-			CardNumber:   transfer.TransferFrom,
-			TotalBalance: senderSaldo.TotalBalance + amountDifference,
+		status = "error"
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+			CardNumber:   senderSaldo.CardNumber,
+			TotalBalance: int(senderSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, rollbackErr, method, span, zap.String("rollback_for", "sender"))
 		}
-		_, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, rollbackSenderBalance)
-		if rollbackErr != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
-		}
-
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.String("to_card", transfer.TransferTo))
 	}
 
-	newReceiverBalance := receiverSaldo.TotalBalance + amountDifference
-	receiverSaldo.TotalBalance = newReceiverBalance
+	newReceiverBalance := int(receiverSaldo.TotalBalance) + amountDifference
 	_, err = s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
 		CardNumber:   receiverSaldo.CardNumber,
-		TotalBalance: receiverSaldo.TotalBalance,
+		TotalBalance: newReceiverBalance,
 	})
 	if err != nil {
-		rollbackSenderBalance := &requests.UpdateSaldoBalance{
-			CardNumber:   transfer.TransferFrom,
-			TotalBalance: senderSaldo.TotalBalance + amountDifference,
+		status = "error"
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+			CardNumber:   senderSaldo.CardNumber,
+			TotalBalance: int(senderSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, rollbackErr, method, span)
 		}
-		rollbackReceiverBalance := &requests.UpdateSaldoBalance{
-			CardNumber:   transfer.TransferTo,
-			TotalBalance: receiverSaldo.TotalBalance - amountDifference,
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+			CardNumber:   receiverSaldo.CardNumber,
+			TotalBalance: int(receiverSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, rollbackErr, method, span)
 		}
-
-		if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, rollbackSenderBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
-		}
-		if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, rollbackReceiverBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
-		}
-
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return nil, saldo_errors.ErrFailedUpdateSaldo
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.String("failed_to_credit", "receiver"))
 	}
 
 	updatedTransfer, err := s.transferCommandRepository.UpdateTransfer(ctx, request)
 	if err != nil {
-		rollbackSenderBalance := &requests.UpdateSaldoBalance{
-			CardNumber:   transfer.TransferFrom,
-			TotalBalance: senderSaldo.TotalBalance + amountDifference,
+		status = "error"
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+			CardNumber:   senderSaldo.CardNumber,
+			TotalBalance: int(senderSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, rollbackErr, method, span)
 		}
-		rollbackReceiverBalance := &requests.UpdateSaldoBalance{
-			CardNumber:   transfer.TransferTo,
-			TotalBalance: receiverSaldo.TotalBalance - amountDifference,
+		if _, rollbackErr := s.saldoRepository.UpdateSaldoBalance(ctx, &requests.UpdateSaldoBalance{
+			CardNumber:   receiverSaldo.CardNumber,
+			TotalBalance: int(receiverSaldo.TotalBalance),
+		}); rollbackErr != nil {
+			return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, rollbackErr, method, span)
 		}
-
-		if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, rollbackSenderBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
-		}
-		if _, err := s.saldoRepository.UpdateSaldoBalance(ctx, rollbackReceiverBalance); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_SALDO_BALANCE", span, &status, saldo_errors.ErrFailedUpdateSaldo, zap.Error(err))
-		}
-
-		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
-			TransferID: *request.TransferID,
-			Status:     "failed",
-		}); err != nil {
-			return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
-		}
-
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
+		s.markTransferAsFailed(ctx, *request.TransferID, method, span)
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span)
 	}
 
 	if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, &requests.UpdateTransferStatus{
 		TransferID: *request.TransferID,
 		Status:     "success",
 	}); err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSFER_STATUS", span, &status, transfer_errors.ErrFailedUpdateTransfer, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateTransferRow](s.logger, err, method, span, zap.Int("transfer_id", *request.TransferID))
 	}
 
-	so := s.mapper.ToTransferResponse(updatedTransfer)
+	logSuccess("Successfully updated transfer", zap.Int("transfer.id", *request.TransferID))
 
-	s.mencache.DeleteTransferCache(ctx, *request.TransferID)
-
-	logSuccess("Successfully update transfer", zap.Int("transfer.id", *request.TransferID))
-
-	return so, nil
+	return updatedTransfer, nil
 }
 
-// TrashedTransfer marks a transfer transaction as trashed (soft delete).
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transfer_id: The ID of the transfer to be trashed.
-//
-// Returns:
-//   - *response.TransferResponse: The trashed transfer data.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) TrashedTransfer(ctx context.Context, transfer_id int) (*response.TransferResponseDeleteAt, *response.ErrorResponse) {
+func (s *transferCommandService) TrashedTransfer(ctx context.Context, transfer_id int) (*db.Transfer, error) {
 	const method = "TrashedTransfer"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("transfer_id", transfer_id))
 
 	defer func() {
 		end(status)
 	}()
+
+	s.logger.Debug("Starting trashed transfer process", zap.Int("transfer_id", transfer_id))
 
 	res, err := s.transferCommandRepository.TrashedTransfer(ctx, transfer_id)
-
 	if err != nil {
-		return s.errorhandler.HandleTrashedTransferError(err, method, "FAILED_TRASHED_TRANSFER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.Transfer](
+			s.logger,
+			transfer_errors.ErrFailedTrashedTransfer,
+			method,
+			span,
+
+			zap.Int("transfer_id", transfer_id),
+		)
 	}
 
-	so := s.mapper.ToTransferResponseDeleteAt(res)
+	logSuccess("Successfully trashed transfer", zap.Int("transfer_id", transfer_id))
 
-	s.mencache.DeleteTransferCache(ctx, transfer_id)
-
-	logSuccess("Successfully trashed transfer",
-		zap.Int("transfer.id", transfer_id),
-	)
-
-	return so, nil
+	return res, nil
 }
 
-// RestoreTransfer restores a previously trashed transfer transaction.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transfer_id: The ID of the transfer to be restored.
-//
-// Returns:
-//   - *response.TransferResponse: The restored transfer data.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) RestoreTransfer(ctx context.Context, transfer_id int) (*response.TransferResponse, *response.ErrorResponse) {
+func (s *transferCommandService) RestoreTransfer(ctx context.Context, transfer_id int) (*db.Transfer, error) {
 	const method = "RestoreTransfer"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("transfer_id", transfer_id))
 
 	defer func() {
 		end(status)
 	}()
+
+	s.logger.Debug("Starting restore transfer process", zap.Int("transfer_id", transfer_id))
 
 	res, err := s.transferCommandRepository.RestoreTransfer(ctx, transfer_id)
-
 	if err != nil {
-		return s.errorhandler.HandleRestoreTransferError(err, method, "FAILED_RESTORE_TRANSFER", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.Transfer](
+			s.logger,
+			transfer_errors.ErrFailedRestoreTransfer,
+			method,
+			span,
+
+			zap.Int("transfer_id", transfer_id),
+		)
 	}
 
-	so := s.mapper.ToTransferResponse(res)
+	logSuccess("Successfully restored transfer", zap.Int("transfer_id", transfer_id))
 
-	logSuccess("RestoreTransfer process completed", zap.Int("transfer.id", transfer_id))
-
-	return so, nil
+	return res, nil
 }
 
-// DeleteTransferPermanent permanently deletes a transfer transaction.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - transfer_id: The ID of the transfer to be permanently deleted.
-//
-// Returns:
-//   - bool: Whether the deletion was successful.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) DeleteTransferPermanent(ctx context.Context, transfer_id int) (bool, *response.ErrorResponse) {
+func (s *transferCommandService) DeleteTransferPermanent(ctx context.Context, transfer_id int) (bool, error) {
 	const method = "DeleteTransferPermanent"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("transfer_id", transfer_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.transferCommandRepository.DeleteTransferPermanent(ctx, transfer_id)
+	s.logger.Debug("Starting delete transfer permanent process", zap.Int("transfer_id", transfer_id))
 
+	_, err := s.transferCommandRepository.DeleteTransferPermanent(ctx, transfer_id)
 	if err != nil {
-		return s.errorhandler.HandleDeleteTransferPermanentError(err, method, "FAILED_DELETE_TRANSFER_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			transfer_errors.ErrFailedDeleteTransferPermanent,
+			method,
+			span,
+
+			zap.Int("transfer_id", transfer_id),
+		)
 	}
 
-	logSuccess("DeleteTransferPermanent process completed", zap.Int("transfer.id", transfer_id))
+	logSuccess("Successfully deleted transfer permanently", zap.Int("transfer_id", transfer_id))
 
 	return true, nil
 }
 
-// RestoreAllTransfer restores all trashed transfer transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//
-// Returns:
-//   - bool: Whether the restore operation was successful.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) RestoreAllTransfer(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *transferCommandService) RestoreAllTransfer(ctx context.Context) (bool, error) {
 	const method = "RestoreAllTransfer"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -553,26 +407,24 @@ func (s *transferCommandService) RestoreAllTransfer(ctx context.Context) (bool, 
 		end(status)
 	}()
 
-	_, err := s.transferCommandRepository.RestoreAllTransfer(ctx)
+	s.logger.Debug("Restoring all transfers")
 
+	_, err := s.transferCommandRepository.RestoreAllTransfer(ctx)
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllTransferError(err, method, "FAILED_RESTORE_ALL_TRANSFERS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			transfer_errors.ErrFailedRestoreAllTransfers,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("RestoreAllTransfer process completed", zap.Bool("success", true))
-
+	logSuccess("Successfully restored all transfers")
 	return true, nil
 }
 
-// DeleteAllTransferPermanent permanently deletes all trashed transfer transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//
-// Returns:
-//   - bool: Whether the deletion was successful.
-//   - *response.ErrorResponse: Error details if operation fails.
-func (s *transferCommandService) DeleteAllTransferPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *transferCommandService) DeleteAllTransferPermanent(ctx context.Context) (bool, error) {
 	const method = "DeleteAllTransferPermanent"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
@@ -581,13 +433,31 @@ func (s *transferCommandService) DeleteAllTransferPermanent(ctx context.Context)
 		end(status)
 	}()
 
-	_, err := s.transferCommandRepository.DeleteAllTransferPermanent(ctx)
+	s.logger.Debug("Permanently deleting all transfers")
 
+	_, err := s.transferCommandRepository.DeleteAllTransferPermanent(ctx)
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllTransferPermanentError(err, method, "FAILED_DELETE_ALL_TRANSFER_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[bool](
+			s.logger,
+			transfer_errors.ErrFailedDeleteAllTransfersPermanent,
+			method,
+			span,
+		)
 	}
 
-	logSuccess("DeleteAllTransferPermanent process completed", zap.Bool("success", true))
-
+	logSuccess("Successfully deleted all transfers permanently")
 	return true, nil
+}
+
+func (s *transferCommandService) markTransferAsFailed(ctx context.Context, transferID int, method string, span trace.Span) {
+	req := &requests.UpdateTransferStatus{
+		TransferID: transferID,
+		Status:     "failed",
+	}
+	go func() {
+		if _, err := s.transferCommandRepository.UpdateTransferStatus(ctx, req); err != nil {
+			s.logger.Error("compensation: failed to mark transfer as failed", zap.Error(err), zap.Int("transfer_id", transferID), zap.String("method", method))
+		}
+	}()
 }

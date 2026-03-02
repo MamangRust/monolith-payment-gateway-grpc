@@ -3,230 +3,191 @@ package withdrawstatsservice
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/withdraw"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	withdraw_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-withdraw/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-withdraw/internal/repository/stats"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
 type withdrawStatsStatusDeps struct {
-	ErrorHandler errorhandler.WithdrawStatisticErrorHandler
-
 	Cache mencache.WithdrawStatsStatusCache
 
 	Repository repository.WithdrawStatsStatusRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.WithdrawStatsStatusResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type withdrawStatsStatusService struct {
-	errorhandler errorhandler.WithdrawStatisticErrorHandler
-
 	cache mencache.WithdrawStatsStatusCache
 
 	repository repository.WithdrawStatsStatusRepository
 
 	logger logger.LoggerInterface
 
-	mapper responseservice.WithdrawStatsStatusResponseMapper
-
 	observability observability.TraceLoggerObservability
 }
 
 func NewWithdrawStatsStatusService(deps *withdrawStatsStatusDeps) WithdrawStatsStatusService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "withdraw_stats_status_service_request_total",
-			Help: "Total number of requests to the WithdrawStatsStatusService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "withdraw_stats_status_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the WithdrawStatsStatusService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(
-		otel.Tracer("withdraw-stats-status-service"), deps.Logger, requestCounter, requestDuration)
-
 	return &withdrawStatsStatusService{
-		errorhandler:  deps.ErrorHandler,
 		cache:         deps.Cache,
 		repository:    deps.Repository,
 		logger:        deps.Logger,
-		mapper:        deps.Mapper,
-		observability: observability,
+		observability: deps.Observability,
 	}
 }
 
-// FindMonthWithdrawStatusSuccess retrieves monthly successful withdraw statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the month and year for filtering.
-//
-// Returns:
-//   - []*response.WithdrawResponseMonthStatusSuccess: List of successful monthly withdraw statistics.
-//   - *response.ErrorResponse: Error information if any occurred.
-func (s *withdrawStatsStatusService) FindMonthWithdrawStatusSuccess(ctx context.Context, req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusSuccess, *response.ErrorResponse) {
-	year := req.Year
-	month := req.Month
-
+func (s *withdrawStatsStatusService) FindMonthWithdrawStatusSuccess(ctx context.Context, req *requests.MonthStatusWithdraw) ([]*db.GetMonthWithdrawStatusSuccessRow, error) {
 	const method = "FindMonthWithdrawStatusSuccess"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("month", month))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", req.Year),
+		attribute.Int("month", req.Month))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.cache.GetCachedMonthWithdrawStatusSuccessCache(ctx, req); found {
-		logSuccess("Successfully fetched monthly withdraw status success from cache", zap.Int("year", year), zap.Int("month", month))
-		return data, nil
+	s.logger.Debug("Checking cache for monthly withdraw status success", zap.Int("year", req.Year), zap.Int("month", req.Month))
+
+	if dbRows, found := s.cache.GetCachedMonthWithdrawStatusSuccessCache(ctx, req); found {
+		s.logger.Info("Cache hit for monthly withdraw status success", zap.Int("year", req.Year), zap.Int("month", req.Month))
+		status = "ok"
+		logSuccess("Successfully fetched monthly withdraw status success (from cache)", zap.Int("year", req.Year), zap.Int("month", req.Month))
+		return dbRows, nil
 	}
 
-	records, err := s.repository.GetMonthWithdrawStatusSuccess(ctx, req)
-
+	dbRows, err := s.repository.GetMonthWithdrawStatusSuccess(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleMonthWithdrawStatusSuccessError(err, method, "FAILED_GET_MONTH_WITHDRAW_STATUS_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthWithdrawStatusSuccessRow](
+			s.logger,
+			withdraw_errors.ErrFailedFindMonthWithdrawStatusSuccess,
+			method,
+			span,
+
+			zap.Int("year", req.Year),
+			zap.Int("month", req.Month),
+		)
 	}
 
-	so := s.mapper.ToWithdrawResponsesMonthStatusSuccess(records)
+	s.cache.SetCachedMonthWithdrawStatusSuccessCache(ctx, req, dbRows)
 
-	s.cache.SetCachedMonthWithdrawStatusSuccessCache(ctx, req, so)
+	logSuccess("Successfully fetched monthly withdraw status success (from DB)", zap.Int("year", req.Year), zap.Int("month", req.Month))
 
-	logSuccess("Successfully fetched monthly withdraw status success", zap.Int("year", year), zap.Int("month", month))
-
-	return so, nil
+	return dbRows, nil
 }
 
-// FindYearlyWithdrawStatusSuccess retrieves yearly successful withdraw statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year to filter the data.
-//
-// Returns:
-//   - []*response.WithdrawResponseYearStatusSuccess: List of successful yearly withdraw statistics.
-//   - *response.ErrorResponse: Error information if any occurred.
-func (s *withdrawStatsStatusService) FindYearlyWithdrawStatusSuccess(ctx context.Context, year int) ([]*response.WithdrawResponseYearStatusSuccess, *response.ErrorResponse) {
+func (s *withdrawStatsStatusService) FindYearlyWithdrawStatusSuccess(ctx context.Context, year int) ([]*db.GetYearlyWithdrawStatusSuccessRow, error) {
 	const method = "FindYearlyWithdrawStatusSuccess"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.cache.GetCachedYearlyWithdrawStatusSuccessCache(ctx, year); found {
-		s.logger.Debug("Successfully fetched yearly withdraw status success from cache", zap.Int("year", year))
-		return data, nil
+	if dbRows, found := s.cache.GetCachedYearlyWithdrawStatusSuccessCache(ctx, year); found {
+		logSuccess("Successfully fetched yearly withdraw status success (from cache)", zap.Int("year", year))
+		return dbRows, nil
 	}
 
-	records, err := s.repository.GetYearlyWithdrawStatusSuccess(ctx, year)
-
+	dbRows, err := s.repository.GetYearlyWithdrawStatusSuccess(ctx, year)
 	if err != nil {
-		return s.errorhandler.HandleYearWithdrawStatusSuccessError(err, method, "FAILED_GET_YEARLY_WITHDRAW_STATUS_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyWithdrawStatusSuccessRow](
+			s.logger,
+			withdraw_errors.ErrFailedFindYearWithdrawStatusSuccess,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
 
-	so := s.mapper.ToWithdrawResponsesYearStatusSuccess(records)
+	s.cache.SetCachedYearlyWithdrawStatusSuccessCache(ctx, year, dbRows)
 
-	s.cache.SetCachedYearlyWithdrawStatusSuccessCache(ctx, year, so)
+	logSuccess("Successfully fetched yearly withdraw status success (from DB)", zap.Int("year", year))
 
-	logSuccess("Successfully fetched yearly withdraw status success", zap.Int("year", year))
-
-	return so, nil
+	return dbRows, nil
 }
 
-// FindMonthWithdrawStatusFailed retrieves monthly failed withdraw statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the month and year for filtering.
-//
-// Returns:
-//   - []*response.WithdrawResponseMonthStatusFailed: List of failed monthly withdraw statistics.
-//   - *response.ErrorResponse: Error information if any occurred.
-func (s *withdrawStatsStatusService) FindMonthWithdrawStatusFailed(ctx context.Context, req *requests.MonthStatusWithdraw) ([]*response.WithdrawResponseMonthStatusFailed, *response.ErrorResponse) {
-	year := req.Year
-	month := req.Month
-
+func (s *withdrawStatsStatusService) FindMonthWithdrawStatusFailed(ctx context.Context, req *requests.MonthStatusWithdraw) ([]*db.GetMonthWithdrawStatusFailedRow, error) {
 	const method = "FindMonthWithdrawStatusFailed"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("month", month))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", req.Year),
+		attribute.Int("month", req.Month))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.cache.GetCachedMonthWithdrawStatusFailedCache(ctx, req); found {
-		logSuccess("Successfully fetched monthly Withdraw status Failed from cache", zap.Int("year", year), zap.Int("month", month))
-		return data, nil
+	if dbRows, found := s.cache.GetCachedMonthWithdrawStatusFailedCache(ctx, req); found {
+		logSuccess("Successfully fetched monthly withdraw status failed (from cache)", zap.Int("year", req.Year), zap.Int("month", req.Month))
+		return dbRows, nil
 	}
 
-	records, err := s.repository.GetMonthWithdrawStatusFailed(ctx, req)
-
+	dbRows, err := s.repository.GetMonthWithdrawStatusFailed(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleMonthWithdrawStatusFailedError(err, method, "FAILED_GET_MONTH_WITHDRAW_STATUS_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthWithdrawStatusFailedRow](
+			s.logger,
+			withdraw_errors.ErrFailedFindMonthWithdrawStatusFailed,
+			method,
+			span,
+
+			zap.Int("year", req.Year),
+			zap.Int("month", req.Month),
+		)
 	}
 
-	so := s.mapper.ToWithdrawResponsesMonthStatusFailed(records)
+	s.cache.SetCachedMonthWithdrawStatusFailedCache(ctx, req, dbRows)
 
-	s.cache.SetCachedMonthWithdrawStatusFailedCache(ctx, req, so)
+	logSuccess("Successfully fetched monthly withdraw status failed (from DB)", zap.Int("year", req.Year), zap.Int("month", req.Month))
 
-	return so, nil
+	return dbRows, nil
 }
 
-// FindYearlyWithdrawStatusFailed retrieves yearly failed withdraw statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year to filter the data.
-//
-// Returns:
-//   - []*response.WithdrawResponseYearStatusFailed: List of failed yearly withdraw statistics.
-//   - *response.ErrorResponse: Error information if any occurred.
-func (s *withdrawStatsStatusService) FindYearlyWithdrawStatusFailed(ctx context.Context, year int) ([]*response.WithdrawResponseYearStatusFailed, *response.ErrorResponse) {
+func (s *withdrawStatsStatusService) FindYearlyWithdrawStatusFailed(ctx context.Context, year int) ([]*db.GetYearlyWithdrawStatusFailedRow, error) {
 	const method = "FindYearlyWithdrawStatusFailed"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.cache.GetCachedYearlyWithdrawStatusFailedCache(ctx, year); found {
-		logSuccess("Successfully fetched yearly Withdraw status Failed from cache", zap.Int("year", year))
-		return data, nil
+	if dbRows, found := s.cache.GetCachedYearlyWithdrawStatusFailedCache(ctx, year); found {
+		logSuccess("Successfully fetched yearly withdraw status failed (from cache)", zap.Int("year", year))
+		return dbRows, nil
 	}
 
-	records, err := s.repository.GetYearlyWithdrawStatusFailed(ctx, year)
-
+	dbRows, err := s.repository.GetYearlyWithdrawStatusFailed(ctx, year)
 	if err != nil {
-		return s.errorhandler.HandleYearWithdrawStatusFailedError(err, method, "FAILED_GET_YEARLY_WITHDRAW_STATUS_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyWithdrawStatusFailedRow](
+			s.logger,
+			withdraw_errors.ErrFailedFindYearWithdrawStatusFailed,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
-	so := s.mapper.ToWithdrawResponsesYearStatusFailed(records)
 
-	s.cache.SetCachedYearlyWithdrawStatusFailedCache(ctx, year, so)
+	s.cache.SetCachedYearlyWithdrawStatusFailedCache(ctx, year, dbRows)
 
-	logSuccess("Successfully fetched yearly Withdraw status Failed", zap.Int("year", year))
+	logSuccess("Successfully fetched yearly withdraw status failed (from DB)", zap.Int("year", year))
 
-	return so, nil
+	return dbRows, nil
 }

@@ -3,91 +3,75 @@ package saldostatshandler
 import (
 	"context"
 
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	pbsaldo "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo/stats"
 	saldostatsservice "github.com/MamangRust/monolith-payment-gateway-saldo/internal/service/stats"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/grpc"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/saldo"
-	"go.uber.org/zap"
 )
 
 type saldoStatsBalanceHandleGrpc struct {
 	pb.UnimplementedSaldoStatsBalanceServiceServer
 
 	service saldostatsservice.SaldoStatsBalanceService
-
-	mapper protomapper.SaldoStatsBalanceProtoMapper
-
-	logger logger.LoggerInterface
 }
 
-func NewSaldoStatsBalanceHandleGrpc(service saldostatsservice.SaldoStatsBalanceService, logger logger.LoggerInterface, mapper protomapper.SaldoStatsBalanceProtoMapper) SaldoStatsBalanceHandleGrpc {
+func NewSaldoStatsBalanceHandleGrpc(service saldostatsservice.SaldoStatsBalanceService) SaldoStatsBalanceHandleGrpc {
 	return &saldoStatsBalanceHandleGrpc{
 		service: service,
-		mapper:  mapper,
-		logger:  logger,
 	}
 }
 
-// FindMonthlySaldoBalances is a gRPC handler that fetches the monthly saldo balances for a specific year.
-//
-// Parameters:
-//   - ctx: the context.Context object for tracing and cancellation.
-//   - req: a pointer to a FindYearlySaldo message, which contains the year of the saldo balances to be fetched.
-//
-// Returns:
-//   - A pointer to a ApiResponseMonthSaldoBalances message, which contains the monthly saldo balances for the given year.
-//   - An error, which is non-nil if the operation fails.
-func (s *saldoStatsBalanceHandleGrpc) FindMonthlySaldoBalances(ctx context.Context, req *pb.FindYearlySaldo) (*pb.ApiResponseMonthSaldoBalances, error) {
+func (s *saldoStatsBalanceHandleGrpc) FindMonthlySaldoBalances(ctx context.Context, req *pbsaldo.FindYearlySaldo) (*pb.ApiResponseMonthSaldoBalances, error) {
 	year := int(req.GetYear())
 
 	if year <= 0 {
-		s.logger.Error("FindMonthlySaldoBalances failed", zap.Any("error", saldo_errors.ErrGrpcSaldoInvalidYear))
 		return nil, saldo_errors.ErrGrpcSaldoInvalidYear
 	}
 
 	res, err := s.service.FindMonthlySaldoBalances(ctx, year)
-
 	if err != nil {
-		s.logger.Error("FindMonthlySaldoBalances failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseMonthSaldoBalances("success", "Successfully fetched monthly saldo balances", res)
+	protoData := make([]*pb.SaldoMonthBalanceResponse, len(res))
+	for i, item := range res {
+		protoData[i] = &pb.SaldoMonthBalanceResponse{
+			Month:        item.Month,
+			TotalBalance: int32(item.TotalBalance),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly saldo balances", zap.Bool("success", true))
-
-	return so, nil
+	return &pb.ApiResponseMonthSaldoBalances{
+		Status:  "success",
+		Message: "Successfully fetched monthly saldo balances",
+		Data:    protoData,
+	}, nil
 }
 
-// FindYearlySaldoBalances is a gRPC handler that fetches the yearly saldo balances for a specific year.
-//
-// Parameters:
-//   - ctx: the context.Context object for tracing and cancellation.
-//   - req: a pointer to a FindYearlySaldo message, which contains the year of the saldo balances to be fetched.
-//
-// Returns:
-//   - A pointer to a ApiResponseYearSaldoBalances message, which contains the yearly saldo balances for the given year.
-//   - An error, which is non-nil if the operation fails.
-func (s *saldoStatsBalanceHandleGrpc) FindYearlySaldoBalances(ctx context.Context, req *pb.FindYearlySaldo) (*pb.ApiResponseYearSaldoBalances, error) {
+func (s *saldoStatsBalanceHandleGrpc) FindYearlySaldoBalances(ctx context.Context, req *pbsaldo.FindYearlySaldo) (*pb.ApiResponseYearSaldoBalances, error) {
 	year := int(req.GetYear())
 
 	if year <= 0 {
-		s.logger.Error("FindYearlySaldoBalances failed", zap.Any("error", saldo_errors.ErrGrpcSaldoInvalidYear))
 		return nil, saldo_errors.ErrGrpcSaldoInvalidYear
 	}
 
 	res, err := s.service.FindYearlySaldoBalances(ctx, year)
-
 	if err != nil {
-		s.logger.Error("FindYearlySaldoBalances failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseYearSaldoBalances("success", "Successfully fetched yearly saldo balances", res)
+	protoData := make([]*pb.SaldoYearBalanceResponse, len(res))
+	for i, item := range res {
+		protoData[i] = &pb.SaldoYearBalanceResponse{
+			Year:         item.Year.Int.String(),
+			TotalBalance: int32(item.TotalBalance),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly saldo balances", zap.Bool("success", true))
-
-	return so, nil
+	return &pb.ApiResponseYearSaldoBalances{
+		Status:  "success",
+		Message: "Successfully fetched yearly saldo balances",
+		Data:    protoData,
+	}, nil
 }

@@ -1,14 +1,14 @@
 package service
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-card/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-card/internal/repository"
 	cardstatsservice "github.com/MamangRust/monolith-payment-gateway-card/internal/service/stats"
 	cardstatsbycard "github.com/MamangRust/monolith-payment-gateway-card/internal/service/statsbycard"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 )
 
 type Service interface {
@@ -28,35 +28,32 @@ type service struct {
 }
 
 type Deps struct {
-	Mencache     mencache.Mencache
-	ErrorHandler *errorhandler.ErrorHandler
+	Cache        *cache.CacheStore
 	Repositories *repository.Repositories
 	Logger       logger.LoggerInterface
 	Kafka        *kafka.Kafka
 }
 
 func NewService(deps *Deps) Service {
-	cardMapper := responseservice.NewCardResponseMapper()
+	observability, _ := observability.NewObservability("card-server", deps.Logger)
+
+	cache := mencache.NewMencache(deps.Cache)
 
 	return &service{
-		CardQueryService:     newCardQuery(deps, cardMapper.QueryMapper()),
-		CardCommandService:   newCardCommand(deps, cardMapper.CommandMapper()),
-		CardDashboardService: newCardDashboard(deps),
+		CardQueryService:     newCardQuery(deps, observability, cache),
+		CardCommandService:   newCardCommand(deps, observability, cache),
+		CardDashboardService: newCardDashboard(deps, observability, cache),
 		CardStatsService: cardstatsservice.NewCardStatsService(&cardstatsservice.DepsStats{
-			ErrorHandler:  deps.ErrorHandler.CardStatisticError,
-			Mencache:      deps.Mencache,
+			Mencache:      cache,
 			Repositories:  deps.Repositories.CardStatistic,
 			Logger:        deps.Logger,
-			MapperBalance: cardMapper.BalanceStatsMapper(),
-			MapperAmount:  cardMapper.AmountStatsMapper(),
+			Observability: observability,
 		}),
 		CardStatsByCardService: cardstatsbycard.NewCardStatsByCardService(&cardstatsbycard.DepsStatsByCard{
-			ErrorHandler:  deps.ErrorHandler.CardStatisticByCardError,
-			Mencache:      deps.Mencache,
+			Mencache:      cache,
 			Repositories:  deps.Repositories.CardStatisticByCard,
 			Logger:        deps.Logger,
-			MapperBalance: cardMapper.BalanceStatsMapper(),
-			MapperAmount:  cardMapper.AmountStatsMapper(),
+			Observability: observability,
 		}),
 	}
 }
@@ -64,39 +61,37 @@ func NewService(deps *Deps) Service {
 // newCardQuery initializes a new instance of the CardQueryService.
 // It takes a pointer to Deps and a mapper for CardResponse.
 // It returns a pointer to CardQueryService.
-func newCardQuery(deps *Deps, mapper responseservice.CardQueryResponseMapper) CardQueryService {
+func newCardQuery(deps *Deps, observability observability.TraceLoggerObservability, cache mencache.Mencache) CardQueryService {
 	return NewCardQueryService(&cardQueryServiceDeps{
-		ErrorHandler:        deps.ErrorHandler.CardQueryError,
-		Cache:               deps.Mencache,
+		Cache:               cache,
 		CardQueryRepository: deps.Repositories.CardQuery,
 		Logger:              deps.Logger,
-		Mapper:              mapper,
+		Observability:       observability,
 	})
 }
 
 // newCardDashboard initializes a new instance of the CardDashboardService.
 // It takes a pointer to Deps and a mapper for CardResponse.
 // It returns a pointer to CardDashboardService.
-func newCardDashboard(deps *Deps) CardDashboardService {
+func newCardDashboard(deps *Deps, observability observability.TraceLoggerObservability, cache mencache.Mencache) CardDashboardService {
 	return NewCardDashboardService(&cardDashboardDeps{
-		ErrorHandler:            deps.ErrorHandler.CardDashboardError,
-		Cache:                   deps.Mencache,
+		Cache:                   cache,
 		CardDashboardRepository: deps.Repositories.CardDashboard,
 		Logger:                  deps.Logger,
+		Observability:           observability,
 	})
 }
 
 // newCardCommand initializes a new instance of the CardCommandService.
 // It takes a pointer to Deps and a mapper for CardResponse.
 // It returns a pointer to CardCommandService.
-func newCardCommand(deps *Deps, mapper responseservice.CardCommandResponseMapper) CardCommandService {
+func newCardCommand(deps *Deps, observability observability.TraceLoggerObservability, cache mencache.Mencache) CardCommandService {
 	return NewCardCommandService(&cardCommandServiceDeps{
-		ErrorHandler:          deps.ErrorHandler.CardCommandError,
-		Cache:                 deps.Mencache,
+		Cache:                 cache,
 		Kafka:                 deps.Kafka,
 		UserRepository:        deps.Repositories.User,
 		CardCommandRepository: deps.Repositories.CardCommand,
 		Logger:                deps.Logger,
-		Mapper:                mapper,
+		Observability:         observability,
 	})
 }

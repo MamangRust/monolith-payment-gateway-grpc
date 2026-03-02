@@ -1,9 +1,13 @@
 package withdrawhandler
 
 import (
+	withdraw_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/withdraw"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
+	pbstats "github.com/MamangRust/monolith-payment-gateway-pb/withdraw/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/withdraw"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/withdraw"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc"
 )
@@ -14,16 +18,22 @@ type DepsWithdraw struct {
 	E *echo.Echo
 
 	Logger logger.LoggerInterface
+
+	Cache *cache.CacheStore
+
+	ApiHandler errors.ApiHandler
 }
 
 func RegisterWithdrawHandler(deps *DepsWithdraw) {
 	mapper := apimapper.NewWithdrawResponseMapper()
 
+	cache := withdraw_cache.NewWithdrawMencache(deps.Cache)
+
 	handlers := []func(){
-		setupWithdrawQueryHandler(deps, mapper.QueryMapper()),
-		setupWithdrawCommandHandler(deps, mapper.CommandMapper()),
-		setupWithdrawStatsAmountHandler(deps, mapper.AmountStatsMapper()),
-		setupWithdrawStatsStatusHandler(deps, mapper.StatusStatsMapper()),
+		setupWithdrawQueryHandler(deps, mapper.QueryMapper(), cache),
+		setupWithdrawCommandHandler(deps, mapper.CommandMapper(), cache),
+		setupWithdrawStatsAmountHandler(deps, mapper.AmountStatsMapper(), cache),
+		setupWithdrawStatsStatusHandler(deps, mapper.StatusStatsMapper(), cache),
 	}
 
 	for _, h := range handlers {
@@ -31,46 +41,54 @@ func RegisterWithdrawHandler(deps *DepsWithdraw) {
 	}
 }
 
-func setupWithdrawQueryHandler(deps *DepsWithdraw, mapper apimapper.WithdrawQueryResponseMapper) func() {
+func setupWithdrawQueryHandler(deps *DepsWithdraw, mapper apimapper.WithdrawQueryResponseMapper, cache withdraw_cache.WithdrawMencache) func() {
 	return func() {
 		NewWithdrawQueryHandleApi(&withdrawQueryHandleDeps{
-			client: pb.NewWithdrawQueryServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pb.NewWithdrawQueryServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			apiHandler: deps.ApiHandler,
+			cache:      cache,
 		})
 	}
 }
 
-func setupWithdrawCommandHandler(deps *DepsWithdraw, mapper apimapper.WithdrawCommandResponseMapper) func() {
+func setupWithdrawCommandHandler(deps *DepsWithdraw, mapper apimapper.WithdrawCommandResponseMapper, cache withdraw_cache.WithdrawMencache) func() {
 	return func() {
 		NewWithdrawCommandHandleApi(&withdrawCommandHandleDeps{
-			client: pb.NewWithdrawCommandServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pb.NewWithdrawCommandServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			apiHandler: deps.ApiHandler,
+			cache:      cache,
 		})
 	}
 }
 
-func setupWithdrawStatsAmountHandler(deps *DepsWithdraw, mapper apimapper.WithdrawStatsAmountResponseMapper) func() {
+func setupWithdrawStatsAmountHandler(deps *DepsWithdraw, mapper apimapper.WithdrawStatsAmountResponseMapper, cache withdraw_cache.WithdrawMencache) func() {
 	return func() {
 		NewWithdrawStatsAmountHandleApi(&withdrawStatsAmountHandleDeps{
-			client: pb.NewWithdrawStatsAmountServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewWithdrawStatsAmountServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			apiHandler: deps.ApiHandler,
+			cache:      cache,
 		})
 	}
 }
 
-func setupWithdrawStatsStatusHandler(deps *DepsWithdraw, mapper apimapper.WithdrawStatsStatusResponseMapper) func() {
+func setupWithdrawStatsStatusHandler(deps *DepsWithdraw, mapper apimapper.WithdrawStatsStatusResponseMapper, cache withdraw_cache.WithdrawMencache) func() {
 	return func() {
 		NewWithdrawStatsStatusHandleApi(&withdrawStatsStatusHandleDeps{
-			client: pb.NewWithdrawStatsStatusClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewWithdrawStatsStatusServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			apiHandler: deps.ApiHandler,
+			cache:      cache,
 		})
 	}
 }

@@ -1,24 +1,19 @@
 package topuphandler
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	topup_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/topup"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
-	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/topup"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -29,11 +24,9 @@ type topupQueryHandleApi struct {
 
 	mapper apimapper.TopupQueryResponseMapper
 
-	trace trace.Tracer
+	cache topup_cache.TopupMencach
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type topupQueryHandleDeps struct {
@@ -44,49 +37,33 @@ type topupQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TopupQueryResponseMapper
+
+	cache topup_cache.TopupMencach
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTopupQueryHandleApi(params *topupQueryHandleDeps) *topupQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "topup_query_handler_requests_total",
-			Help: "Total number of topup query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "topup_query_handler_request_duration_seconds",
-			Help:    "Duration of topup query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	topupHandler := &topupQueryHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("topup-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTopup := params.router.Group("/api/topup-query")
 
-	routerTopup.GET("", topupHandler.FindAll)
-	routerTopup.GET("/card-number/:card_number", topupHandler.FindAllByCardNumber)
-	routerTopup.GET("/:id", topupHandler.FindById)
-	routerTopup.GET("/active", topupHandler.FindByActive)
-	routerTopup.GET("/trashed", topupHandler.FindByTrashed)
+	routerTopup.GET("", params.apiHandler.Handle("find-all-topups", topupHandler.FindAll))
+	routerTopup.GET("/card-number/:card_number", params.apiHandler.Handle("find-all-topups-by-card-number", topupHandler.FindAllByCardNumber))
+	routerTopup.GET("/:id", params.apiHandler.Handle("find-topup-by-id", topupHandler.FindById))
+	routerTopup.GET("/active", params.apiHandler.Handle("find-active-topups", topupHandler.FindByActive))
+	routerTopup.GET("/trashed", params.apiHandler.Handle("find-trashed-topups", topupHandler.FindByTrashed))
 
 	return topupHandler
 }
 
-// @Summary Retrieve a list of all topup data
 // @Tags Topup Query
 // @Security Bearer
 // @Description Retrieve a list of all topup data with pagination and search
@@ -98,48 +75,52 @@ func NewTopupQueryHandleApi(params *topupQueryHandleDeps) *topupQueryHandleApi {
 // @Success 200 {object} response.ApiResponsePaginationTopup "List of topup data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topup-query [get]
-func (h topupQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+func (h *topupQueryHandleApi) FindAll(c echo.Context) error {
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTopups{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTopupsCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTopupRequest{
+	reqGrpc := &pb.FindAllTopupRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindAllTopup(ctx, req)
-
+	res, err := h.client.FindAllTopup(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find all topups", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindAllTopups(c)
+		h.logger.Debug("Failed to retrieve topup data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTopup(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTopup(res)
+	h.cache.SetCachedTopupsCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find all topups", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find all topup by card number
-// @Tags Transaction
+// @Tags Topup Query
 // @Security Bearer
 // @Description Retrieve a list of transactions for a specific card number
 // @Accept json
@@ -152,51 +133,54 @@ func (h topupQueryHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topups data"
 // @Router /api/topup-query/card-number/{card_number} [get]
 func (h *topupQueryHandleApi) FindAllByCardNumber(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllByCardNumber"
-	)
-
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cardNumber := c.Param("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
 	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
 
 	search := c.QueryParam("search")
 
-	req := &pb.FindAllTopupByCardNumberRequest{
+	ctx := c.Request().Context()
+
+	reqCache := &requests.FindAllTopupsByCardNumber{
+		CardNumber: cardNumber,
+		Page:       page,
+		PageSize:   pageSize,
+		Search:     search,
+	}
+
+	cachedData, found := h.cache.GetCacheTopupByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pb.FindAllTopupByCardNumberRequest{
 		CardNumber: cardNumber,
 		Page:       int32(page),
 		PageSize:   int32(pageSize),
 		Search:     search,
 	}
 
-	res, err := h.client.FindAllTopupByCardNumber(ctx, req)
-
+	res, err := h.client.FindAllTopupByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("failed to find all topups by card number", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindAllByCardNumberTopup(c)
+		h.logger.Debug("Failed to retrieve topup data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAllByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTopup(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTopup(res)
+	h.cache.SetCacheTopupByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find all topups by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a topup by ID
@@ -210,43 +194,32 @@ func (h *topupQueryHandleApi) FindAllByCardNumber(c echo.Context) error {
 // @Failure 400 {object} response.ErrorResponse "Bad Request: Invalid ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topup-query/{id} [get]
-func (h topupQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+func (h *topupQueryHandleApi) FindById(c echo.Context) error {
+	idStr := c.Param("id")
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		return errors.NewBadRequestError("invalid id parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id := c.Param("id")
-
-	idInt, err := strconv.Atoi(id)
-
-	if err != nil {
-		err := errors.New("invalid topup id")
-
-		logError("Invalid topup id", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidTopupID(c)
+	cachedData, found := h.cache.GetCachedTopupCache(ctx, idInt)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.client.FindByIdTopup(ctx, &pb.FindByIdTopupRequest{
 		TopupId: int32(idInt),
 	})
-
 	if err != nil {
-		logError("failed to find topup by id", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindByIdTopup(c)
+		h.logger.Debug("Failed to retrieve topup data", zap.Error(err))
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseTopup(res)
+	apiResponse := h.mapper.ToApiResponseTopup(res)
+	h.cache.SetCachedTopupCache(ctx, apiResponse)
 
-	logSuccess("success find topup by id", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find active topups
@@ -262,43 +235,47 @@ func (h topupQueryHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topup-query/active [get]
 func (h *topupQueryHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTopups{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTopupActiveCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTopupRequest{
+	reqGrpc := &pb.FindAllTopupRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByActive(ctx, req)
-
+	res, err := h.client.FindByActive(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve active topups", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindAllTopupsActive(c)
+		h.logger.Debug("Failed to retrieve topup data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByActive")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTopupDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTopupDeleteAt(res)
+	h.cache.SetCachedTopupActiveCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find active topups", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve trashed topups
@@ -314,100 +291,81 @@ func (h *topupQueryHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve topup data"
 // @Router /api/topup-query/trashed [get]
 func (h *topupQueryHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllTopups{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedTopupTrashedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllTopupRequest{
+	reqGrpc := &pb.FindAllTopupRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByTrashed(ctx, req)
-
+	res, err := h.client.FindByTrashed(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve trashed topups", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindAllTopupsTrashed(c)
+		h.logger.Debug("Failed to retrieve topup data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTrashed")
 	}
 
-	so := h.mapper.ToApiResponsePaginationTopupDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationTopupDeleteAt(res)
+	h.cache.SetCachedTopupTrashedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find trashed topups", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-// startTracingAndLogging starts a tracing span and returns functions to log the outcome of the call.
-// The returned functions are logSuccess and logError, which log the outcome of the call to the trace span.
-// The returned end function records the metrics and ends the trace span.
-func (s *topupQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *topupQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Topup").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Topup already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-// recordMetrics records a Prometheus metric for the given method and status.
-// It increments a counter and records the duration since the provided start time.
-func (s *topupQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

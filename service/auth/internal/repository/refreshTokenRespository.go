@@ -5,16 +5,13 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	refreshtoken_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/refresh_token_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/refreshtoken"
 )
 
 // refreshTokenRepository is a struct that implements the RefreshTokenRepository interface
 type refreshTokenRepository struct {
-	db     *db.Queries
-	mapper recordmapper.RefreshTokenRecordMapping
+	db *db.Queries
 }
 
 // NewRefreshTokenRepository creates a new RefreshTokenRepository instance
@@ -25,10 +22,9 @@ type refreshTokenRepository struct {
 //
 // Returns:
 // a pointer to the refreshTokenRepository struct
-func NewRefreshTokenRepository(db *db.Queries, mapper recordmapper.RefreshTokenRecordMapping) *refreshTokenRepository {
+func NewRefreshTokenRepository(db *db.Queries) *refreshTokenRepository {
 	return &refreshTokenRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
@@ -40,14 +36,14 @@ func NewRefreshTokenRepository(db *db.Queries, mapper recordmapper.RefreshTokenR
 //
 // Returns:
 //   - A RefreshTokenRecord if found, or an error if not found or operation fails.
-func (r *refreshTokenRepository) FindByToken(ctx context.Context, token string) (*record.RefreshTokenRecord, error) {
+func (r *refreshTokenRepository) FindByToken(ctx context.Context, token string) (*db.RefreshToken, error) {
 	res, err := r.db.FindRefreshTokenByToken(ctx, token)
 
 	if err != nil {
 		return nil, refreshtoken_errors.ErrTokenNotFound
 	}
 
-	return r.mapper.ToRefreshTokenRecord(res), nil
+	return res, nil
 }
 
 // FindByUserId retrieves a refresh token record by the associated user ID.
@@ -58,14 +54,14 @@ func (r *refreshTokenRepository) FindByToken(ctx context.Context, token string) 
 //
 // Returns:
 //   - A RefreshTokenRecord if found, or an error if not found or operation fails.
-func (r *refreshTokenRepository) FindByUserId(ctx context.Context, user_id int) (*record.RefreshTokenRecord, error) {
+func (r *refreshTokenRepository) FindByUserId(ctx context.Context, user_id int) (*db.RefreshToken, error) {
 	res, err := r.db.FindRefreshTokenByUserId(ctx, int32(user_id))
 
 	if err != nil {
 		return nil, refreshtoken_errors.ErrFindByUserID
 	}
 
-	return r.mapper.ToRefreshTokenRecord(res), nil
+	return res, nil
 }
 
 // CreateRefreshToken inserts a new refresh token record into the database.
@@ -76,7 +72,7 @@ func (r *refreshTokenRepository) FindByUserId(ctx context.Context, user_id int) 
 //
 // Returns:
 //   - The created RefreshTokenRecord, or an error if the operation fails.
-func (r *refreshTokenRepository) CreateRefreshToken(ctx context.Context, req *requests.CreateRefreshToken) (*record.RefreshTokenRecord, error) {
+func (r *refreshTokenRepository) CreateRefreshToken(ctx context.Context, req *requests.CreateRefreshToken) (*db.RefreshToken, error) {
 	layout := "2006-01-02 15:04:05"
 	expirationTime, err := time.Parse(layout, req.ExpiresAt)
 	if err != nil {
@@ -93,7 +89,7 @@ func (r *refreshTokenRepository) CreateRefreshToken(ctx context.Context, req *re
 		return nil, refreshtoken_errors.ErrCreateRefreshToken
 	}
 
-	return r.mapper.ToRefreshTokenRecord(res), nil
+	return res, nil
 }
 
 // UpdateRefreshToken updates an existing refresh token record.
@@ -104,7 +100,7 @@ func (r *refreshTokenRepository) CreateRefreshToken(ctx context.Context, req *re
 //
 // Returns:
 //   - The updated RefreshTokenRecord, or an error if the operation fails.
-func (r *refreshTokenRepository) UpdateRefreshToken(ctx context.Context, req *requests.UpdateRefreshToken) (*record.RefreshTokenRecord, error) {
+func (r *refreshTokenRepository) UpdateRefreshToken(ctx context.Context, req *requests.UpdateRefreshToken) (*db.RefreshToken, error) {
 	layout := "2006-01-02 15:04:05"
 	expirationTime, err := time.Parse(layout, req.ExpiresAt)
 	if err != nil {
@@ -120,7 +116,7 @@ func (r *refreshTokenRepository) UpdateRefreshToken(ctx context.Context, req *re
 		return nil, refreshtoken_errors.ErrUpdateRefreshToken
 	}
 
-	return r.mapper.ToRefreshTokenRecord(res), nil
+	return res, nil
 }
 
 // DeleteRefreshToken removes a refresh token by its token string.

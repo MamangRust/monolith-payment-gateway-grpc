@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type cardStatsTransactionCache struct {
@@ -16,20 +16,10 @@ func NewCardStatsTransactionCache(store *sharedcachehelpers.CacheStore) CardStat
 	return &cardStatsTransactionCache{store: store}
 }
 
-// GetMonthlyTransactionCache retrieves the global monthly transaction statistics
-// (across all cards) for a given year from the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which monthly transaction data is requested.
-//
-// Returns:
-//   - []*response.CardResponseMonthAmount: Slice of monthly transaction statistics.
-//   - bool: Whether the data was found in the cache.
-func (c *cardStatsTransactionCache) GetMonthlyTransactionCache(ctx context.Context, year int) ([]*response.CardResponseMonthAmount, bool) {
+func (c *cardStatsTransactionCache) GetMonthlyTransactionCache(ctx context.Context, year int) ([]*db.GetMonthlyTransactionAmountRow, bool) {
 	key := fmt.Sprintf(cacheKeyMonthlyTransactionAmount, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.CardResponseMonthAmount](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyTransactionAmountRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -38,14 +28,7 @@ func (c *cardStatsTransactionCache) GetMonthlyTransactionCache(ctx context.Conte
 	return *result, true
 }
 
-// SetMonthlyTransactionCache stores the global monthly transaction statistics
-// (across all cards) for a given year in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is being cached.
-//   - data: The data to be cached.
-func (c *cardStatsTransactionCache) SetMonthlyTransactionCache(ctx context.Context, year int, data []*response.CardResponseMonthAmount) {
+func (c *cardStatsTransactionCache) SetMonthlyTransactionCache(ctx context.Context, year int, data []*db.GetMonthlyTransactionAmountRow) {
 	if data == nil {
 		return
 	}
@@ -54,20 +37,10 @@ func (c *cardStatsTransactionCache) SetMonthlyTransactionCache(ctx context.Conte
 	sharedcachehelpers.SetToCache(ctx, c.store, key, &data, ttlStatistic)
 }
 
-// GetYearlyTransactionCache retrieves the global yearly transaction statistics
-// (across all cards) for a given year from the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which yearly transaction data is requested.
-//
-// Returns:
-//   - []*response.CardResponseYearAmount: Slice of yearly transaction statistics.
-//   - bool: Whether the data was found in the cache.
-func (c *cardStatsTransactionCache) GetYearlyTransactionCache(ctx context.Context, year int) ([]*response.CardResponseYearAmount, bool) {
+func (c *cardStatsTransactionCache) GetYearlyTransactionCache(ctx context.Context, year int) ([]*db.GetYearlyTransactionAmountRow, bool) {
 	key := fmt.Sprintf(cacheKeyYearlyTransactionAmount, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.CardResponseYearAmount](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransactionAmountRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -76,14 +49,7 @@ func (c *cardStatsTransactionCache) GetYearlyTransactionCache(ctx context.Contex
 	return *result, true
 }
 
-// SetYearlyTransactionCache stores the global yearly transaction statistics
-// (across all cards) for a given year in the cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is being cached.
-//   - data: The data to be cached.
-func (c *cardStatsTransactionCache) SetYearlyTransactionCache(ctx context.Context, year int, data []*response.CardResponseYearAmount) {
+func (c *cardStatsTransactionCache) SetYearlyTransactionCache(ctx context.Context, year int, data []*db.GetYearlyTransactionAmountRow) {
 	if data == nil {
 		return
 	}

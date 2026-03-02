@@ -3,8 +3,8 @@ package service
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transaction"
-	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/errorhandler"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transaction/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-transaction/internal/repository"
 	transactionstatsservice "github.com/MamangRust/monolith-payment-gateway-transaction/internal/service/stats"
@@ -26,66 +26,54 @@ type Service interface {
 	transactionstatsbycardservice.TransactionStatsByCardService
 }
 
-// Deps is a struct that contains all the dependencies
 type Deps struct {
 	Kafka        *kafka.Kafka
 	Repositories repository.Repositories
 	Logger       logger.LoggerInterface
-	ErrorHander  *errorhandler.ErrorHandler
-	Mencache     mencache.Mencache
+	Cache        *cache.CacheStore
 }
 
-// NewService initializes and returns a new instance of Service with all sub-services wired.
 func NewService(deps *Deps) Service {
-	transaction := responseservice.NewTransactionResponseMapper()
+	cache := mencache.NewMencache(deps.Cache)
+	observability, _ := observability.NewObservability("transaction-service", deps.Logger)
 
 	return &service{
-		TransactionQueryService:   newTransactionQueryService(deps, transaction.QueryMapper()),
-		TransactionCommandService: newTransactionCommandService(deps, transaction.CommandMapper()),
+		TransactionQueryService:   newTransactionQueryService(deps, observability, cache),
+		TransactionCommandService: newTransactionCommandService(deps, observability, cache),
 		TransactionStatsService: transactionstatsservice.NewTransactionStatsService(&transactionstatsservice.DepsStats{
-			Cache:        deps.Mencache,
-			ErrorHandler: deps.ErrorHander.TransactionStatisticError,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			MapperAmount: transaction.AmountStatsMapper(),
-			MapperMethod: transaction.MethodStatsMapper(),
-			MapperStatus: transaction.StatusStatsMapper(),
+			Cache:         cache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: observability,
 		}),
 		TransactionStatsByCardService: transactionstatsbycardservice.NewTransactionStatsByCardService(&transactionstatsbycardservice.DepsStats{
-			Cache:        deps.Mencache,
-			ErrorHandler: deps.ErrorHander.TransactionStatisticByCard,
-			Repository:   deps.Repositories,
-			Logger:       deps.Logger,
-			MapperAmount: transaction.AmountStatsMapper(),
-			MapperMethod: transaction.MethodStatsMapper(),
-			MapperStatus: transaction.StatusStatsMapper(),
+			Cache:         cache,
+			Repository:    deps.Repositories,
+			Logger:        deps.Logger,
+			Observability: observability,
 		}),
 	}
 }
 
-// newTransactionQueryService constructs the TransactionQueryService with its dependencies.
-func newTransactionQueryService(deps *Deps, mapper responseservice.TransactionQueryResponseMapper) TransactionQueryService {
+func newTransactionQueryService(deps *Deps, observability observability.TraceLoggerObservability, cache mencache.Mencache) TransactionQueryService {
 	return NewTransactionQueryService(&transactionQueryServiceDeps{
-		ErrorHandler:               deps.ErrorHander.TransactionQueryError,
-		Cache:                      deps.Mencache,
+		Cache:                      cache,
 		TransactionQueryRepository: deps.Repositories,
 		Logger:                     deps.Logger,
-		Mapper:                     mapper,
+		Observability:              observability,
 	})
 }
 
-// newTransactionCommandService constructs the TransactionCommandService with its dependencies.
-func newTransactionCommandService(deps *Deps, mapper responseservice.TransactionCommandResponseMapper) TransactionCommandService {
+func newTransactionCommandService(deps *Deps, observability observability.TraceLoggerObservability, cache mencache.Mencache) TransactionCommandService {
 	return NewTransactionCommandService(&transactionCommandServiceDeps{
 		Kafka:                        deps.Kafka,
-		ErrorHandler:                 deps.ErrorHander.TransactonCommandError,
-		Mencache:                     deps.Mencache,
+		Mencache:                     cache,
 		MerchantRepository:           deps.Repositories,
 		CardRepository:               deps.Repositories,
 		SaldoRepository:              deps.Repositories,
 		TransactionCommandRepository: deps.Repositories,
 		TransactionQueryRepository:   deps.Repositories,
 		Logger:                       deps.Logger,
-		Mapping:                      mapper,
+		Observability:                observability,
 	})
 }

@@ -3,142 +3,119 @@ package saldostatsservice
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-saldo/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-saldo/internal/redis/stats"
 	repository "github.com/MamangRust/monolith-payment-gateway-saldo/internal/repository/stats"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/saldo"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
 type saldoStatsBalanceDeps struct {
-	Cache        mencache.SaldoStatsBalanceCache
-	ErrorHandler errorhandler.SaldoStatisticErrorHandler
+	Cache mencache.SaldoStatsBalanceCache
 
 	Repository repository.SaldoStatsBalanceRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.SaldoStatisticBalanceResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type saldoStatsBalanceService struct {
-	mencache mencache.SaldoStatsBalanceCache
+	cache mencache.SaldoStatsBalanceCache
 
 	repository repository.SaldoStatsBalanceRepository
 
-	errorhandler errorhandler.SaldoStatisticErrorHandler
-
 	logger logger.LoggerInterface
-
-	mapper responseservice.SaldoStatisticBalanceResponseMapper
 
 	observability observability.TraceLoggerObservability
 }
 
 func NewSaldoStatsBalanceService(params *saldoStatsBalanceDeps) SaldoStatsBalanceService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "saldo_stats_balance_service_request_total",
-		Help: "The total number of requests SaldoStatsBalanceService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "saldo_stats_balance_service_request_duration_seconds",
-		Help:    "The duration of requests SaldoStatsBalanceService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("saldo-stats-balance-service"), params.Logger, requestCounter, requestDuration)
-
 	return &saldoStatsBalanceService{
-		mencache:      params.Cache,
+		cache:         params.Cache,
 		repository:    params.Repository,
-		errorhandler:  params.ErrorHandler,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlySaldoBalances retrieves saldo balances for each month in the specified year.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The target year to retrieve monthly saldo balances.
-//
-// Returns:
-//   - []*response.SaldoMonthBalanceResponse: List of saldo balances per month.
-//   - *response.ErrorResponse: An error response if the operation fails.
-func (s *saldoStatsBalanceService) FindMonthlySaldoBalances(ctx context.Context, year int) ([]*response.SaldoMonthBalanceResponse, *response.ErrorResponse) {
+func (s *saldoStatsBalanceService) FindMonthlySaldoBalances(ctx context.Context, year int) ([]*db.GetMonthlySaldoBalancesRow, error) {
 	const method = "FindMonthlySaldoBalances"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cache, found := s.mencache.GetMonthlySaldoBalanceCache(ctx, year); found {
+	if cache, found := s.cache.GetMonthlySaldoBalanceCache(ctx, year); found {
 		logSuccess("Successfully fetched monthly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}
 
-	res, err := s.repository.GetMonthlySaldoBalances(ctx, year)
+	s.logger.Debug("Cache miss for monthly saldo balances, fetching from DB", zap.Int("year", year))
 
+	dbRows, err := s.repository.GetMonthlySaldoBalances(ctx, year)
 	if err != nil {
-		return s.errorhandler.HandleMonthlySaldoBalancesError(err, method, "FAILED_FIND_MONTHLY_SALDO_BALANCES", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthlySaldoBalancesRow](
+			s.logger,
+			saldo_errors.ErrFailedFindMonthlySaldoBalances,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
 
-	responses := s.mapper.ToSaldoMonthBalanceResponses(res)
+	s.logger.Debug("Setting cache for monthly saldo balances", zap.Int("year", year))
 
-	s.mencache.SetMonthlySaldoBalanceCache(ctx, year, responses)
+	s.cache.SetMonthlySaldoBalanceCache(ctx, year, dbRows)
 
-	logSuccess("Successfully fetched monthly saldo balances", zap.Int("year", year))
+	logSuccess("Successfully fetched monthly saldo balances (from DB)", zap.Int("year", year))
 
-	return responses, nil
+	return dbRows, nil
 }
 
-// FindYearlySaldoBalances retrieves saldo balances aggregated by year.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The target year to retrieve yearly saldo balances.
-//
-// Returns:
-//   - []*response.SaldoYearBalanceResponse: List of saldo balances per year.
-//   - *response.ErrorResponse: An error response if the operation fails.
-func (s *saldoStatsBalanceService) FindYearlySaldoBalances(ctx context.Context, year int) ([]*response.SaldoYearBalanceResponse, *response.ErrorResponse) {
+func (s *saldoStatsBalanceService) FindYearlySaldoBalances(ctx context.Context, year int) ([]*db.GetYearlySaldoBalancesRow, error) {
 	const method = "FindYearlySaldoBalances"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cache, found := s.mencache.GetYearlySaldoBalanceCache(ctx, year); found {
+	if cache, found := s.cache.GetYearlySaldoBalanceCache(ctx, year); found {
 		logSuccess("Successfully fetched yearly saldo balances from cache", zap.Int("year", year))
 		return cache, nil
 	}
 
-	res, err := s.repository.GetYearlySaldoBalances(ctx, year)
+	s.logger.Debug("Cache miss for yearly saldo balances, fetching from DB", zap.Int("year", year))
 
+	dbRows, err := s.repository.GetYearlySaldoBalances(ctx, year)
 	if err != nil {
-		return s.errorhandler.HandleYearlySaldoBalancesError(err, method, "FAILED_FIND_YEARLY_SALDO_BALANCES", span, &status, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlySaldoBalancesRow](
+			s.logger,
+			saldo_errors.ErrFailedFindYearlySaldoBalances,
+			method,
+			span,
+
+			zap.Int("year", year),
+		)
 	}
 
-	responses := s.mapper.ToSaldoYearBalanceResponses(res)
+	s.logger.Debug("Setting cache for yearly saldo balances", zap.Int("year", year))
+	s.cache.SetYearlySaldoBalanceCache(ctx, year, dbRows)
 
-	s.mencache.SetYearlySaldoBalanceCache(ctx, year, responses)
+	logSuccess("Successfully fetched yearly saldo balances (from DB)", zap.Int("year", year))
 
-	logSuccess("Successfully fetched yearly saldo balances", zap.Int("year", year))
-
-	return responses, nil
+	return dbRows, nil
 }

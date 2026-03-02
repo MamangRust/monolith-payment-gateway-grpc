@@ -2,7 +2,6 @@ package topupstatsbycardrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/topup/statsbycard"
 )
 
 type TopupStatsByCardRepository interface {
@@ -17,11 +16,11 @@ type repository struct {
 	TopupStatsByCardStatusRepository
 }
 
-func NewTopupStatsByCardRepository(db *db.Queries, mapper recordmapper.TopupStatisticByCardRecordMapper) TopupStatsByCardRepository {
+func NewTopupStatsByCardRepository(db *db.Queries) TopupStatsByCardRepository {
 
 	return &repository{
-		TopupStatsByCardAmountRepository: NewTopupStatsByCardAmountRepository(db, mapper),
-		TopupStatsByCardMethodRepository: NewTopupStatsByCardMethodRepository(db, mapper),
-		TopupStatsByCardStatusRepository: NewTopupStatsByCardStatusRepository(db, mapper),
+		TopupStatsByCardAmountRepository: NewTopupStatsByCardAmountRepository(db),
+		TopupStatsByCardMethodRepository: NewTopupStatsByCardMethodRepository(db),
+		TopupStatsByCardStatusRepository: NewTopupStatsByCardStatusRepository(db),
 	}
 }

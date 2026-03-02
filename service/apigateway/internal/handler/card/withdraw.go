@@ -1,116 +1,64 @@
 package cardhandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	card_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/card"
+	pbcard "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/card/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	cardapierrors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type cardStatsWithdrawHandleApi struct {
-	// card is the gRPC client used to interact with the CardService.
-	card pb.CardStatsWithdrawServiceClient
-
-	// logger provides structured and leveled logging capabilities.
-	logger logger.LoggerInterface
-
-	// mapper transforms gRPC responses into standardized HTTP API responses.
-	mapper apimapper.CardStatsAmountResponseMapper
-
-	// trace is the OpenTelemetry tracer for distributed tracing.
-	trace trace.Tracer
-
-	// requestCounter records the number of HTTP requests handled by this service.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of HTTP request handling in seconds.
-	requestDuration *prometheus.HistogramVec
+	card       pb.CardStatsWithdrawServiceClient
+	apiHandler errors.ApiHandler
+	cache      card_cache.CardMencache
+	logger     logger.LoggerInterface
+	mapper     apimapper.CardStatsAmountResponseMapper
 }
 
-// cardStatsWithdrawHandleApiDeps is a struct that holds the necessary dependencies for the cardStatsWithdrawHandleApi.
 type cardStatsWithdrawHandleApiDeps struct {
-	// client is the gRPC client used to interact with the CardService.
-	client pb.CardStatsWithdrawServiceClient
-
-	// router is the Echo router used to register HTTP routes.
-	router *echo.Echo
-
-	// logger provides structured and leveled logging capabilities.
-	logger logger.LoggerInterface
-
-	// mapper transforms gRPC responses into standardized HTTP API responses.
-	mapper apimapper.CardStatsAmountResponseMapper
+	client     pb.CardStatsWithdrawServiceClient
+	router     *echo.Echo
+	apiHandler errors.ApiHandler
+	cache      card_cache.CardMencache
+	logger     logger.LoggerInterface
+	mapper     apimapper.CardStatsAmountResponseMapper
 }
 
-// NewCardStatsWithdrawHandleApi initializes a new cardStatsWithdrawHandleApi and sets up the routes for card stats withdraw-related operations.
-//
-// This function registers various HTTP endpoints related to card stats withdraw management, including retrieval of monthly and yearly withdraw amounts.
-// It also tracks metrics like request count and duration using Prometheus metrics. The routes are grouped under "/api/card-stats-withdraw".
-//
-// Parameters:
-// - params: A pointer to cardStatsWithdrawHandleApiDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created cardStatsWithdrawHandleApi.
 func NewCardStatsWithdrawHandleApi(
 	params *cardStatsWithdrawHandleApiDeps,
 ) *cardStatsWithdrawHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "card_stats_withdraw_handler_requests_total",
-			Help: "Total number of Card Stats Withdraw requests",
-		},
-		[]string{"method", "status"},
-	)
 
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "card_stats_withdraw_handler_request_duration_seconds",
-			Help:    "Duration of Card Stats Withdraw requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	cardStatsWithdrawHandler := &cardStatsWithdrawHandleApi{
-		card:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("card-stats-withdraw-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+	cardHandler := &cardStatsWithdrawHandleApi{
+		card:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerCard := params.router.Group("/api/card-stats-withdraw")
 
-	routerCard.GET("/monthly-withdraw-amount", cardStatsWithdrawHandler.FindMonthlyWithdrawAmount)
-	routerCard.GET("/yearly-withdraw-amount", cardStatsWithdrawHandler.FindYearlyWithdrawAmount)
+	routerCard.GET("/monthly-withdraw-amount", params.apiHandler.Handle("find-monthly-withdraw-amount", cardHandler.FindMonthlyWithdrawAmount))
+	routerCard.GET("/yearly-withdraw-amount", params.apiHandler.Handle("find-yearly-withdraw-amount", cardHandler.FindYearlyWithdrawAmount))
+	routerCard.GET("/monthly-withdraw-amount-by-card", params.apiHandler.Handle("find-monthly-withdraw-amount-by-card", cardHandler.FindMonthlyWithdrawAmountByCardNumber))
+	routerCard.GET("/yearly-withdraw-amount-by-card", params.apiHandler.Handle("find-yearly-withdraw-amount-by-card", cardHandler.FindYearlyWithdrawAmountByCardNumber))
 
-	routerCard.GET("/monthly-withdraw-amount-by-card", cardStatsWithdrawHandler.FindMonthlyWithdrawAmountByCardNumber)
-	routerCard.GET("/yearly-withdraw-amount-by-card", cardStatsWithdrawHandler.FindYearlyWithdrawAmountByCardNumber)
-
-	return cardStatsWithdrawHandler
+	return cardHandler
 }
 
-// FindMonthlyWithdrawAmount
-// godoc
+// FindMonthlyWithdrawAmount godoc
 // @Summary Get monthly withdraw amount data
 // @Description Retrieve monthly withdraw amount data for a specific year
-// @Tags Card-Stats-Withdraw
+// @Tags Card Stats Withdraw
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -119,45 +67,38 @@ func NewCardStatsWithdrawHandleApi(
 // @Failure 500 {object} response.ErrorResponse
 // @Router /api/card-stats-withdraw/monthly-withdraw-amount [get]
 func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmount(c echo.Context) error {
-	const method = "FindMonthlyWithdrawAmount"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyWithdrawCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearAmount{
+	reqGrpc := &pbcard.FindYearAmount{
 		Year: int32(year),
 	}
 
-	res, err := h.card.FindMonthlyWithdrawAmount(ctx, req)
-
+	res, err := h.card.FindMonthlyWithdrawAmount(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve monthly withdraw amount data", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindMonthlyWithdrawAmount(c)
+		return h.handleGrpcError(err, "FindMonthlyWithdrawAmount")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyAmounts(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
+	h.cache.SetMonthlyWithdrawCache(ctx, year, apiResponse)
 
-	logSuccess("Success retrieve monthly withdraw amount data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawAmount godoc
 // @Summary Get yearly withdraw amount data
 // @Description Retrieve yearly withdraw amount data for a specific year
-// @Tags Card-Stats-Withdraw
+// @Tags Card Stats Withdraw
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -166,44 +107,38 @@ func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmount(c echo.Context) e
 // @Failure 500 {object} response.ErrorResponse
 // @Router /api/card-stats-withdraw/yearly-withdraw-amount [get]
 func (h *cardStatsWithdrawHandleApi) FindYearlyWithdrawAmount(c echo.Context) error {
-	const method = "FindYearlyWithdrawAmount"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
 	}
 
-	req := &pb.FindYearAmount{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetYearlyWithdrawCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbcard.FindYearAmount{
 		Year: int32(year),
 	}
 
-	res, err := h.card.FindYearlyWithdrawAmount(ctx, req)
-
+	res, err := h.card.FindYearlyWithdrawAmount(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve yearly withdraw amount data", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindYearlyWithdrawAmount(c)
+		return h.handleGrpcError(err, "FindYearlyWithdrawAmount")
 	}
 
-	so := h.mapper.ToApiResponseYearlyAmounts(res)
+	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
+	h.cache.SetYearlyWithdrawCache(ctx, year, apiResponse)
 
-	logSuccess("Success retrieve yearly withdraw amount data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyWithdrawAmountByCardNumber godoc
 // @Summary Get monthly withdraw amount data by card number
 // @Description Retrieve monthly withdraw amount data for a specific year and card number
-// @Tags Card-Stats-Withdraw
+// @Tags Card Stats Withdraw
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -213,52 +148,49 @@ func (h *cardStatsWithdrawHandleApi) FindYearlyWithdrawAmount(c echo.Context) er
 // @Failure 500 {object} response.ErrorResponse
 // @Router /api/card-stats-withdraw/monthly-withdraw-amount-by-card [get]
 func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmountByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyWithdrawAmountByCardNumber"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	cardNumber := c.QueryParam("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumberCard{
+		Year:       year,
+		CardNumber: cardNumber,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthlyWithdrawByNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearAmountCardNumber{
+	reqGrpc := &pbcard.FindYearAmountCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	}
 
-	res, err := h.card.FindMonthlyWithdrawAmountByCardNumber(ctx, req)
-
+	res, err := h.card.FindMonthlyWithdrawAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve monthly withdraw amount data by card number", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindMonthlyWithdrawAmountByCard(c)
+		return h.handleGrpcError(err, "FindMonthlyWithdrawAmountByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseMonthlyAmounts(res)
+	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
+	h.cache.SetMonthlyWithdrawByNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve monthly withdraw amount data by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyWithdrawAmountByCardNumber godoc
 // @Summary Get yearly withdraw amount data by card number
 // @Description Retrieve yearly withdraw amount data for a specific year and card number
-// @Tags Card-Stats-Withdraw
+// @Tags Card Stats Withdraw
 // @Security Bearer
 // @Produce json
 // @Param year query int true "Year"
@@ -268,104 +200,77 @@ func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmountByCardNumber(c ech
 // @Failure 500 {object} response.ErrorResponse
 // @Router /api/card-stats-withdraw/yearly-withdraw-amount-by-card [get]
 func (h *cardStatsWithdrawHandleApi) FindYearlyWithdrawAmountByCardNumber(c echo.Context) error {
-	const method = "FindYearlyWithdrawAmountByCardNumber"
+	yearStr := c.QueryParam("year")
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("year is required and must be a positive integer")
+	}
+
+	cardNumber := c.QueryParam("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthYearCardNumberCard{
+		Year:       year,
+		CardNumber: cardNumber,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyWithdrawByNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	req := &pb.FindYearAmountCardNumber{
+	reqGrpc := &pbcard.FindYearAmountCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	}
 
-	res, err := h.card.FindYearlyWithdrawAmountByCardNumber(ctx, req)
-
+	res, err := h.card.FindYearlyWithdrawAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve yearly withdraw amount data by card number", err, zap.Error(err))
-
-		return cardapierrors.ErrApiFailedFindYearlyWithdrawAmountByCard(c)
+		return h.handleGrpcError(err, "FindYearlyWithdrawAmountByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseYearlyAmounts(res)
+	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
+	h.cache.SetYearlyWithdrawByNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("Success retrieve yearly withdraw amount data by card number", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-// startTracingAndLogging starts a tracing span and returns functions to log the outcome of the call.
-// The returned functions are logSuccess and logError, which log the outcome of the call to the trace span.
-// The returned end function records the metrics and ends the trace span.
-func (s *cardStatsWithdrawHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *cardStatsWithdrawHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Card").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Card already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-// recordMetrics records Prometheus metrics for the specified method and status.
-// It increments the request counter for the provided method and status,
-// and observes the request duration by calculating the time elapsed since the provided start time.
-func (s *cardStatsWithdrawHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

@@ -1,7 +1,7 @@
 package withdrawstatshandler
 
 import (
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/withdraw/stats"
 )
 
 type WithdrawStatsAmountHandlerGrpc interface {
@@ -9,5 +9,5 @@ type WithdrawStatsAmountHandlerGrpc interface {
 }
 
 type WithdrawStatsStatusHandleGrpc interface {
-	pb.WithdrawStatsStatusServer
+	pb.WithdrawStatsStatusServiceServer
 }

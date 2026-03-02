@@ -2,8 +2,7 @@ package topupstatsbycardservice
 
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/topup"
-	"github.com/MamangRust/monolith-payment-gateway-topup/internal/errorhandler"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	mencache "github.com/MamangRust/monolith-payment-gateway-topup/internal/redis/statsbycard"
 	repository "github.com/MamangRust/monolith-payment-gateway-topup/internal/repository/statsbycard"
 )
@@ -21,37 +20,32 @@ type topupStatsByCardService struct {
 }
 
 type DepsStatsByCard struct {
-	Cache        mencache.TopupStatsByCardCache
-	ErrorHandler errorhandler.TopupStatisticByCardErrorHandler
-	Logger       logger.LoggerInterface
-	Repository   repository.TopupStatsByCardRepository
-	MappeAmount  responseservice.TopupStatsAmountResponseMapper
-	MapperMethod responseservice.TopupStatsMethodResponseMapper
-	MapperStatus responseservice.TopupStatsStatusResponseMapper
+	Cache mencache.TopupStatsByCardCache
+
+	Logger        logger.LoggerInterface
+	Repository    repository.TopupStatsByCardRepository
+	Observability observability.TraceLoggerObservability
 }
 
 func NewTopupStatsByCardService(deps *DepsStatsByCard) TopupStatsByCardService {
 	return &topupStatsByCardService{
 		TopupStatsByCardAmountService: NewTopupStatsByCardAmountService(&topupStatsByCardAmountDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MappeAmount,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		TopupStatsByCardMethodService: NewTopupStatsByCardMethodService(&topupStatsByCardMethodDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperMethod,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		TopupStatsByCardStatusService: NewTopupStatsByCardStatusService(&topupStatsByCardStatusDeps{
-			Cache:        deps.Cache,
-			ErrorHandler: deps.ErrorHandler,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperStatus,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

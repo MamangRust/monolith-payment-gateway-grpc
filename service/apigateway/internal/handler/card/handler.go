@@ -1,9 +1,13 @@
 package cardhandler
 
 import (
+	card_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/card"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pbstats "github.com/MamangRust/monolith-payment-gateway-pb/card/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/card"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc"
 )
@@ -14,28 +18,25 @@ type DepsCard struct {
 	E *echo.Echo
 
 	Logger logger.LoggerInterface
+
+	Cache *cache.CacheStore
+
+	ApiHandler errors.ApiHandler
 }
 
-// NewCardHandler initializes handlers for various card-related operations.
-//
-// This function sets up multiple handlers for card operations including query,
-// command, dashboard, and statistics (balance, transaction, top-up, withdrawal, transfer).
-// It takes a DepsCard struct which contains the necessary dependencies such as
-// gRPC client connection, Echo router, and logger. Each handler is initialized
-// with the corresponding response mapper and added to a slice of handler functions,
-// which are executed sequentially to set up the routes.
 func RegisterCardHandler(deps *DepsCard) {
 	mapper := apimapper.NewCardResponseMapper()
+	cache := card_cache.NewCardMencache(deps.Cache)
 
 	handlers := []func(){
-		setupCardQueryHandler(deps, mapper.QueryMapper()),
-		setupCardCommandHandler(deps, mapper.CommandMapper()),
-		setupCardDashboardHandler(deps, mapper.DashboardMapper()),
-		setupCardStatsBalanceHandler(deps, mapper.BalanceStatsMapper()),
-		setupCardStatsTransactionHandler(deps, mapper.AmountStatsMapper()),
-		setupCardStatsTopupHandler(deps, mapper.AmountStatsMapper()),
-		setupCardStatsWithdrawHandler(deps, mapper.AmountStatsMapper()),
-		setupCardStatsTransferHandler(deps, mapper.AmountStatsMapper()),
+		setupCardQueryHandler(deps, mapper.QueryMapper(), cache),
+		setupCardCommandHandler(deps, mapper.CommandMapper(), cache),
+		setupCardDashboardHandler(deps, mapper.DashboardMapper(), cache),
+		setupCardStatsBalanceHandler(deps, mapper.BalanceStatsMapper(), cache),
+		setupCardStatsTransactionHandler(deps, mapper.AmountStatsMapper(), cache),
+		setupCardStatsTopupHandler(deps, mapper.AmountStatsMapper(), cache),
+		setupCardStatsWithdrawHandler(deps, mapper.AmountStatsMapper(), cache),
+		setupCardStatsTransferHandler(deps, mapper.AmountStatsMapper(), cache),
 	}
 
 	for _, h := range handlers {
@@ -43,138 +44,106 @@ func RegisterCardHandler(deps *DepsCard) {
 	}
 }
 
-// setupCardQueryHandler sets up the handler for the card query service.
-//
-// It creates a new instance of the CardQueryHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardQueryHandler(deps *DepsCard, mapper apimapper.CardQueryResponseMapper) func() {
+func setupCardQueryHandler(deps *DepsCard, mapper apimapper.CardQueryResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardQueryHandleApi(&cardQueryHandleApiDeps{
-			client: pb.NewCardQueryServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pb.NewCardQueryServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardCommandHandler sets up the handler for the card command service.
-//
-// It creates a new instance of the CardCommandHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardCommandHandler(deps *DepsCard, mapper apimapper.CardCommandResponseMapper) func() {
+func setupCardCommandHandler(deps *DepsCard, mapper apimapper.CardCommandResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardCommandHandleApi(&cardCommandHandleApiDeps{
-			client: pb.NewCardCommandServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pb.NewCardCommandServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardDashboardHandler sets up the handler for the card dashboard service.
-//
-// It creates a new instance of the CardDashboardHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardDashboardHandler(deps *DepsCard, mapper apimapper.CardDashboardResponseMapper) func() {
+func setupCardDashboardHandler(deps *DepsCard, mapper apimapper.CardDashboardResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardDashboardHandleApi(&cardDashboardHandleApiDeps{
-			client: pb.NewCardDashboardServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pb.NewCardDashboardServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardStatsBalanceHandler sets up the handler for the card statistics balance service.
-//
-// It creates a new instance of the CardStatsBalanceHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardStatsBalanceResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardStatsBalanceHandler(deps *DepsCard, mapper apimapper.CardStatsBalanceResponseMapper) func() {
+func setupCardStatsBalanceHandler(deps *DepsCard, mapper apimapper.CardStatsBalanceResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardStatsBalanceHandleApi(&cardStatsBalanceHandleApiDeps{
-			client: pb.NewCardStatsBalanceServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewCardStatsBalanceServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardStatsTopupHandler sets up the handler for the card statistics top-up service.
-//
-// It creates a new instance of the CardStatsTopupHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardStatsAmountResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardStatsTopupHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper) func() {
+func setupCardStatsTopupHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardStatsTopupHandleApi(&cardStatsTopupHandleApiDeps{
-			client: pb.NewCardStatsTopupServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewCardStatsTopupServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardStatsTransactionHandler sets up the handler for the card statistics transaction service.
-//
-// It creates a new instance of the CardStatsTransactionHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardStatsAmountResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardStatsTransactionHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper) func() {
+func setupCardStatsTransactionHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardStatsTransactionHandleApi(&cardStatsTransactionHandleApiDeps{
-			client: pb.NewCardStatsTransactonServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewCardStatsTransactionServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardStatsTransferHandler sets up the handler for the card statistics transfer service.
-//
-// It creates a new instance of the CardStatsTransferHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardStatsAmountResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardStatsTransferHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper) func() {
+func setupCardStatsTransferHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardStatsTransferHandleApi(&cardStatsTransferHandleApiDeps{
-			client: pb.NewCardStatsTransferServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewCardStatsTransferServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }
 
-// setupCardStatsWithdrawHandler sets up the handler for the card statistics withdraw service.
-//
-// It creates a new instance of the CardStatsWithdrawHandleApi and registers the
-// handler with the Echo router. It takes a pointer to DepsCard and a
-// mapper for CardStatsAmountResponse. It returns a function that can be executed to
-// set up the handler.
-func setupCardStatsWithdrawHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper) func() {
+func setupCardStatsWithdrawHandler(deps *DepsCard, mapper apimapper.CardStatsAmountResponseMapper, cache card_cache.CardMencache) func() {
 	return func() {
 		NewCardStatsWithdrawHandleApi(&cardStatsWithdrawHandleApiDeps{
-			client: pb.NewCardStatsWithdrawServiceClient(deps.Client),
-			router: deps.E,
-			logger: deps.Logger,
-			mapper: mapper,
+			client:     pbstats.NewCardStatsWithdrawServiceClient(deps.Client),
+			router:     deps.E,
+			logger:     deps.Logger,
+			mapper:     mapper,
+			cache:      cache,
+			apiHandler: deps.ApiHandler,
 		})
 	}
 }

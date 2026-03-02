@@ -1,25 +1,22 @@
 package topuphandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
+	topup_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/topup"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/topup"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
+	"github.com/go-playground/validator/v10"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 type topupCommandHandleApi struct {
@@ -29,11 +26,9 @@ type topupCommandHandleApi struct {
 
 	mapper apimapper.TopupCommandResponseMapper
 
-	trace trace.Tracer
+	cache topup_cache.TopupMencach
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type topupCommandHandleDeps struct {
@@ -44,47 +39,33 @@ type topupCommandHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TopupCommandResponseMapper
+
+	cache topup_cache.TopupMencach
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTopupCommandHandleApi(params *topupCommandHandleDeps) *topupCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "topup_command_handler_requests_total",
-			Help: "Total number of topup command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "topup_command_handler_request_duration_seconds",
-			Help:    "Duration of topup command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	topupHandler := &topupCommandHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("topup-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTopup := params.router.Group("/api/topup-command")
 
-	routerTopup.POST("/create", topupHandler.Create)
-	routerTopup.POST("/update/:id", topupHandler.Update)
-	routerTopup.POST("/trashed/:id", topupHandler.TrashTopup)
-	routerTopup.POST("/restore/:id", topupHandler.RestoreTopup)
-	routerTopup.DELETE("/permanent/:id", topupHandler.DeleteTopupPermanent)
+	routerTopup.POST("/create", params.apiHandler.Handle("create-topup", topupHandler.Create))
+	routerTopup.POST("/update/:id", params.apiHandler.Handle("update-topup", topupHandler.Update))
+	routerTopup.POST("/trashed/:id", params.apiHandler.Handle("trash-topup", topupHandler.TrashTopup))
+	routerTopup.POST("/restore/:id", params.apiHandler.Handle("restore-topup", topupHandler.RestoreTopup))
+	routerTopup.DELETE("/permanent/:id", params.apiHandler.Handle("delete-topup-permanent", topupHandler.DeleteTopupPermanent))
 
-	routerTopup.POST("/trashed/all", topupHandler.DeleteAllTopupPermanent)
-	routerTopup.POST("/restore/all", topupHandler.RestoreAllTopup)
+	routerTopup.POST("/delete/all", params.apiHandler.Handle("delete-all-topups-permanent", topupHandler.DeleteAllTopupPermanent))
+	routerTopup.POST("/restore/all", params.apiHandler.Handle("restore-all-topups", topupHandler.RestoreAllTopup))
+
 	return topupHandler
 }
 
@@ -100,28 +81,18 @@ func NewTopupCommandHandleApi(params *topupCommandHandleDeps) *topupCommandHandl
 // @Failure 500 {object} response.ErrorResponse "Failed to create topup: "
 // @Router /api/topup-command/create [post]
 func (h *topupCommandHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateTopupRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind CreateTopup request", err, zap.Error(err))
-
-		return topup_errors.ErrApiBindCreateTopup(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate CreateTopup request", err, zap.Error(err))
-
-		return topup_errors.ErrApiValidateCreateTopup(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.CreateTopup(ctx, &pb.CreateTopupRequest{
 		CardNumber:  body.CardNumber,
@@ -130,14 +101,10 @@ func (h *topupCommandHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to create topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedCreateTopup(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
 	so := h.mapper.ToApiResponseTopup(res)
-
-	logSuccess("success create topup", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -155,36 +122,24 @@ func (h *topupCommandHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update topup: "
 // @Router /api/topup-command/update/{id} [post]
 func (h *topupCommandHandleApi) Update(c echo.Context) error {
-	const method = "Update"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	idint, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidTopupID(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateTopupRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateTopup request", err, zap.Error(err))
-
-		return topup_errors.ErrApiBindUpdateTopup(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate UpdateTopup request", err, zap.Error(err))
-
-		return topup_errors.ErrApiValidateUpdateTopup(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.UpdateTopup(ctx, &pb.UpdateTopupRequest{
 		TopupId:     int32(idint),
@@ -194,14 +149,10 @@ func (h *topupCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to update topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedUpdateTopup(c)
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseTopup(res)
-
-	logSuccess("success update topup", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -218,38 +169,25 @@ func (h *topupCommandHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trash topup:"
 // @Router /api/topup-command/trash/{id} [post]
 func (h *topupCommandHandleApi) TrashTopup(c echo.Context) error {
-	const method = "TrashTopup"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidTopupID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.TrashedTopup(ctx, &pb.FindByIdTopupRequest{
 		TopupId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to trash topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedTrashTopup(c)
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseTopupDeleteAt(res)
-
-	logSuccess("success trash topup", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -266,38 +204,25 @@ func (h *topupCommandHandleApi) TrashTopup(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore topup:"
 // @Router /api/topup-command/restore/{id} [post]
 func (h *topupCommandHandleApi) RestoreTopup(c echo.Context) error {
-	const method = "RestoreTopup"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidTopupID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.RestoreTopup(ctx, &pb.FindByIdTopupRequest{
 		TopupId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to restore topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedRestoreTopup(c)
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseTopup(res)
-
-	logSuccess("success restore topup", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTopupDeleteAt(res)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -314,38 +239,25 @@ func (h *topupCommandHandleApi) RestoreTopup(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete topup:"
 // @Router /api/topup-command/permanent/{id} [delete]
 func (h *topupCommandHandleApi) DeleteTopupPermanent(c echo.Context) error {
-	const method = "DeleteTopupPermanent"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return topup_errors.ErrApiInvalidTopupID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.DeleteTopupPermanent(ctx, &pb.FindByIdTopupRequest{
 		TopupId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to delete topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedDeletePermanentTopup(c)
+		return h.handleGrpcError(err, "DeleteTopup")
 	}
 
 	so := h.mapper.ToApiResponseTopupDelete(res)
-
-	logSuccess("success delete topup", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -360,26 +272,17 @@ func (h *topupCommandHandleApi) DeleteTopupPermanent(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all topup records"
 // @Router /api/topup-command/restore/all [post]
 func (h *topupCommandHandleApi) RestoreAllTopup(c echo.Context) error {
-	const method = "RestoreAllTopup"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.RestoreAllTopup(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to restore all topup", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedRestoreAllTopup(c)
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
-	so := h.mapper.ToApiResponseTopupAll(res)
+	h.logger.Debug("Successfully restored all topup")
 
-	logSuccess("success restore all topup", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTopupAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -394,80 +297,95 @@ func (h *topupCommandHandleApi) RestoreAllTopup(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to permanently delete all topup records"
 // @Router /api/topup-command/permanent/all [post]
 func (h *topupCommandHandleApi) DeleteAllTopupPermanent(c echo.Context) error {
-	const method = "DeleteAllTopupPermanent"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.DeleteAllTopupPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all topup permanently", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedDeleteAllTopupPermanent(c)
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
-	so := h.mapper.ToApiResponseTopupAll(res)
+	h.logger.Debug("Successfully deleted all topup permanently")
 
-	logSuccess("success delete all topup", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseTopupAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *topupCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *topupCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Topup").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Topup already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *topupCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *topupCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *topupCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

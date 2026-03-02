@@ -1,22 +1,20 @@
 package transactionhandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction"
+	transaction_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/transaction"
+	pbtransaction "github.com/MamangRust/monolith-payment-gateway-pb/transaction"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/transaction/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/transaction"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transaction"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type transactionStatsStatusHandleApi struct {
@@ -26,11 +24,9 @@ type transactionStatsStatusHandleApi struct {
 
 	mapper apimapper.TransactionStatsStatusResponseMapper
 
-	trace trace.Tracer
+	cache transaction_cache.TransactionMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type transactionStatsStatusHandleDeps struct {
@@ -41,35 +37,20 @@ type transactionStatsStatusHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TransactionStatsStatusResponseMapper
+
+	cache transaction_cache.TransactionMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTransactionStatsStatusHandleApi(params *transactionStatsStatusHandleDeps) *transactionStatsStatusHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "transaction_stats_status_handlers_requests_total",
-			Help: "Total number of transaction stats status requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "transaction_stats_status_handlers_request_duration_seconds",
-			Help:    "Duration of transaction stats status requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	transactionStatsStatusHandleApi := &transactionStatsStatusHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("transaction-stats-status-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerTransaction := params.router.Group("/api/transaction-stats-status")
@@ -99,45 +80,46 @@ func NewTransactionStatsStatusHandleApi(params *transactionStatsStatusHandleDeps
 // @Success 200 {object} response.ApiResponseTransactionMonthStatusSuccess "Monthly transaction status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transaction status for successful transactions"
-// @Router /api/transaction-stats-status/monthly-success [get]
+// @Router "/api/transaction-stats-status/monthly-success [get]
 func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusSuccess(c echo.Context) error {
-	const method = "FindMonthlyTransactionStatusSuccess"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusTransaction{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTransactionStatusSuccessCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTransactionStatusSuccess(ctx, &pb.FindMonthlyTransactionStatus{
+	res, err := h.client.FindMonthlyTransactionStatusSuccess(ctx, &pbtransaction.FindMonthlyTransactionStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedMonthlySuccess(c)
+		h.logger.Debug("Failed to retrieve monthly transaction status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransactionStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseTransactionMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTransactionMonthStatusSuccess(res)
+	h.cache.SetMonthTransactionStatusSuccessCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly Transaction status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransactionStatusSuccess retrieves the yearly transaction status for successful transactions.
@@ -151,38 +133,34 @@ func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusSuccess(c 
 // @Success 200 {object} response.ApiResponseTransactionYearStatusSuccess "Yearly transaction status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transaction status for successful transactions"
-// @Router /api/transaction-stats-status/yearly-success [get]
+// @Router "/api/transaction-stats-status/yearly-success [get]
 func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusSuccess(c echo.Context) error {
-	const method = "FindYearlyTransactionStatusSuccess"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearTransactionStatusSuccessCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransactionStatusSuccess(ctx, &pb.FindYearTransactionStatus{
+	res, err := h.client.FindYearlyTransactionStatusSuccess(ctx, &pbtransaction.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedYearlySuccess(c)
+		h.logger.Debug("Failed to retrieve yearly transaction status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransactionStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseTransactionYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTransactionYearStatusSuccess(res)
+	h.cache.SetYearTransactionStatusSuccessCache(ctx, year, apiResponse)
 
-	logSuccess("success retrieve yearly Transaction status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTransactionStatusFailed retrieves the monthly transaction status for failed transactions.
@@ -197,45 +175,46 @@ func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusSuccess(c e
 // @Success 200 {object} response.ApiResponseTransactionMonthStatusFailed "Monthly transaction status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transaction status for failed transactions"
-// @Router /api/transaction-stats-status/monthly-failed [get]
+// @Router "/api/transaction-stats-status/monthly-failed [get]
 func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusFailed(c echo.Context) error {
-	const method = "FindMonthlyTransactionStatusFailed"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusTransaction{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTransactionStatusFailedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTransactionStatusFailed(ctx, &pb.FindMonthlyTransactionStatus{
+	res, err := h.client.FindMonthlyTransactionStatusFailed(ctx, &pbtransaction.FindMonthlyTransactionStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedMonthlyFailed(c)
+		h.logger.Debug("Failed to retrieve monthly transaction status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransactionStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseTransactionMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTransactionMonthStatusFailed(res)
+	h.cache.SetMonthTransactionStatusFailedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly Transaction status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransactionStatusFailed retrieves the yearly transaction status for failed transactions.
@@ -249,38 +228,34 @@ func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusFailed(c e
 // @Success 200 {object} response.ApiResponseTransactionYearStatusFailed "Yearly transaction status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transaction status for failed transactions"
-// @Router /api/transaction-stats-status/yearly-failed [get]
+// @Router "/api/transaction-stats-status/yearly-failed [get]
 func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusFailed(c echo.Context) error {
-	const method = "FindYearlyTransactionStatusFailed"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearTransactionStatusFailedCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransactionStatusFailed(ctx, &pb.FindYearTransactionStatus{
+	res, err := h.client.FindYearlyTransactionStatusFailed(ctx, &pbtransaction.FindYearTransactionStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedYearlyFailed(c)
+		h.logger.Debug("Failed to retrieve yearly transaction status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransactionStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseTransactionYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTransactionYearStatusFailed(res)
+	h.cache.SetYearTransactionStatusFailedCache(ctx, year, apiResponse)
 
-	logSuccess("success retrieve yearly Transaction status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTransactionStatusSuccess retrieves the monthly transaction status for successful transactions.
@@ -296,52 +271,53 @@ func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusFailed(c ec
 // @Success 200 {object} response.ApiResponseTransactionMonthStatusSuccess "Monthly transaction status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transaction status for successful transactions"
-// @Router /api/transaction-stats-status/monthly-success-by-card [get]
+// @Router "/api/transaction-stats-status/monthly-success-by-card [get]
 func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTransactionStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusTransactionCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTransactionStatusSuccessByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyTransactionStatusSuccessByCardNumber(ctx, &pb.FindMonthlyTransactionStatusCardNumber{
+	res, err := h.client.FindMonthlyTransactionStatusSuccessByCardNumber(ctx, &pbtransaction.FindMonthlyTransactionStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 		Month:      int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedMonthlySuccess(c)
+		h.logger.Debug("Failed to retrieve monthly transaction status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransactionStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransactionMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTransactionMonthStatusSuccess(res)
+	h.cache.SetMonthTransactionStatusSuccessByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly Transaction status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransactionStatusSuccess retrieves the yearly transaction status for successful transactions.
@@ -356,45 +332,45 @@ func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusSuccessByC
 // @Success 200 {object} response.ApiResponseTransactionYearStatusSuccess "Yearly transaction status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transaction status for successful transactions"
-// @Router /api/transaction-stats-status/yearly-success-by-card [get]
+// @Router "/api/transaction-stats-status/yearly-success-by-card [get]
 func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindYearlyTransactionStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearStatusTransactionCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearTransactionStatusSuccessByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransactionStatusSuccessByCardNumber(ctx, &pb.FindYearTransactionStatusCardNumber{
+	res, err := h.client.FindYearlyTransactionStatusSuccessByCardNumber(ctx, &pbtransaction.FindYearTransactionStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly Transaction status success", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedYearlySuccess(c)
+		h.logger.Debug("Failed to retrieve yearly transaction status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransactionStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransactionYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTransactionYearStatusSuccess(res)
+	h.cache.SetYearTransactionStatusSuccessByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve yearly Transaction status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTransactionStatusFailed retrieves the monthly transaction status for failed transactions.
@@ -410,52 +386,53 @@ func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusSuccessByCa
 // @Success 200 {object} response.ApiResponseTransactionMonthStatusFailed "Monthly transaction status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly transaction status for failed transactions"
-// @Router /api/transaction-stats-status/monthly-failed-by-card [get]
+// @Router "/api/transaction-stats-status/monthly-failed-by-card [get]
 func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTransactionStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("invalid card_number paramater")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthStatusTransactionCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTransactionStatusFailedByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyTransactionStatusFailedByCardNumber(ctx, &pb.FindMonthlyTransactionStatusCardNumber{
+	res, err := h.client.FindMonthlyTransactionStatusFailedByCardNumber(ctx, &pbtransaction.FindMonthlyTransactionStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 		Month:      int32(month),
 	})
-
 	if err != nil {
-		logError("failed to retrieve monthly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedMonthlyFailed(c)
+		h.logger.Debug("Failed to retrieve monthly transaction status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTransactionStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransactionMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTransactionMonthStatusFailed(res)
+	h.cache.SetMonthTransactionStatusFailedByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve monthly Transaction status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTransactionStatusFailedByCardNumber retrieves the yearly transaction status for failed transactions.
@@ -470,97 +447,79 @@ func (h *transactionStatsStatusHandleApi) FindMonthlyTransactionStatusFailedByCa
 // @Success 200 {object} response.ApiResponseTransactionYearStatusFailed "Yearly transaction status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly transaction status for failed transactions"
-// @Router /api/transaction-stats-status/yearly-failed-by-card [get]
+// @Router "/api/transaction-stats-status/yearly-failed-by-card [get]
 func (h *transactionStatsStatusHandleApi) FindYearlyTransactionStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindYearlyTransactionStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearStatusTransactionCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearTransactionStatusFailedByCardCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTransactionStatusFailedByCardNumber(ctx, &pb.FindYearTransactionStatusCardNumber{
+	res, err := h.client.FindYearlyTransactionStatusFailedByCardNumber(ctx, &pbtransaction.FindYearTransactionStatusCardNumber{
 		CardNumber: cardNumber,
 		Year:       int32(year),
 	})
-
 	if err != nil {
-		logError("failed to retrieve yearly Transaction status failed", err, zap.Error(err))
-
-		return transaction_errors.ErrApiFailedYearlyFailed(c)
+		h.logger.Debug("Failed to retrieve yearly transaction status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTransactionStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTransactionYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTransactionYearStatusFailed(res)
+	h.cache.SetYearTransactionStatusFailedByCardCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success retrieve yearly Transaction status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *transactionStatsStatusHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *transactionStatsStatusHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Transaction").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Transaction already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Transaction service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *transactionStatsStatusHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

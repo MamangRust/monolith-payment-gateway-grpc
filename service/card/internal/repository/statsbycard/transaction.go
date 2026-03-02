@@ -5,35 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/card/statsbycard"
 )
 
 type cardStatsTransactionByCardRepository struct {
-	db     *db.Queries
-	mapper recordmapper.CardStatisticTransactionByCardRecordMapper
+	db *db.Queries
 }
 
-func NewCardStatsTransactionByCardRepository(db *db.Queries, mapper recordmapper.CardStatisticTransactionByCardRecordMapper) CardStatsTransactionByCardRepository {
+func NewCardStatsTransactionByCardRepository(db *db.Queries) CardStatsTransactionByCardRepository {
 	return &cardStatsTransactionByCardRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthlyTransactionAmountByCardNumber retrieves the monthly transaction amount data
-// for a given card number and year.
-//
-// Parameters:
-//   - ctx: The context for the database operation.
-//   - req: A pointer to a MonthYearCardNumberCard request object, containing the year and card number.
-//
-// Returns:
-//   - A slice of pointers to CardMonthAmount containing the transaction amount data for each month of the given year.
-//   - An error if the retrieval fails, of type ErrGetMonthlyTransactionAmountByCardFailed.
-func (r *cardStatsTransactionByCardRepository) GetMonthlyTransactionAmountByCardNumber(ctx context.Context, req *requests.MonthYearCardNumberCard) ([]*record.CardMonthAmount, error) {
+func (r *cardStatsTransactionByCardRepository) GetMonthlyTransactionAmountByCardNumber(ctx context.Context, req *requests.MonthYearCardNumberCard) ([]*db.GetMonthlyTransactionAmountByCardNumberRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetMonthlyTransactionAmountByCardNumber(ctx, db.GetMonthlyTransactionAmountByCardNumberParams{
@@ -45,20 +31,10 @@ func (r *cardStatsTransactionByCardRepository) GetMonthlyTransactionAmountByCard
 		return nil, card_errors.ErrGetMonthlyTransactionAmountByCardFailed
 	}
 
-	return r.mapper.ToMonthlyTransactionAmountsByCardNumber(res), nil
+	return res, nil
 }
 
-// GetYearlyTransactionAmountByCardNumber retrieves the yearly transaction amount data
-// for a given card number and year.
-//
-// Parameters:
-//   - ctx: The context for the database operation.
-//   - req: A pointer to a MonthYearCardNumberCard request object, containing the year and card number.
-//
-// Returns:
-//   - A slice of pointers to CardYearAmount containing the transaction amount data for the given year.
-//   - An error if the retrieval fails, of type ErrGetYearlyTransactionAmountByCardFailed.
-func (r *cardStatsTransactionByCardRepository) GetYearlyTransactionAmountByCardNumber(ctx context.Context, req *requests.MonthYearCardNumberCard) ([]*record.CardYearAmount, error) {
+func (r *cardStatsTransactionByCardRepository) GetYearlyTransactionAmountByCardNumber(ctx context.Context, req *requests.MonthYearCardNumberCard) ([]*db.GetYearlyTransactionAmountByCardNumberRow, error) {
 	res, err := r.db.GetYearlyTransactionAmountByCardNumber(ctx, db.GetYearlyTransactionAmountByCardNumberParams{
 		Column2:    int32(req.Year),
 		CardNumber: req.CardNumber,
@@ -68,5 +44,5 @@ func (r *cardStatsTransactionByCardRepository) GetYearlyTransactionAmountByCardN
 		return nil, card_errors.ErrGetYearlyTransactionAmountByCardFailed
 	}
 
-	return r.mapper.ToYearlyTransactionAmountsByCardNumber(res), nil
+	return res, nil
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transactionStatsMethodCache struct {
@@ -16,18 +16,9 @@ func NewTransactionStatsMethodCache(store *sharedcachehelpers.CacheStore) Transa
 	return &transactionStatsMethodCache{store: store}
 }
 
-// GetMonthlyPaymentMethodsCache retrieves cached monthly payment method statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TransactionMonthMethodResponse: List of monthly payment method statistics.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsMethodCache) GetMonthlyPaymentMethodsCache(ctx context.Context, year int) ([]*response.TransactionMonthMethodResponse, bool) {
-	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionMonthMethodResponse](ctx, t.store, key)
+func (t *transactionStatsMethodCache) GetMonthlyPaymentMethodsCache(ctx context.Context, year int) ([]*db.GetMonthlyPaymentMethodsRow, bool) {
+	key := fmt.Sprintf(monthTransactionMethodCacheKey, year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyPaymentMethodsRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -36,33 +27,18 @@ func (t *transactionStatsMethodCache) GetMonthlyPaymentMethodsCache(ctx context.
 	return *result, true
 }
 
-// SetMonthlyPaymentMethodsCache caches monthly payment method statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as key.
-//   - data: Monthly payment method data.
-func (t *transactionStatsMethodCache) SetMonthlyPaymentMethodsCache(ctx context.Context, year int, data []*response.TransactionMonthMethodResponse) {
+func (t *transactionStatsMethodCache) SetMonthlyPaymentMethodsCache(ctx context.Context, year int, data []*db.GetMonthlyPaymentMethodsRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
+	key := fmt.Sprintf(monthTransactionMethodCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyPaymentMethodsCache retrieves cached yearly payment method statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TransactionYearMethodResponse: Yearly payment method stats.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsMethodCache) GetYearlyPaymentMethodsCache(ctx context.Context, year int) ([]*response.TransactionYearMethodResponse, bool) {
-	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionYearMethodResponse](ctx, t.store, key)
+func (t *transactionStatsMethodCache) GetYearlyPaymentMethodsCache(ctx context.Context, year int) ([]*db.GetYearlyPaymentMethodsRow, bool) {
+	key := fmt.Sprintf(yearTransactionMethodCacheKey, year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyPaymentMethodsRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -71,17 +47,11 @@ func (t *transactionStatsMethodCache) GetYearlyPaymentMethodsCache(ctx context.C
 	return *result, true
 }
 
-// SetYearlyPaymentMethodsCache caches yearly payment method statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as cache key.
-//   - data: Yearly method statistics.
-func (t *transactionStatsMethodCache) SetYearlyPaymentMethodsCache(ctx context.Context, year int, data []*response.TransactionYearMethodResponse) {
+func (t *transactionStatsMethodCache) SetYearlyPaymentMethodsCache(ctx context.Context, year int, data []*db.GetYearlyPaymentMethodsRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
+	key := fmt.Sprintf(yearTransactionMethodCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }

@@ -5,16 +5,13 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	refresh_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/refresh_token_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/resettoken"
 )
 
 // resetTokenRepository is a struct that implements the ResetTokenRepository interface
 type resetTokenRepository struct {
-	db     *db.Queries
-	mapper recordmapper.ResetTokenRecordMapping
+	db *db.Queries
 }
 
 // NewResetTokenRepository creates a new instance of resetTokenRepository.
@@ -25,10 +22,9 @@ type resetTokenRepository struct {
 //
 // Returns:
 // A pointer to a newly initialized resetTokenRepository struct.
-func NewResetTokenRepository(db *db.Queries, mapper recordmapper.ResetTokenRecordMapping) *resetTokenRepository {
+func NewResetTokenRepository(db *db.Queries) *resetTokenRepository {
 	return &resetTokenRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
@@ -40,12 +36,12 @@ func NewResetTokenRepository(db *db.Queries, mapper recordmapper.ResetTokenRecor
 //
 // Returns:
 //   - A ResetTokenRecord if found, or an error if not found or operation fails.
-func (r *resetTokenRepository) FindByToken(ctx context.Context, code string) (*record.ResetTokenRecord, error) {
+func (r *resetTokenRepository) FindByToken(ctx context.Context, code string) (*db.GetResetTokenRow, error) {
 	res, err := r.db.GetResetToken(ctx, code)
 	if err != nil {
 		return nil, err
 	}
-	return r.mapper.ToResetTokenRecord(res), nil
+	return res, nil
 }
 
 // CreateResetToken inserts a new reset token into the database.
@@ -56,7 +52,7 @@ func (r *resetTokenRepository) FindByToken(ctx context.Context, code string) (*r
 //
 // Returns:
 //   - The created ResetTokenRecord, or an error if the operation fails.
-func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *requests.CreateResetTokenRequest) (*record.ResetTokenRecord, error) {
+func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *requests.CreateResetTokenRequest) (*db.CreateResetTokenRow, error) {
 	expiryDate, err := time.Parse("2006-01-02 15:04:05", req.ExpiredAt)
 	if err != nil {
 		return nil, err
@@ -69,7 +65,7 @@ func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *reques
 	if err != nil {
 		return nil, refresh_errors.ErrCreateRefreshToken
 	}
-	return r.mapper.ToResetTokenRecord(res), nil
+	return res, nil
 }
 
 // DeleteResetToken removes the reset token associated with the given user ID.

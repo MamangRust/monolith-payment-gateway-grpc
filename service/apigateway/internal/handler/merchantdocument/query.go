@@ -1,88 +1,54 @@
 package merchantdocumenthandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchantdocument"
+	merchantdocument_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/merchantdocument"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant_document"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	merchantdocument_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_document_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/merchantdocument"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	merchantdocumentapimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchantdocument"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type merchantQueryDocumentHandleApi struct {
-	// merchantDocument is the gRPC client used to communicate with the MerchantDocumentService.
-	merchantDocument pb.MerchantDocumentServiceClient
+	merchantDocument pb.MerchantDocumentQueryServiceClient
 
-	// logger is used for structured and contextual logging.
 	logger logger.LoggerInterface
 
-	// mapper is responsible for converting gRPC responses to API-compliant responses.
-	mapper apimapper.MerchantDocumentQueryResponseMapper
+	mapper merchantdocumentapimapper.MerchantDocumentQueryResponseMapper
 
-	// trace provides distributed tracing capabilities using OpenTelemetry.
-	trace trace.Tracer
+	cache merchantdocument_cache.MerchantDocumentQueryCache
 
-	// requestCounter counts the number of requests received by the shared.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records how long each handler request takes in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// merchantDocumentHandleDeps defines the parameters required to initialize
-// the merchant document handler and register its HTTP routes.
 type merchantDocumentQueryDocumentHandleDeps struct {
-	// client is the gRPC client for the MerchantDocumentService.
-	client pb.MerchantDocumentServiceClient
+	client pb.MerchantDocumentQueryServiceClient
 
-	// router is the Echo HTTP router for endpoint registration.
 	router *echo.Echo
 
-	// logger is the logging interface used throughout the shared.
 	logger logger.LoggerInterface
 
-	// mapper maps internal service responses to HTTP API response formats.
-	mapper apimapper.MerchantDocumentQueryResponseMapper
+	cache merchantdocument_cache.MerchantDocumentQueryCache
+
+	apiHandler errors.ApiHandler
+
+	mapper merchantdocumentapimapper.MerchantDocumentQueryResponseMapper
 }
 
 func NewMerchantQueryDocumentHandler(params *merchantDocumentQueryDocumentHandleDeps) *merchantQueryDocumentHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "merchant_document_query_handler_requests_total",
-			Help: "Total number of merchant document requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "merchant_document_query_handler_request_duration_seconds",
-			Help:    "Duration of merchant document requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	merchantDocumentHandler := &merchantQueryDocumentHandleApi{
 		merchantDocument: params.client,
 		logger:           params.logger,
 		mapper:           params.mapper,
-		trace:            otel.Tracer("merchant-document-query-handler"),
-		requestCounter:   requestCounter,
-		requestDuration:  requestDuration,
+		cache:            params.cache,
+		apiHandler:       params.apiHandler,
 	}
 
 	routerMerchantDocument := params.router.Group("/api/merchant-document-query")
@@ -109,43 +75,47 @@ func NewMerchantQueryDocumentHandler(params *merchantDocumentQueryDocumentHandle
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve merchant document data"
 // @Router /api/merchant-document-query [get]
 func (h *merchantQueryDocumentHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
+
+	req := &requests.FindAllMerchantDocuments{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cachedData, found := h.cache.GetCachedMerchants(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllMerchantDocumentsRequest{
+	grpcReq := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.merchantDocument.FindAll(ctx, req)
-
+	res, err := h.merchantDocument.FindAll(ctx, grpcReq)
 	if err != nil {
-		logError("failed find all", err, zap.Error(err))
-
-		return merchantdocument_errors.ErrApiFailedFindAllMerchantDocuments(c)
+		return h.handleGrpcError(err, "FindAllMerchantDocuments")
 	}
 
-	so := h.mapper.ToApiResponsePaginationMerchantDocument(res)
+	apiResponse := h.mapper.ToApiResponsePaginationMerchantDocument(res)
 
-	logSuccess("success find all", zap.Bool("success", true))
+	h.cache.SetCachedMerchants(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindById godoc
@@ -161,39 +131,30 @@ func (h *merchantQueryDocumentHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to get document"
 // @Router /api/merchant-document-query/{id} [get]
 func (h *merchantQueryDocumentHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return errors.NewBadRequestError("Invalid ID format").WithInternal(err)
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id, err := strconv.Atoi(c.Param("id"))
-
-	if err != nil {
-		logError("failed find by id", err, zap.Error(err))
-
-		return merchantdocument_errors.ErrApiInvalidMerchantDocumentID(c)
+	cachedData, found := h.cache.GetCachedMerchant(ctx, id)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	res, err := h.merchantDocument.FindById(ctx, &pb.FindMerchantDocumentByIdRequest{
 		DocumentId: int32(id),
 	})
-
 	if err != nil {
-		logError("failed find by id", err, zap.Error(err))
-
-		return merchantdocument_errors.ErrApiFailedFindByIdMerchantDocument(c)
+		return h.handleGrpcError(err, "FindByIdMerchantDocument")
 	}
 
-	so := h.mapper.ToApiResponseMerchantDocument(res)
+	apiResponse := h.mapper.ToApiResponseMerchantDocument(res)
 
-	logSuccess("success find by id", zap.Error(err))
+	h.cache.SetCachedMerchant(ctx, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindAllActive godoc
@@ -210,43 +171,47 @@ func (h *merchantQueryDocumentHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve active merchant documents"
 // @Router /api/merchant-document-query/active [get]
 func (h *merchantQueryDocumentHandleApi) FindAllActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllActive"
-	)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
+
+	req := &requests.FindAllMerchantDocuments{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cachedData, found := h.cache.GetCachedMerchantActive(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllMerchantDocumentsRequest{
+	grpcReq := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.merchantDocument.FindAllActive(ctx, req)
-
+	res, err := h.merchantDocument.FindAllActive(ctx, grpcReq)
 	if err != nil {
-		logError("failed find all active", err, zap.Error(err))
-
-		return merchantdocument_errors.ErrApiFailedFindAllActiveMerchantDocuments(c)
+		return h.handleGrpcError(err, "FindAllActiveMerchantDocuments")
 	}
 
-	so := h.mapper.ToApiResponsePaginationMerchantDocument(res)
+	apiResponse := h.mapper.ToApiResponsePaginationMerchantDocumentDeleteAt(res)
 
-	logSuccess("success find all active", zap.Error(err))
+	h.cache.SetCachedMerchantActive(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindAllTrashed godoc
@@ -263,95 +228,81 @@ func (h *merchantQueryDocumentHandleApi) FindAllActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed merchant documents"
 // @Router /api/merchant-document-query/trashed [get]
 func (h *merchantQueryDocumentHandleApi) FindAllTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllTrashed"
-	)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
+
+	req := &requests.FindAllMerchantDocuments{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cachedData, found := h.cache.GetCachedMerchantTrashed(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	defer func() {
-		end()
-	}()
-
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllMerchantDocumentsRequest{
+	grpcReq := &pb.FindAllMerchantDocumentsRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.merchantDocument.FindAllTrashed(ctx, req)
-
+	res, err := h.merchantDocument.FindAllTrashed(ctx, grpcReq)
 	if err != nil {
-		logError("failed find all trashed", err, zap.Error(err))
-
-		return merchantdocument_errors.ErrApiFailedFindAllTrashedMerchantDocuments(c)
+		return h.handleGrpcError(err, "FindAllTrashedMerchantDocuments")
 	}
 
-	so := h.mapper.ToApiResponsePaginationMerchantDocumentDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationMerchantDocumentDeleteAt(res)
 
-	logSuccess("success find all trashed", zap.Error(err))
+	h.cache.SetCachedMerchantTrashed(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *merchantQueryDocumentHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *merchantQueryDocumentHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Merchant Document").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Merchant Document already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Merchant Document service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *merchantQueryDocumentHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

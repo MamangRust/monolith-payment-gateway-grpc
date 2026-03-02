@@ -2,7 +2,6 @@ package withdrawstatsrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/withdraw/stats"
 )
 
 type WithdrawStatsRepository interface {
@@ -15,10 +14,10 @@ type repositories struct {
 	WithdrawStatsStatusRepository
 }
 
-func NewWithdrawStatsRepository(db *db.Queries, mapper recordmapper.WithdrawStatisticRecordMapper) WithdrawStatsRepository {
+func NewWithdrawStatsRepository(db *db.Queries) WithdrawStatsRepository {
 
 	return &repositories{
-		WithdrawStatsAmountRepository: NewWithdrawStatsAmountRepository(db, mapper),
-		WithdrawStatsStatusRepository: NewWithdrawStatsStatusRepository(db, mapper),
+		WithdrawStatsAmountRepository: NewWithdrawStatsAmountRepository(db),
+		WithdrawStatsStatusRepository: NewWithdrawStatsStatusRepository(db),
 	}
 }

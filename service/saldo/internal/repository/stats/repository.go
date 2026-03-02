@@ -2,7 +2,6 @@ package saldostatsrepository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/saldo"
 )
 
 type SaldoStatsRepository interface {
@@ -15,10 +14,9 @@ type repository struct {
 	SaldoStatsTotalSaldoRepository
 }
 
-func NewSaldoStatsRepository(db *db.Queries, mapper recordmapper.SaldoStatisticRecordMapping) SaldoStatsRepository {
-
+func NewSaldoStatsRepository(db *db.Queries) SaldoStatsRepository {
 	return &repository{
-		SaldoStatsBalanceRepository:    NewSaldoStatsBalanceRepository(db, mapper),
-		SaldoStatsTotalSaldoRepository: NewSaldoStatsTotalBalanceRepository(db, mapper),
+		SaldoStatsBalanceRepository:    NewSaldoStatsBalanceRepository(db),
+		SaldoStatsTotalSaldoRepository: NewSaldoStatsTotalBalanceRepository(db),
 	}
 }

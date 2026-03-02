@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-auth/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-auth/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-auth/internal/repository"
 
@@ -16,134 +15,45 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	randomstring "github.com/MamangRust/monolith-payment-gateway-pkg/random_string"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// PasswordResetServiceDeps holds the dependencies for creating a PasswordResetService.
+// PasswordResetServiceDeps defines dependencies required by PasswordResetService.
 type PasswordResetServiceDeps struct {
-	// ErrorHandler handles general password reset errors.
-	ErrorHandler errorhandler.PasswordResetErrorHandler
-
-	// ErrorRandomString handles errors related to random string generation.
-	ErrorRandomString errorhandler.RandomStringErrorHandler
-
-	// ErrorMarshal handles JSON or data marshalling errors.
-	ErrorMarshal errorhandler.MarshalErrorHandler
-
-	// ErrorPassword handles password hashing or validation errors.
-	ErrorPassword errorhandler.PasswordErrorHandler
-
-	// ErrorKafka handles Kafka publishing errors.
-	ErrorKafka errorhandler.KafkaErrorHandler
-
-	// Cache provides caching for password reset tokens or sessions.
-	Cache mencache.PasswordResetCache
-
-	// Kafka is the Kafka client used to publish password reset events.
-	Kafka *kafka.Kafka
-
-	// Logger logs service-level events and errors.
-	Logger logger.LoggerInterface
-
-	// User provides access to user account data.
-	User repository.UserRepository
-
-	// ResetToken manages password reset token storage and retrieval.
-	ResetToken repository.ResetTokenRepository
+	Cache         mencache.PasswordResetCache
+	Kafka         *kafka.Kafka
+	Logger        logger.LoggerInterface
+	User          repository.UserRepository
+	ResetToken    repository.ResetTokenRepository
+	Observability observability.TraceLoggerObservability
 }
 
-// passwordResetService implements the logic for handling password reset requests,
-// including token generation, validation, and email notification via Kafka.
+// passwordResetService implements PasswordResetService.
 type passwordResetService struct {
-	// Handles general password reset errors.
-	errorhandler errorhandler.PasswordResetErrorHandler
-
-	// Handles random string generation errors.
-	errorRandomString errorhandler.RandomStringErrorHandler
-
-	// Handles marshalling errors (e.g., JSON encoding).
-	errorMarshal errorhandler.MarshalErrorHandler
-
-	// Handles password validation and hashing errors.
-	errorPassword errorhandler.PasswordErrorHandler
-
-	// Handles Kafka-related publishing errors.
-	errorKafka errorhandler.KafkaErrorHandler
-
-	// Caching layer for password reset-related data.
-	mencache mencache.PasswordResetCache
-
-	// Kafka publisher for sending password reset events.
-	kafka *kafka.Kafka
-
-	// Logger for internal logs and errors.
-	logger logger.LoggerInterface
-
-	// Access to user account data.
-	user repository.UserRepository
-
-	// Repository for storing and validating reset tokens.
-	resetToken repository.ResetTokenRepository
-
+	mencache      mencache.PasswordResetCache
+	kafka         *kafka.Kafka
+	logger        logger.LoggerInterface
+	user          repository.UserRepository
+	resetToken    repository.ResetTokenRepository
 	observability observability.TraceLoggerObservability
 }
 
-// NewPasswordResetService initializes and returns a new instance of passwordResetService.
-// It sets up Prometheus metrics for tracking request counts and durations, and registers these metrics.
-// The function takes PasswordResetServiceDeps which includes context, error handlers, cache, logger,
-// user repository, refresh token repository, token manager, and token service.
-// Returns a pointer to the initialized passwordResetService.
 func NewPasswordResetService(params *PasswordResetServiceDeps) *passwordResetService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "password_reset_service_requests_total",
-			Help: "Total number of requests to the PasswordResetService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "password_reset_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the PasswordResetService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("password-reset-service"), params.Logger, requestCounter, requestDuration)
 
 	return &passwordResetService{
-		errorhandler:      params.ErrorHandler,
-		errorRandomString: params.ErrorRandomString,
-		errorMarshal:      params.ErrorMarshal,
-		errorPassword:     params.ErrorPassword,
-		errorKafka:        params.ErrorKafka,
-		mencache:          params.Cache,
-		kafka:             params.Kafka,
-		logger:            params.Logger,
-		user:              params.User,
-		resetToken:        params.ResetToken,
-		observability:     observability,
+		mencache:      params.Cache,
+		kafka:         params.Kafka,
+		logger:        params.Logger,
+		user:          params.User,
+		resetToken:    params.ResetToken,
+		observability: params.Observability,
 	}
 }
 
-// ForgotPassword initiates the password reset process by sending a verification code to the user's email.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - email: the user's email address
-//
-// Returns:
-//   - true if the code was sent successfully, or an ErrorResponse if it fails.
-func (s *passwordResetService) ForgotPassword(ctx context.Context, email string) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) ForgotPassword(ctx context.Context, email string) (bool, error) {
 	const method = "ForgotPassword"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("email", email))
@@ -154,26 +64,29 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string)
 
 	res, err := s.user.FindByEmail(ctx, email)
 	if err != nil {
-		return s.errorhandler.HandleFindEmailError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("email", email))
 	}
 
-	span.SetAttributes(attribute.Int("user.id", res.ID))
+	span.SetAttributes(attribute.Int("user.id", int(res.UserID)))
 
 	random, err := randomstring.GenerateRandomString(10)
 	if err != nil {
-		return s.errorRandomString.HandleRandomStringErrorForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("email", email))
 	}
 
 	_, err = s.resetToken.CreateResetToken(ctx, &requests.CreateResetTokenRequest{
-		UserID:     res.ID,
+		UserID:     int(res.UserID),
 		ResetToken: random,
-		ExpiredAt:  time.Now().Add(24 * time.Hour).Format("2006-01-02 15:04:05"),
+		ExpiredAt:  time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
 	if err != nil {
-		return s.errorhandler.HandleCreateResetTokenError(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.String("email", email), zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.Int("user.id", int(res.UserID)))
 	}
 
-	s.mencache.SetResetTokenCache(ctx, random, res.ID, 5*time.Minute)
+	s.mencache.SetResetTokenCache(ctx, random, int(res.UserID), 5*time.Minute)
 
 	htmlBody := emails.GenerateEmailHTML(map[string]string{
 		"Title":   "Reset Your Password",
@@ -190,12 +103,14 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string)
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		return s.errorMarshal.HandleMarsalForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("email", email))
 	}
 
-	err = s.kafka.SendMessage("email-service-topic-auth-forgot-password", strconv.Itoa(res.ID), payloadBytes)
+	err = s.kafka.SendMessage("email-service-topic-auth-forgot-password", strconv.Itoa(int(res.UserID)), payloadBytes)
 	if err != nil {
-		return s.errorKafka.HandleSendEmailForgotPassword(err, method, "FORGOT_PASSWORD_ERR", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.Int("user.id", int(res.UserID)))
 	}
 
 	logSuccess("Successfully sent password reset email", zap.String("email", email))
@@ -203,15 +118,7 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string)
 	return true, nil
 }
 
-// ResetPassword sets a new password for the user using the provided reset token and new password.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - request: the payload containing reset token and new password
-//
-// Returns:
-//   - true if the password reset is successful, or an ErrorResponse if it fails.
-func (s *passwordResetService) ResetPassword(ctx context.Context, req *requests.CreateResetPasswordRequest) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) ResetPassword(ctx context.Context, req *requests.CreateResetPasswordRequest) (bool, error) {
 	const method = "ResetPassword"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("reset_token", req.ResetToken))
@@ -227,7 +134,8 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, req *requests.
 	if !found {
 		res, err := s.resetToken.FindByToken(ctx, req.ResetToken)
 		if err != nil {
-			return s.errorhandler.HandleFindTokenError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+			status = "error"
+			return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("reset_token", req.ResetToken))
 		}
 		userID = int(res.UserID)
 
@@ -235,13 +143,15 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, req *requests.
 	}
 
 	if req.Password != req.ConfirmPassword {
+		status = "error"
 		err := errors.New("password and confirm password do not match")
-		return s.errorPassword.HandlePasswordNotMatchError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("reset_token", req.ResetToken))
 	}
 
 	_, err := s.user.UpdateUserPassword(ctx, userID, req.Password)
 	if err != nil {
-		return s.errorhandler.HandleUpdatePasswordError(err, method, "RESET_PASSWORD_ERR", span, &status, zap.String("reset_token", req.ResetToken))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.Int("user.id", userID))
 	}
 
 	_ = s.resetToken.DeleteResetToken(ctx, userID)
@@ -252,15 +162,7 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, req *requests.
 	return true, nil
 }
 
-// VerifyCode validates the verification code sent to the user's email.
-//
-// Parameters:
-//   - ctx: the context for the operation
-//   - code: the verification code to validate
-//
-// Returns:
-//   - true if the code is valid, or an ErrorResponse if the code is invalid or expired.
-func (s *passwordResetService) VerifyCode(ctx context.Context, code string) (bool, *response.ErrorResponse) {
+func (s *passwordResetService) VerifyCode(ctx context.Context, code string) (bool, error) {
 	const method = "VerifyCode"
 
 	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("code", code))
@@ -271,12 +173,14 @@ func (s *passwordResetService) VerifyCode(ctx context.Context, code string) (boo
 
 	res, err := s.user.FindByVerificationCode(ctx, code)
 	if err != nil {
-		return s.errorhandler.HandleVerifyCodeError(err, method, "VERIFY_CODE_ERR", span, &status, zap.String("code", code))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("code", code))
 	}
 
-	_, err = s.user.UpdateUserIsVerified(ctx, res.ID, true)
+	_, err = s.user.UpdateUserIsVerified(ctx, int(res.UserID), true)
 	if err != nil {
-		return s.errorhandler.HandleUpdateVerifiedError(err, method, "VERIFY_CODE_ERR", span, &status, zap.Int("user.id", res.ID))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.Int("user.id", int(res.UserID)))
 	}
 
 	s.mencache.DeleteVerificationCodeCache(ctx, res.Email)
@@ -296,12 +200,14 @@ func (s *passwordResetService) VerifyCode(ctx context.Context, code string) (boo
 
 	payloadBytes, err := json.Marshal(emailPayload)
 	if err != nil {
-		return s.errorMarshal.HandleMarshalVerifyCode(err, method, "SEND_EMAIL_VERIFY_CODE_ERR", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.String("code", code))
 	}
 
-	err = s.kafka.SendMessage("email-service-topic-auth-verify-code-success", strconv.Itoa(res.ID), payloadBytes)
+	err = s.kafka.SendMessage("email-service-topic-auth-verify-code-success", strconv.Itoa(int(res.UserID)), payloadBytes)
 	if err != nil {
-		return s.errorMarshal.HandleMarshalVerifyCode(err, method, "SEND_EMAIL_VERIFY_CODE_ERR", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](s.logger, err, method, span, zap.Int("user.id", int(res.UserID)))
 	}
 
 	logSuccess("Successfully verify code", zap.String("code", code))

@@ -2,7 +2,6 @@ package repositorystats
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/card/stats"
 )
 
 type CardStatsRepository interface {
@@ -21,13 +20,13 @@ type repository struct {
 	CardStatsWithdrawRepository
 }
 
-func NewCardStatsRepository(db *db.Queries, mapper recordmapper.CardStatsRecordMapper) CardStatsRepository {
+func NewCardStatsRepository(db *db.Queries) CardStatsRepository {
 
 	return &repository{
-		CardStatsBalanceRepository:     NewCardStatsBalanceRepository(db, mapper),
-		CardStatsTopupRepository:       NewCardStatsTopupRepository(db, mapper),
-		CardStatsTransactionRepository: NewCardStatsTransactionRepository(db, mapper),
-		CardStatsTransferRepository:    NewCardStatsTransferRepository(db, mapper),
-		CardStatsWithdrawRepository:    NewCardStatsWithdrawRepository(db, mapper),
+		CardStatsBalanceRepository:     NewCardStatsBalanceRepository(db),
+		CardStatsTopupRepository:       NewCardStatsTopupRepository(db),
+		CardStatsTransactionRepository: NewCardStatsTransactionRepository(db),
+		CardStatsTransferRepository:    NewCardStatsTransferRepository(db),
+		CardStatsWithdrawRepository:    NewCardStatsWithdrawRepository(db),
 	}
 }

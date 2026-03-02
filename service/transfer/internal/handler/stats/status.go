@@ -3,447 +3,330 @@ package transferstatshandler
 import (
 	"context"
 
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/grpc"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/transfer"
-	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/service"
-	"go.uber.org/zap"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/transfer/stats"
 
-	servicestats "github.com/MamangRust/monolith-payment-gateway-transfer/internal/service/stats"
-	servicestatsbycard "github.com/MamangRust/monolith-payment-gateway-transfer/internal/service/statsbycard"
+	pbtransfer "github.com/MamangRust/monolith-payment-gateway-pb/transfer"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	transfer_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transfer_errors/grpc"
+	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/service"
 )
 
 type transferStatsStatusHandleGrpc struct {
 	pb.UnimplementedTransferStatsStatusServiceServer
 
-	servicestats       servicestats.TransferStatsService
-	servicestatsbycard servicestatsbycard.TransferStatsByCardService
-	logger             logger.LoggerInterface
-	mapper             protomapper.TransferStatsStatusProtoMapper
+	service service.Service
 }
 
-func NewTransferStatsStatusHandler(service service.Service, logger logger.LoggerInterface, mapper protomapper.TransferStatsStatusProtoMapper) TransferStatsStatusHandleGrpc {
+func NewTransferStatsStatusHandler(service service.Service) TransferStatsStatusHandleGrpc {
 	return &transferStatsStatusHandleGrpc{
-		servicestats:       service,
-		servicestatsbycard: service,
-		logger:             logger,
-		mapper:             mapper,
+		service: service,
 	}
 }
 
-// FindMonthlyTransferStatusSuccess retrieves the monthly transfer status for successful transfers
-// filtered by year and month.
-//
-// It validates the input parameters, logs the request, and fetches the transfer status from the service layer.
-// If the input parameters are invalid, appropriate errors are returned. It maps the results to a protocol buffer response
-// and returns it.
-//
-// Parameters:
-//   - ctx: the context of the gRPC request.
-//   - req: the request containing the year and month.
-//
-// Returns:
-//   - A pointer to the API response containing the transfer status success records for the specified year and month.
-//   - An error if any validation or retrieval operation fails.
-func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusSuccess(ctx context.Context, req *pb.FindMonthlyTransferStatus) (*pb.ApiResponseTransferMonthStatusSuccess, error) {
+func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusSuccess(ctx context.Context, req *pbtransfer.FindMonthlyTransferStatus) (*pb.ApiResponseTransferMonthStatusSuccess, error) {
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.Int("month", month))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if month <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("month", month))
 		return nil, transfer_errors.ErrGrpcInvalidMonth
 	}
 
-	reqService := &requests.MonthStatusTransfer{
+	reqService := requests.MonthStatusTransfer{
 		Year:  year,
 		Month: month,
 	}
 
-	records, err := s.servicestats.FindMonthTransferStatusSuccess(ctx, reqService)
+	records, err := s.service.FindMonthTransferStatusSuccess(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferMonthStatusSuccess("success", "Successfully fetched monthly Transfer status success", records)
+	dataResponses := make([]*pb.TransferMonthStatusSuccessResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferMonthStatusSuccessResponse{
+			Year:         record.Year,
+			Month:        record.Month,
+			TotalSuccess: int32(record.TotalSuccess),
+			TotalAmount:  int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly Transfer status success", zap.Int("year", year), zap.Int("month", month))
-
-	return so, nil
+	return &pb.ApiResponseTransferMonthStatusSuccess{
+		Status:  "success",
+		Message: "Successfully fetched monthly Transfer status success",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyTransferStatusSuccess retrieves the yearly transfer status for successful transfers
-// based on the provided year.
-//
-// It logs the process of fetching the transfer data and validates the input,
-// ensuring that the year is a positive integer. If the validation fails, it logs
-// the error and returns an appropriate error response. The function queries the
-// transfer statistics service to fetch the transfer status and maps the result
-// to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearTransferStatus object containing the year for which to fetch
-//     the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferYearStatusSuccess containing the transfer status for
-//     the specified year.
-//   - An error if the operation fails, or if the provided year is invalid.
-func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusSuccess(ctx context.Context, req *pb.FindYearTransferStatus) (*pb.ApiResponseTransferYearStatusSuccess, error) {
+func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusSuccess(ctx context.Context, req *pbtransfer.FindYearTransferStatus) (*pb.ApiResponseTransferYearStatusSuccess, error) {
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
-	records, err := s.servicestats.FindYearlyTransferStatusSuccess(ctx, year)
+	records, err := s.service.FindYearlyTransferStatusSuccess(ctx, year)
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferYearStatusSuccess("success", "Successfully fetched yearly Transfer status success", records)
+	dataResponses := make([]*pb.TransferYearStatusSuccessResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferYearStatusSuccessResponse{
+			Year:         record.Year,
+			TotalSuccess: int32(record.TotalSuccess),
+			TotalAmount:  int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly Transfer status success", zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTransferYearStatusSuccess{
+		Status:  "success",
+		Message: "Successfully fetched yearly Transfer status success",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindMonthlyTransferStatusFailed retrieves the monthly transfer status for failed transfers
-// filtered by year and month.
-//
-// It logs the process of fetching the transfer data and validates the inputs,
-// ensuring that the year is a positive integer and the month is a positive integer between
-// 1 and 12. If any of these validations fail, it logs the error and returns an appropriate
-// error response. The function queries the transfer statistics service to fetch the
-// transfer status and maps the result to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindMonthlyTransferStatus object containing the year and month for which to fetch
-//     the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferMonthStatusFailed containing the transfer status for the
-//     specified year and month.
-//   - An error if the operation fails, or if the provided year or month is invalid.
-func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusFailed(ctx context.Context, req *pb.FindMonthlyTransferStatus) (*pb.ApiResponseTransferMonthStatusFailed, error) {
+func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusFailed(ctx context.Context, req *pbtransfer.FindMonthlyTransferStatus) (*pb.ApiResponseTransferMonthStatusFailed, error) {
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.Int("month", month))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if month <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("month", month))
 		return nil, transfer_errors.ErrGrpcInvalidMonth
 	}
 
-	reqService := &requests.MonthStatusTransfer{
+	reqService := requests.MonthStatusTransfer{
 		Year:  year,
 		Month: month,
 	}
 
-	records, err := s.servicestats.FindMonthTransferStatusFailed(ctx, reqService)
+	records, err := s.service.FindMonthTransferStatusFailed(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferMonthStatusFailed("success", "success fetched monthly Transfer status Failed", records)
+	dataResponses := make([]*pb.TransferMonthStatusFailedResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferMonthStatusFailedResponse{
+			Year:        record.Year,
+			Month:       record.Month,
+			TotalFailed: int32(record.TotalFailed),
+			TotalAmount: int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly Transfer status Failed", zap.Int("year", year), zap.Int("month", month))
-
-	return so, nil
+	return &pb.ApiResponseTransferMonthStatusFailed{
+		Status:  "success",
+		Message: "success fetched monthly Transfer status Failed",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyTransferStatusFailed retrieves the yearly transfer status for failed transfers
-// based on the provided year.
-//
-// It logs the process of fetching the transfer data and validates the input,
-// ensuring that the year is a positive integer. If the validation fails, it logs
-// the error and returns an appropriate error response. The function queries the
-// transfer statistics service to fetch the transfer status and maps the result
-// to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearTransferStatus object containing the year for which to fetch
-//     the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferYearStatusFailed containing the transfer status for
-//     the specified year.
-//   - An error if the operation fails, or if the provided year is invalid.
-func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusFailed(ctx context.Context, req *pb.FindYearTransferStatus) (*pb.ApiResponseTransferYearStatusFailed, error) {
+func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusFailed(ctx context.Context, req *pbtransfer.FindYearTransferStatus) (*pb.ApiResponseTransferYearStatusFailed, error) {
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
-	records, err := s.servicestats.FindYearlyTransferStatusFailed(ctx, year)
+	records, err := s.service.FindYearlyTransferStatusFailed(ctx, year)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferYearStatusFailed("success", "success fetched yearly Transfer status Failed", records)
+	dataResponses := make([]*pb.TransferYearStatusFailedResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferYearStatusFailedResponse{
+			Year:        record.Year,
+			TotalFailed: int32(record.TotalFailed),
+			TotalAmount: int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly Transfer status Failed", zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTransferYearStatusFailed{
+		Status:  "success",
+		Message: "success fetched yearly Transfer status Failed",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindMonthlyTransferStatusSuccessByCardNumber retrieves the monthly transfer status for successful transfers
-// filtered by year, month, and card number.
-//
-// It logs the process of fetching the transfer data and validates the inputs,
-// ensuring that the year is a positive integer, the month is a positive integer between
-// 1 and 12, and the card number is not empty. If any of these validations fail, it logs
-// the error and returns an appropriate error response. The function queries the
-// transfer statistics by card number service to fetch the transfer status and maps the
-// result to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindMonthlyTransferStatusCardNumber object containing the year, month, and card number
-//     for which to fetch the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferMonthStatusSuccess containing the transfer status for the
-//     specified year, month, and card number.
-//   - An error if the operation fails, or if the provided year, month, or card number is invalid.
-func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusSuccessByCardNumber(ctx context.Context, req *pb.FindMonthlyTransferStatusCardNumber) (*pb.ApiResponseTransferMonthStatusSuccess, error) {
+func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusSuccessByCardNumber(ctx context.Context, req *pbtransfer.FindMonthlyTransferStatusCardNumber) (*pb.ApiResponseTransferMonthStatusSuccess, error) {
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.Int("month", month))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if month <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("month", month))
 		return nil, transfer_errors.ErrGrpcInvalidMonth
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch transfer", zap.String("card_number", cardNumber))
 		return nil, transfer_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.MonthStatusTransferCardNumber{
+	reqService := requests.MonthStatusTransferCardNumber{
 		Year:       year,
 		Month:      month,
 		CardNumber: cardNumber,
 	}
 
-	records, err := s.servicestatsbycard.FindMonthTransferStatusSuccessByCardNumber(ctx, reqService)
+	records, err := s.service.FindMonthTransferStatusSuccessByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferMonthStatusSuccess("success", "Successfully fetched monthly Transfer status success", records)
+	dataResponses := make([]*pb.TransferMonthStatusSuccessResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferMonthStatusSuccessResponse{
+			Year:         record.Year,
+			Month:        record.Month,
+			TotalSuccess: int32(record.TotalSuccess),
+			TotalAmount:  int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly Transfer status success", zap.Int("year", year), zap.Int("month", month))
-
-	return so, nil
+	return &pb.ApiResponseTransferMonthStatusSuccess{
+		Status:  "success",
+		Message: "Successfully fetched monthly Transfer status success",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyTransferStatusSuccessByCardNumber retrieves the yearly transfer status for successful transfers
-// based on the provided year and card number.
-//
-// It logs the process of fetching the transfer data and validates the input,
-// ensuring that the year is a positive integer and the card number is not empty.
-// If the validation fails, it logs the error and returns an appropriate error
-// response. The function queries the transfer statistics service to fetch the
-// transfer status and maps the result to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearTransferStatusCardNumber object containing the year and card
-//     number for which to fetch the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferYearStatusSuccess containing the transfer status for
-//     the specified year and card number.
-//   - An error if the operation fails, or if the provided year or card number are
-//     invalid.
-func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusSuccessByCardNumber(ctx context.Context, req *pb.FindYearTransferStatusCardNumber) (*pb.ApiResponseTransferYearStatusSuccess, error) {
+func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusSuccessByCardNumber(ctx context.Context, req *pbtransfer.FindYearTransferStatusCardNumber) (*pb.ApiResponseTransferYearStatusSuccess, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch transfer", zap.String("card_number", cardNumber))
 		return nil, transfer_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearStatusTransferCardNumber{
+	reqService := requests.YearStatusTransferCardNumber{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	records, err := s.servicestatsbycard.FindYearlyTransferStatusSuccessByCardNumber(ctx, reqService)
+	records, err := s.service.FindYearlyTransferStatusSuccessByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferYearStatusSuccess("success", "Successfully fetched yearly Transfer status success", records)
+	dataResponses := make([]*pb.TransferYearStatusSuccessResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferYearStatusSuccessResponse{
+			Year:         record.Year,
+			TotalSuccess: int32(record.TotalSuccess),
+			TotalAmount:  int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly Transfer status success", zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTransferYearStatusSuccess{
+		Status:  "success",
+		Message: "Successfully fetched yearly Transfer status success",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindMonthlyTransferStatusFailedByCardNumber retrieves the monthly transfer status for failed transfers
-// filtered by year, month, and card number.
-//
-// It logs the process of fetching the transfer data and validates the inputs,
-// ensuring that the year is a positive integer, the month is a positive integer between
-// 1 and 12, and the card number is not empty. If any of these validations fail, it logs
-// the error and returns an appropriate error response. The function queries the
-// transfer statistics by card number service to fetch the transfer status and maps the
-// result to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindMonthlyTransferStatusCardNumber object containing the year, month, and card number
-//     for which to fetch the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferMonthStatusFailed containing the transfer status for the
-//     specified year, month, and card number.
-//   - An error if the operation fails, or if the provided year, month, or card number is invalid.
-func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusFailedByCardNumber(ctx context.Context, req *pb.FindMonthlyTransferStatusCardNumber) (*pb.ApiResponseTransferMonthStatusFailed, error) {
+func (s *transferStatsStatusHandleGrpc) FindMonthlyTransferStatusFailedByCardNumber(ctx context.Context, req *pbtransfer.FindMonthlyTransferStatusCardNumber) (*pb.ApiResponseTransferMonthStatusFailed, error) {
 	year := int(req.GetYear())
 	month := int(req.GetMonth())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.Int("month", month))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if month <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("month", month))
 		return nil, transfer_errors.ErrGrpcInvalidMonth
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch transfer", zap.String("card_number", cardNumber))
 		return nil, transfer_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.MonthStatusTransferCardNumber{
+	reqService := requests.MonthStatusTransferCardNumber{
 		Year:       year,
 		Month:      month,
 		CardNumber: cardNumber,
 	}
 
-	records, err := s.servicestatsbycard.FindMonthTransferStatusFailedByCardNumber(ctx, reqService)
+	records, err := s.service.FindMonthTransferStatusFailedByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferMonthStatusFailed("success", "success fetched monthly Transfer status Failed", records)
+	dataResponses := make([]*pb.TransferMonthStatusFailedResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferMonthStatusFailedResponse{
+			Year:        record.Year,
+			Month:       record.Month,
+			TotalFailed: int32(record.TotalFailed),
+			TotalAmount: int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly Transfer status Failed", zap.Int("year", year), zap.Int("month", month))
-
-	return so, nil
+	return &pb.ApiResponseTransferMonthStatusFailed{
+		Status:  "success",
+		Message: "success fetched monthly Transfer status Failed",
+		Data:    dataResponses,
+	}, nil
 }
 
-// FindYearlyTransferStatusFailedByCardNumber retrieves the yearly transfer status for failed transfers
-// based on the provided year and card number.
-//
-// This function logs the process of fetching the transfer data and validates the inputs,
-// ensuring that the year is a positive integer and the card number is not empty. If any
-// of these validations fail, it logs the error and returns an appropriate error response.
-// The function queries the transfer statistics service by card number to fetch the
-// transfer status and maps the result to a protocol buffer response object.
-//
-// Parameters:
-//   - ctx: The context for request-scoped values, cancellation, and deadlines.
-//   - req: A FindYearTransferStatusCardNumber object containing the year and card
-//     number for which to fetch the transfer status.
-//
-// Returns:
-//   - An ApiResponseTransferYearStatusFailed containing the transfer status for
-//     the specified year and card number.
-//   - An error if the operation fails, or if the provided year or card number are invalid.
-func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusFailedByCardNumber(ctx context.Context, req *pb.FindYearTransferStatusCardNumber) (*pb.ApiResponseTransferYearStatusFailed, error) {
+func (s *transferStatsStatusHandleGrpc) FindYearlyTransferStatusFailedByCardNumber(ctx context.Context, req *pbtransfer.FindYearTransferStatusCardNumber) (*pb.ApiResponseTransferYearStatusFailed, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching transfer", zap.Int("year", year), zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch transfer", zap.Int("year", year))
 		return nil, transfer_errors.ErrGrpcInvalidYear
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch transfer", zap.String("card_number", cardNumber))
 		return nil, transfer_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearStatusTransferCardNumber{
+	reqService := requests.YearStatusTransferCardNumber{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	records, err := s.servicestatsbycard.FindYearlyTransferStatusFailedByCardNumber(ctx, reqService)
+	records, err := s.service.FindYearlyTransferStatusFailedByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch transfer", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTransferYearStatusFailed("success", "success fetched yearly Transfer status Failed", records)
+	dataResponses := make([]*pb.TransferYearStatusFailedResponse, len(records))
+	for i, record := range records {
+		dataResponses[i] = &pb.TransferYearStatusFailedResponse{
+			Year:        record.Year,
+			TotalFailed: int32(record.TotalFailed),
+			TotalAmount: int32(record.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly Transfer status Failed", zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTransferYearStatusFailed{
+		Status:  "success",
+		Message: "success fetched yearly Transfer status Failed",
+		Data:    dataResponses,
+	}, nil
 }

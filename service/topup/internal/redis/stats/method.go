@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type topupStatsMethodCache struct {
@@ -16,19 +16,10 @@ func NewTopupStatsMethodCache(store *sharedcachehelpers.CacheStore) TopupStatsMe
 	return &topupStatsMethodCache{store: store}
 }
 
-// GetMonthlyTopupMethodsCache retrieves cached monthly statistics grouped by topup method.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TopupMonthMethodResponse: List of method-based monthly topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsMethodCache) GetMonthlyTopupMethodsCache(ctx context.Context, month int) ([]*response.TopupMonthMethodResponse, bool) {
-	key := fmt.Sprintf(monthTopupMethodCacheKey, month)
+func (c *topupStatsMethodCache) GetMonthlyTopupMethodsCache(ctx context.Context, year int) ([]*db.GetMonthlyTopupMethodsRow, bool) {
+	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupMonthMethodResponse](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyTopupMethodsRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -36,34 +27,19 @@ func (c *topupStatsMethodCache) GetMonthlyTopupMethodsCache(ctx context.Context,
 	return *result, true
 }
 
-// SetMonthlyTopupMethodsCache stores method-based monthly topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the data.
-//   - data: The data to cache.
-func (c *topupStatsMethodCache) SetMonthlyTopupMethodsCache(ctx context.Context, month int, data []*response.TopupMonthMethodResponse) {
+func (c *topupStatsMethodCache) SetMonthlyTopupMethodsCache(ctx context.Context, year int, data []*db.GetMonthlyTopupMethodsRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(monthTopupMethodCacheKey, month)
+	key := fmt.Sprintf(monthTopupMethodCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, c.store, key, &data, ttlDefault)
 }
 
-// GetYearlyTopupMethodsCache retrieves cached yearly statistics grouped by topup method.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TopupYearlyMethodResponse: List of method-based yearly topup responses.
-//   - bool: Whether the cache was found.
-func (c *topupStatsMethodCache) GetYearlyTopupMethodsCache(ctx context.Context, year int) ([]*response.TopupYearlyMethodResponse, bool) {
+func (c *topupStatsMethodCache) GetYearlyTopupMethodsCache(ctx context.Context, year int) ([]*db.GetYearlyTopupMethodsRow, bool) {
 	key := fmt.Sprintf(yearTopupMethodCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TopupYearlyMethodResponse](ctx, c.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTopupMethodsRow](ctx, c.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -71,13 +47,7 @@ func (c *topupStatsMethodCache) GetYearlyTopupMethodsCache(ctx context.Context, 
 	return *result, true
 }
 
-// SetYearlyTopupMethodsCache stores method-based yearly topup statistics in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year of the data.
-//   - data: The data to cache.
-func (c *topupStatsMethodCache) SetYearlyTopupMethodsCache(ctx context.Context, year int, data []*response.TopupYearlyMethodResponse) {
+func (c *topupStatsMethodCache) SetYearlyTopupMethodsCache(ctx context.Context, year int, data []*db.GetYearlyTopupMethodsRow) {
 	if data == nil {
 		return
 	}

@@ -1,27 +1,29 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"os"
-	"os/signal"
 
 	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/app"
+	"go.uber.org/zap"
 )
 
-// main starts the API Gateway service.
-//
-// It sets up the gRPC clients for other monolith-stack and starts the HTTP server.
-// When an interrupt signal is received, it gracefully shuts down the service.
 func main() {
-	client, shutdown, err := app.RunClient()
+	client, err := app.NewClient(&app.ClientConfig{
+		ServiceName:    "apigateway",
+		ServiceVersion: "1.0.0",
+		Environment:    "production",
+		OtelEndpoint:   "otel-collector:4317",
+		ServerPort:     ":5000",
+		AllowedOrigins: []string{"http://localhost:1420", "http://localhost:33451", "http://localhost:5173"},
+	})
 	if err != nil {
-		log.Fatalf("failed to run client: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to create client: %v\n", err)
+		os.Exit(1)
 	}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-
-	client.Logger.Info("Gracefully shutting down...")
-	shutdown()
+	if err := client.Run(); err != nil {
+		client.Logger.Error("Client run failed", zap.Error(err))
+		os.Exit(1)
+	}
 }

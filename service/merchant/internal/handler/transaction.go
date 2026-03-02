@@ -3,45 +3,29 @@ package handler
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/service"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb"
-	pbmerchant "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	pbutils "github.com/MamangRust/monolith-payment-gateway-pb/common"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/merchant"
-	"go.uber.org/zap"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type merchantTransactionHandleGrpc struct {
-	pbmerchant.UnimplementedMerchantTransactionServiceServer
+	pb.UnimplementedMerchantTransactionServiceServer
 
 	merchantTransaction service.MerchantTransactionService
-	logger              logger.LoggerInterface
-	mapper              protomapper.MerchantTransactionProtoMapper
 }
 
-func NewMerchantTransactionHandleGrpc(merchantTransaction service.MerchantTransactionService, logger logger.LoggerInterface, mapper protomapper.MerchantTransactionProtoMapper) MerchantTransactionHandleGrpc {
+func NewMerchantTransactionHandleGrpc(merchantTransaction service.MerchantTransactionService) MerchantTransactionHandleGrpc {
 	return &merchantTransactionHandleGrpc{
 		merchantTransaction: merchantTransaction,
-		logger:              logger,
-		mapper:              mapper,
 	}
 }
 
-// FindAllTransactionMerchant retrieves a paginated list of transactions for all merchants based on the provided request parameters.
-// It handles pagination, search criteria, and returns a gRPC response with pagination metadata.
-//
-// Parameters:
-//   - ctx: The context for managing request-scoped values, cancelation signals, and deadlines.
-//   - req: A pointer to a FindAllMerchantRequest containing pagination and search details.
-//
-// Returns:
-//   - A pointer to ApiResponsePaginationMerchantTransaction containing the list of transactions
-//     and pagination metadata on success.
-//   - An error if the retrieval operation fails.
-func (s *merchantTransactionHandleGrpc) FindAllTransactionMerchant(ctx context.Context, req *pbmerchant.FindAllMerchantRequest) (*pbmerchant.ApiResponsePaginationMerchantTransaction, error) {
+func (s *merchantTransactionHandleGrpc) FindAllTransactionMerchant(ctx context.Context, req *pb.FindAllMerchantRequest) (*pb.ApiResponsePaginationMerchantTransaction, error) {
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
 	search := req.GetSearch()
@@ -59,40 +43,44 @@ func (s *merchantTransactionHandleGrpc) FindAllTransactionMerchant(ctx context.C
 		Search:   search,
 	}
 
-	merchants, totalRecords, err := s.merchantTransaction.FindAllTransactions(ctx, &reqService)
-
+	transactions, totalRecords, err := s.merchantTransaction.FindAllTransactions(ctx, &reqService)
 	if err != nil {
-		s.logger.Error("FindAllTransactionMerchant failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
+	}
+
+	protoTransactions := make([]*pb.MerchantTransactionResponse, len(transactions))
+	for i, txn := range transactions {
+		protoTransactions[i] = &pb.MerchantTransactionResponse{
+			Id:              int32(txn.TransactionID),
+			CardNumber:      txn.CardNumber,
+			Amount:          int32(txn.Amount),
+			PaymentMethod:   txn.PaymentMethod,
+			MerchantId:      int32(txn.MerchantID),
+			MerchantName:    txn.MerchantName,
+			TransactionTime: txn.TransactionTime.Format(time.RFC3339),
+			CreatedAt:       txn.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:       txn.UpdatedAt.Time.Format(time.RFC3339),
+			DeletedAt:       wrapperspb.String(txn.DeletedAt.Time.Format(time.RFC3339)),
+		}
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
-
-	paginationMeta := &pb.PaginationMeta{
+	paginationMeta := &pbutils.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
 		TotalRecords: int32(*totalRecords),
 	}
-	so := s.mapper.ToProtoResponsePaginationMerchantTransaction(paginationMeta, "success", "Successfully fetched merchant record", merchants)
 
-	s.logger.Info("Successfully fetched merchant records", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return so, nil
+	return &pb.ApiResponsePaginationMerchantTransaction{
+		Status:         "success",
+		Message:        "Successfully fetched merchant record",
+		Data:           protoTransactions,
+		PaginationMeta: paginationMeta,
+	}, nil
 }
 
-// FindAllTransactionByMerchant retrieves all transactions for a merchant by ID.
-// It validates the page, page size, and search string, and returns a gRPC response containing the transactions
-// or an error if the operation fails.
-//
-// Parameters:
-//   - ctx: The context for managing request-scoped values, cancellation signals, and deadlines.
-//   - req: A pointer to a FindAllMerchantTransaction containing the merchant ID, page, page size, and search string.
-//
-// Returns:
-//   - A pointer to ApiResponsePaginationMerchantTransaction containing the transactions on success.
-//   - An error if the retrieval operation fails.
-func (s *merchantTransactionHandleGrpc) FindAllTransactionByMerchant(ctx context.Context, req *pbmerchant.FindAllMerchantTransaction) (*pbmerchant.ApiResponsePaginationMerchantTransaction, error) {
+func (s *merchantTransactionHandleGrpc) FindAllTransactionByMerchant(ctx context.Context, req *pb.FindAllMerchantTransaction) (*pb.ApiResponsePaginationMerchantTransaction, error) {
 	merchant_id := int(req.MerchantId)
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
@@ -112,42 +100,44 @@ func (s *merchantTransactionHandleGrpc) FindAllTransactionByMerchant(ctx context
 		MerchantID: merchant_id,
 	}
 
-	merchants, totalRecords, err := s.merchantTransaction.FindAllTransactionsByMerchant(ctx, &reqService)
-
+	transactions, totalRecords, err := s.merchantTransaction.FindAllTransactionsByMerchant(ctx, &reqService)
 	if err != nil {
-		s.logger.Error("FindAllTransactionByMerchant failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
+	}
+
+	protoTransactions := make([]*pb.MerchantTransactionResponse, len(transactions))
+	for i, txn := range transactions {
+		protoTransactions[i] = &pb.MerchantTransactionResponse{
+			Id:              int32(txn.TransactionID),
+			CardNumber:      txn.CardNumber,
+			Amount:          int32(txn.Amount),
+			PaymentMethod:   txn.PaymentMethod,
+			MerchantId:      int32(txn.MerchantID),
+			MerchantName:    txn.MerchantName,
+			TransactionTime: txn.TransactionTime.Format(time.RFC3339),
+			CreatedAt:       txn.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:       txn.UpdatedAt.Time.Format(time.RFC3339),
+			DeletedAt:       wrapperspb.String(txn.DeletedAt.Time.Format(time.RFC3339)),
+		}
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
-
-	paginationMeta := &pb.PaginationMeta{
+	paginationMeta := &pbutils.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapper.ToProtoResponsePaginationMerchantTransaction(paginationMeta, "success", "Successfully fetched merchant record", merchants)
-
-	s.logger.Info("Successfully fetched merchant record", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return so, nil
+	return &pb.ApiResponsePaginationMerchantTransaction{
+		Status:         "success",
+		Message:        "Successfully fetched merchant record",
+		Data:           protoTransactions,
+		PaginationMeta: paginationMeta,
+	}, nil
 }
 
-// FindAllTransactionByApikey retrieves paginated transaction records for a specific merchant by API key.
-// It validates the API key, page, page size, and search query, and returns a gRPC response containing the
-// paginated transaction records on success or an error if the operation fails.
-//
-// Parameters:
-//   - ctx: The context for managing request-scoped values, cancellation signals, and deadlines.
-//   - req: A pointer to a FindAllMerchantApikey containing the API key, page, page size, and search query.
-//
-// Returns:
-//   - A pointer to ApiResponsePaginationMerchantTransaction containing the paginated transaction records
-//     on success.
-//   - An error if the retrieval operation fails.
-func (s *merchantTransactionHandleGrpc) FindAllTransactionByApikey(ctx context.Context, req *pbmerchant.FindAllMerchantApikey) (*pbmerchant.ApiResponsePaginationMerchantTransaction, error) {
+func (s *merchantTransactionHandleGrpc) FindAllTransactionByApikey(ctx context.Context, req *pb.FindAllMerchantApikey) (*pb.ApiResponsePaginationMerchantTransaction, error) {
 	api_key := req.GetApiKey()
 	page := int(req.GetPage())
 	pageSize := int(req.GetPageSize())
@@ -167,24 +157,39 @@ func (s *merchantTransactionHandleGrpc) FindAllTransactionByApikey(ctx context.C
 		Search:   search,
 	}
 
-	merchants, totalRecords, err := s.merchantTransaction.FindAllTransactionsByApikey(ctx, &reqService)
+	transactions, totalRecords, err := s.merchantTransaction.FindAllTransactionsByApikey(ctx, &reqService)
 	if err != nil {
-		s.logger.Error("FindAllTransactionsByApikey failed", zap.Any("error", err))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
+	}
+
+	protoTransactions := make([]*pb.MerchantTransactionResponse, len(transactions))
+	for i, txn := range transactions {
+		protoTransactions[i] = &pb.MerchantTransactionResponse{
+			Id:              int32(txn.TransactionID),
+			CardNumber:      txn.CardNumber,
+			Amount:          int32(txn.Amount),
+			PaymentMethod:   txn.PaymentMethod,
+			MerchantId:      int32(txn.MerchantID),
+			MerchantName:    txn.MerchantName,
+			TransactionTime: txn.TransactionTime.Format(time.RFC3339),
+			CreatedAt:       txn.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:       txn.UpdatedAt.Time.Format(time.RFC3339),
+			DeletedAt:       wrapperspb.String(txn.DeletedAt.Time.Format(time.RFC3339)),
+		}
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
-
-	paginationMeta := &pb.PaginationMeta{
+	paginationMeta := &pbutils.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapper.ToProtoResponsePaginationMerchantTransaction(paginationMeta, "success", "Successfully fetched merchant record", merchants)
-
-	s.logger.Info("Successfully fetched merchant record", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return so, nil
+	return &pb.ApiResponsePaginationMerchantTransaction{
+		Status:         "success",
+		Message:        "Successfully fetched merchant record",
+		Data:           protoTransactions,
+		PaginationMeta: paginationMeta,
+	}, nil
 }

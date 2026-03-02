@@ -5,33 +5,20 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transaction/stats"
 )
 
 type transactionStatsMethodRepository struct {
-	db     *db.Queries
-	mapper recordmapper.TransactionStatisticMethodRecordMapper
+	db *db.Queries
 }
 
-func NewTransactionStatsMethodRepository(db *db.Queries, mapper recordmapper.TransactionStatisticMethodRecordMapper) TransactionStatsMethodRepository {
+func NewTransactionStatsMethodRepository(db *db.Queries) TransactionStatsMethodRepository {
 	return &transactionStatsMethodRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthlyPaymentMethods retrieves monthly statistics grouped by payment method.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*record.TransactionMonthMethod: List of monthly payment method usage statistics.
-//   - error: Error if any occurs during query.
-func (r *transactionStatsMethodRepository) GetMonthlyPaymentMethods(ctx context.Context, year int) ([]*record.TransactionMonthMethod, error) {
+func (r *transactionStatsMethodRepository) GetMonthlyPaymentMethods(ctx context.Context, year int) ([]*db.GetMonthlyPaymentMethodsRow, error) {
 	yearStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetMonthlyPaymentMethods(ctx, yearStart)
@@ -40,24 +27,15 @@ func (r *transactionStatsMethodRepository) GetMonthlyPaymentMethods(ctx context.
 		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsFailed
 	}
 
-	return r.mapper.ToTransactionMonthlyMethods(res), nil
+	return res, nil
 }
 
-// GetYearlyPaymentMethods retrieves yearly statistics grouped by payment method.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*record.TransactionYearMethod: List of yearly payment method usage statistics.
-//   - error: Error if any occurs during query.
-func (r *transactionStatsMethodRepository) GetYearlyPaymentMethods(ctx context.Context, year int) ([]*record.TransactionYearMethod, error) {
+func (r *transactionStatsMethodRepository) GetYearlyPaymentMethods(ctx context.Context, year int) ([]*db.GetYearlyPaymentMethodsRow, error) {
 	res, err := r.db.GetYearlyPaymentMethods(ctx, year)
 
 	if err != nil {
 		return nil, transaction_errors.ErrGetYearlyPaymentMethodsFailed
 	}
 
-	return r.mapper.ToTransactionYearlyMethods(res), nil
+	return res, nil
 }

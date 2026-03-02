@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transactionStatsAmountCache struct {
@@ -16,18 +16,9 @@ func NewTransactionStatsAmountCache(store *sharedcachehelpers.CacheStore) Transa
 	return &transactionStatsAmountCache{store: store}
 }
 
-// GetMonthlyAmountsCache retrieves cached monthly transaction amount statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TransactionMonthAmountResponse: Monthly amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsAmountCache) GetMonthlyAmountsCache(ctx context.Context, year int) ([]*response.TransactionMonthAmountResponse, bool) {
-	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionMonthAmountResponse](ctx, t.store, key)
+func (t *transactionStatsAmountCache) GetMonthlyAmountsCache(ctx context.Context, year int) ([]*db.GetMonthlyAmountsRow, bool) {
+	key := fmt.Sprintf(monthTransactionAmountCacheKey, year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthlyAmountsRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -36,53 +27,31 @@ func (t *transactionStatsAmountCache) GetMonthlyAmountsCache(ctx context.Context
 	return *result, true
 }
 
-// SetMonthlyAmountsCache caches monthly transaction amount statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as key.
-//   - data: Monthly transaction amount data.
-func (t *transactionStatsAmountCache) SetMonthlyAmountsCache(ctx context.Context, year int, data []*response.TransactionMonthAmountResponse) {
+func (t *transactionStatsAmountCache) SetMonthlyAmountsCache(ctx context.Context, year int, data []*db.GetMonthlyAmountsRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(monthTopupAmountCacheKey, year)
+	key := fmt.Sprintf(monthTransactionAmountCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearlyAmountsCache retrieves cached yearly transaction amount statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TransactionYearlyAmountResponse: Yearly amount statistics.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsAmountCache) GetYearlyAmountsCache(ctx context.Context, year int) ([]*response.TransactionYearlyAmountResponse, bool) {
-	key := fmt.Sprintf(yearTopupAmountCacheKey, year)
+func (t *transactionStatsAmountCache) GetYearlyAmountsCache(ctx context.Context, year int) ([]*db.GetYearlyAmountsRow, bool) {
+	key := fmt.Sprintf(yearTransactionAmountCacheKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionYearlyAmountResponse](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyAmountsRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
-
 }
 
-// SetYearlyAmountsCache caches yearly transaction amount statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as cache key.
-//   - data: Yearly amount statistics to cache.
-func (t *transactionStatsAmountCache) SetYearlyAmountsCache(ctx context.Context, year int, data []*response.TransactionYearlyAmountResponse) {
+func (t *transactionStatsAmountCache) SetYearlyAmountsCache(ctx context.Context, year int, data []*db.GetYearlyAmountsRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(yearTopupAmountCacheKey, year)
+	key := fmt.Sprintf(yearTransactionAmountCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }

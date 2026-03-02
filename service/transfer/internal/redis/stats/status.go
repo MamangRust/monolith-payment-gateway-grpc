@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transferStatsStatusCache struct {
@@ -17,19 +17,10 @@ func NewTransferStatsStatusCache(store *sharedcachehelpers.CacheStore) TransferS
 	return &transferStatsStatusCache{store: store}
 }
 
-// GetCachedMonthTransferStatusSuccess retrieves cached monthly successful transfer status.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing month and status filter.
-//
-// Returns:
-//   - []*response.TransferResponseMonthStatusSuccess: List of monthly successful transfer status.
-//   - bool: Whether the cache was found.
-func (t *transferStatsStatusCache) GetCachedMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusSuccess, bool) {
+func (t *transferStatsStatusCache) GetCachedMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer) ([]*db.GetMonthTransferStatusSuccessRow, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusSuccessKey, req.Month, req.Year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseMonthStatusSuccess](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransferStatusSuccessRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -38,13 +29,7 @@ func (t *transferStatsStatusCache) GetCachedMonthTransferStatusSuccess(ctx conte
 	return *result, true
 }
 
-// SetCachedMonthTransferStatusSuccess stores monthly successful transfer status into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request key used for caching.
-//   - data: List of monthly successful transfer status to cache.
-func (t *transferStatsStatusCache) SetCachedMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusSuccess) {
+func (t *transferStatsStatusCache) SetCachedMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer, data []*db.GetMonthTransferStatusSuccessRow) {
 	if data == nil {
 		return
 	}
@@ -53,19 +38,10 @@ func (t *transferStatsStatusCache) SetCachedMonthTransferStatusSuccess(ctx conte
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetCachedYearlyTransferStatusSuccess retrieves cached yearly successful transfer status.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which statistics are requested.
-//
-// Returns:
-//   - []*response.TransferResponseYearStatusSuccess: List of yearly successful transfer status.
-//   - bool: Whether the cache was found.
-func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusSuccess(ctx context.Context, year int) ([]*response.TransferResponseYearStatusSuccess, bool) {
+func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusSuccess(ctx context.Context, year int) ([]*db.GetYearlyTransferStatusSuccessRow, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusSuccessKey, year)
 
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseYearStatusSuccess](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferStatusSuccessRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -74,13 +50,7 @@ func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusSuccess(ctx cont
 	return *result, true
 }
 
-// SetCachedYearlyTransferStatusSuccess stores yearly successful transfer status into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is cached.
-//   - data: List of yearly successful transfer status to cache.
-func (t *transferStatsStatusCache) SetCachedYearlyTransferStatusSuccess(ctx context.Context, year int, data []*response.TransferResponseYearStatusSuccess) {
+func (t *transferStatsStatusCache) SetCachedYearlyTransferStatusSuccess(ctx context.Context, year int, data []*db.GetYearlyTransferStatusSuccessRow) {
 	if data == nil {
 		return
 	}
@@ -89,18 +59,9 @@ func (t *transferStatsStatusCache) SetCachedYearlyTransferStatusSuccess(ctx cont
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetCachedMonthTransferStatusFailed retrieves cached monthly failed transfer status.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing month and status filter.
-//
-// Returns:
-//   - []*response.TransferResponseMonthStatusFailed: List of monthly failed transfer status.
-//   - bool: Whether the cache was found.
-func (t *transferStatsStatusCache) GetCachedMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer) ([]*response.TransferResponseMonthStatusFailed, bool) {
+func (t *transferStatsStatusCache) GetCachedMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer) ([]*db.GetMonthTransferStatusFailedRow, bool) {
 	key := fmt.Sprintf(transferMonthTransferStatusFailedKey, req.Month, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseMonthStatusFailed](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransferStatusFailedRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -109,13 +70,7 @@ func (t *transferStatsStatusCache) GetCachedMonthTransferStatusFailed(ctx contex
 	return *result, true
 }
 
-// SetCachedMonthTransferStatusFailed stores monthly failed transfer status into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request key used for caching.
-//   - data: List of monthly failed transfer status to cache.
-func (t *transferStatsStatusCache) SetCachedMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer, data []*response.TransferResponseMonthStatusFailed) {
+func (t *transferStatsStatusCache) SetCachedMonthTransferStatusFailed(ctx context.Context, req *requests.MonthStatusTransfer, data []*db.GetMonthTransferStatusFailedRow) {
 	if data == nil {
 		return
 	}
@@ -124,18 +79,9 @@ func (t *transferStatsStatusCache) SetCachedMonthTransferStatusFailed(ctx contex
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetCachedYearlyTransferStatusFailed retrieves cached yearly failed transfer status.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which statistics are requested.
-//
-// Returns:
-//   - []*response.TransferResponseYearStatusFailed: List of yearly failed transfer status.
-//   - bool: Whether the cache was found.
-func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusFailed(ctx context.Context, year int) ([]*response.TransferResponseYearStatusFailed, bool) {
+func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusFailed(ctx context.Context, year int) ([]*db.GetYearlyTransferStatusFailedRow, bool) {
 	key := fmt.Sprintf(transferYearTransferStatusFailedKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransferResponseYearStatusFailed](ctx, t.store, key)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransferStatusFailedRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -144,13 +90,7 @@ func (t *transferStatsStatusCache) GetCachedYearlyTransferStatusFailed(ctx conte
 	return *result, true
 }
 
-// SetCachedYearlyTransferStatusFailed stores yearly failed transfer status into cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is cached.
-//   - data: List of yearly failed transfer status to cache.
-func (t *transferStatsStatusCache) SetCachedYearlyTransferStatusFailed(ctx context.Context, year int, data []*response.TransferResponseYearStatusFailed) {
+func (t *transferStatsStatusCache) SetCachedYearlyTransferStatusFailed(ctx context.Context, year int, data []*db.GetYearlyTransferStatusFailedRow) {
 	if data == nil {
 		return
 	}

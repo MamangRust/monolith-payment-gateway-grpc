@@ -17,14 +17,6 @@ func NewCardDashboardBalanceRepository(db *db.Queries) CardDashboardBalanceRepos
 	}
 }
 
-// GetTotalBalances retrieves the total balances for all cards in the database.
-//
-// Parameters:
-//   - ctx: the context for the database operation
-//
-// Returns:
-//   - A pointer to an int64 containing the total balance.
-//   - An error if the query fails.
 func (r *cardDashboardBalanceRepository) GetTotalBalances(ctx context.Context) (*int64, error) {
 	res, err := r.db.GetTotalBalance(ctx)
 
@@ -35,15 +27,6 @@ func (r *cardDashboardBalanceRepository) GetTotalBalances(ctx context.Context) (
 	return &res, nil
 }
 
-// GetTotalBalanceByCardNumber retrieves the total balance of the card with the given card number.
-//
-// Parameters:
-//   - ctx: the context for the database operation
-//   - cardNumber: the card number to retrieve the balance for.
-//
-// Returns:
-//   - A pointer to an int64 containing the total balance.
-//   - An error if the query fails.
 func (r *cardDashboardBalanceRepository) GetTotalBalanceByCardNumber(ctx context.Context, cardNumber string) (*int64, error) {
 	res, err := r.db.GetTotalBalanceByCardNumber(ctx, cardNumber)
 

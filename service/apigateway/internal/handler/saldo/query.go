@@ -1,24 +1,20 @@
 package saldohandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pbhelpers "github.com/MamangRust/monolith-payment-gateway-pb"
+	saldo_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/saldo"
+	pbhelper "github.com/MamangRust/monolith-payment-gateway-pb/card"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/saldo"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/saldo"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type saldoQueryHandleApi struct {
@@ -28,11 +24,9 @@ type saldoQueryHandleApi struct {
 
 	mapper apimapper.SaldoQueryResponseMapper
 
-	trace trace.Tracer
+	cache saldo_cache.SaldoMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type saldoQueryHandleDeps struct {
@@ -43,51 +37,35 @@ type saldoQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.SaldoQueryResponseMapper
+
+	cache saldo_cache.SaldoMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewSaldoQueryHandleApi(params *saldoQueryHandleDeps) *saldoQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "saldo_query_handler_requests_total",
-			Help: "Total number of saldo query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "saldo_query_handler_request_duration_seconds",
-			Help:    "Duration of saldo query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	saldoHandler := &saldoQueryHandleApi{
-		saldo:           params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("saldo-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		saldo:      params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerSaldo := params.router.Group("/api/saldo-query")
 
-	routerSaldo.GET("", saldoHandler.FindAll)
-	routerSaldo.GET("/:id", saldoHandler.FindById)
-
-	routerSaldo.GET("/active", saldoHandler.FindByActive)
-	routerSaldo.GET("/trashed", saldoHandler.FindByTrashed)
-	routerSaldo.GET("/card_number/:card_number", saldoHandler.FindByCardNumber)
+	routerSaldo.GET("", params.apiHandler.Handle("find-all-saldos", saldoHandler.FindAll))
+	routerSaldo.GET("/:id", params.apiHandler.Handle("find-saldo-by-id", saldoHandler.FindById))
+	routerSaldo.GET("/active", params.apiHandler.Handle("find-active-saldos", saldoHandler.FindByActive))
+	routerSaldo.GET("/trashed", params.apiHandler.Handle("find-trashed-saldos", saldoHandler.FindByTrashed))
+	routerSaldo.GET("/card_number/:card_number", params.apiHandler.Handle("find-saldo-by-card-number", saldoHandler.FindByCardNumber))
 
 	return saldoHandler
 }
 
 // @Summary Find all saldo data
-// @Tags Saldo-Query
+// @Tags Saldo Query
 // @Security Bearer
 // @Description Retrieve a list of all saldo data with pagination and search
 // @Accept json
@@ -99,47 +77,51 @@ func NewSaldoQueryHandleApi(params *saldoQueryHandleDeps) *saldoQueryHandleApi {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldo-query [get]
 func (h *saldoQueryHandleApi) FindAll(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAll"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllSaldos{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedSaldos(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllSaldoRequest{
+	reqGrpc := &pb.FindAllSaldoRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.saldo.FindAllSaldo(ctx, req)
-
+	res, err := h.saldo.FindAllSaldo(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve saldo data", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindAllSaldo(c)
+		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
+		return h.handleGrpcError(err, "FindAll")
 	}
 
-	so := h.mapper.ToApiResponsePaginationSaldo(res)
+	apiResponse := h.mapper.ToApiResponsePaginationSaldo(res)
+	h.cache.SetCachedSaldos(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieve saldo data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a saldo by ID
-// @Tags Saldo-Query
+// @Tags Saldo Query
 // @Security Bearer
 // @Description Retrieve a saldo by its ID
 // @Accept json
@@ -150,44 +132,38 @@ func (h *saldoQueryHandleApi) FindAll(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldo-query/{id} [get]
 func (h *saldoQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	idStr := c.Param("id")
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.logger.Debug("Invalid saldo ID", zap.Error(err))
+		return errors.NewBadRequestError("invalid id parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	cachedData, found := h.cache.GetCachedSaldoById(ctx, idInt)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	defer func() {
-		end()
-	}()
+	reqGrpc := &pb.FindByIdSaldoRequest{
+		SaldoId: int32(idInt),
+	}
 
-	id, err := strconv.Atoi(c.Param("id"))
-
+	res, err := h.saldo.FindByIdSaldo(ctx, reqGrpc)
 	if err != nil {
-		logError("Invalid saldo ID", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidSaldoID(c)
+		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	req := &pb.FindByIdSaldoRequest{
-		SaldoId: int32(id),
-	}
+	apiResponse := h.mapper.ToApiResponseSaldo(res)
+	h.cache.SetCachedSaldoById(ctx, apiResponse.Data.ID, apiResponse)
 
-	res, err := h.saldo.FindByIdSaldo(ctx, req)
-
-	if err != nil {
-		logError("Failed to retrieve saldo data", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindByIdSaldo(c)
-	}
-
-	so := h.mapper.ToApiResponseSaldo(res)
-
-	logSuccess("Successfully retrieve saldo data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Find a saldo by card number
-// @Tags Saldo-Query
+// @Tags Saldo Query
 // @Security Bearer
 // @Description Retrieve a saldo by its card number
 // @Accept json
@@ -197,42 +173,36 @@ func (h *saldoQueryHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldo-query/card_number/{card_number} [get]
 func (h *saldoQueryHandleApi) FindByCardNumber(c echo.Context) error {
-	const method = "FindByCardNumber"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cardNumber := c.Param("card_number")
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
 	}
 
-	req := &pbhelpers.FindByCardNumberRequest{
+	ctx := c.Request().Context()
+
+	cachedData, found := h.cache.GetCachedSaldoByCardNumber(ctx, cardNumber)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
+
+	reqGrpc := &pbhelper.FindByCardNumberRequest{
 		CardNumber: cardNumber,
 	}
 
-	res, err := h.saldo.FindByCardNumber(ctx, req)
-
+	res, err := h.saldo.FindByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve saldo data", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindByCardNumberSaldo(c)
+		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseSaldo(res)
+	apiResponse := h.mapper.ToApiResponseSaldo(res)
+	h.cache.SetCachedSaldoByCardNumber(ctx, cardNumber, apiResponse)
 
-	logSuccess("Successfully retrieve saldo data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve all active saldo data
-// @Tags Saldo-Query
+// @Tags Saldo Query
 // @Security Bearer
 // @Description Retrieve a list of all active saldo data
 // @Accept json
@@ -244,46 +214,51 @@ func (h *saldoQueryHandleApi) FindByCardNumber(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldo-query/active [get]
 func (h *saldoQueryHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllSaldos{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedSaldoByActive(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllSaldoRequest{
+	reqGrpc := &pb.FindAllSaldoRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.saldo.FindByActive(ctx, req)
-
+	res, err := h.saldo.FindByActive(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve saldo data", err, zap.Error(err))
-		return saldo_errors.ErrApiFailedFindAllSaldoActive(c)
+		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByActive")
 	}
 
-	so := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
+	h.cache.SetCachedSaldoByActive(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieve saldo data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Summary Retrieve trashed saldo data
-// @Tags Saldo-Query
+// @Tags Saldo Query
 // @Security Bearer
 // @Description Retrieve a list of all trashed saldo data
 // @Accept json
@@ -295,95 +270,81 @@ func (h *saldoQueryHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve saldo data"
 // @Router /api/saldo-query/trashed [get]
 func (h *saldoQueryHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	reqCache := &requests.FindAllSaldos{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedSaldoByTrashed(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllSaldoRequest{
+	reqGrpc := &pb.FindAllSaldoRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.saldo.FindByTrashed(ctx, req)
-
+	res, err := h.saldo.FindByTrashed(ctx, reqGrpc)
 	if err != nil {
-		logError("Failed to retrieve trashed saldo data", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedFindAllSaldoTrashed(c)
+		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
+		return h.handleGrpcError(err, "FindByTrashed")
 	}
 
-	so := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
+	h.cache.SetCachedSaldoByTrashed(ctx, reqCache, apiResponse)
 
-	logSuccess("Successfully retrieve trashed saldo data", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *saldoQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *saldoQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Saldo").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Saldo already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Saldo service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *saldoQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

@@ -1,133 +1,139 @@
 package rolehandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/middlewares"
 	mencache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis"
+	role_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/role"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/role"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/role"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/role"
+
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// roleCommandHandleApi provides HTTP handlers for role-related operations.
-//
-// This struct integrates the RoleService gRPC client, logging, Kafka event publishing,
-// response mapper, tracing, and Prometheus metrics for complete observability and functionality.
 type roleCommandHandleApi struct {
-	// kafka is the Kafka client used for publishing role-related events.
 	kafka *kafka.Kafka
 
-	// role is the gRPC client to communicate with the RoleService.
 	role pb.RoleCommandServiceClient
 
-	// logger provides structured logging capabilities for debugging and tracing.
 	logger logger.LoggerInterface
 
-	// mapper maps gRPC responses into API-compliant response formats.
 	mapper apimapper.RoleCommandResponseMapper
 
-	// trace enables distributed tracing for handler operations via OpenTelemetry.
-	trace trace.Tracer
+	cache role_cache.RoleMencache
 
-	// requestCounter counts the number of incoming requests handled.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of each request in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// roleHandleDeps contains the dependencies required to initialize and register
-// the role handler routes into the Echo router.
 type roleCommandHandleDeps struct {
-	// client is the gRPC client for communicating with the RoleService.
 	client pb.RoleCommandServiceClient
 
-	// router is the Echo instance used to register HTTP routes.
 	router *echo.Echo
 
-	// logger provides structured and contextual logging throughout the handler.
 	logger logger.LoggerInterface
 
-	// mapper transforms internal gRPC responses into HTTP-friendly API responses.
 	mapper apimapper.RoleCommandResponseMapper
 
-	// kafka is used to publish domain events to Kafka topics (e.g., for auditing or async workflows).
 	kafka *kafka.Kafka
 
-	cache mencache.RoleCache
+	cache_role mencache.RoleCache
+
+	cache role_cache.RoleMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewRoleCommandHandleApi(params *roleCommandHandleDeps) *roleCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "role_command_handler_requests_total",
-			Help: "Total number of role requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "role_command_handler_request_duration_seconds",
-			Help:    "Duration of role requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
 	roleHandler := &roleCommandHandleApi{
-		role:            params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("role-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
-		kafka:           params.kafka,
+		role:       params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
+		kafka:      params.kafka,
 	}
 
-	roleMiddleware := middlewares.NewRoleValidator(params.kafka, "request-role", "response-role", 5*time.Second, params.logger, params.cache)
+	roleMiddleware := middlewares.NewRoleValidator(params.kafka, "request-role", "response-role", 5*time.Second, params.logger, params.cache_role)
 
 	routerRole := params.router.Group("/api/role")
 
 	roleMiddlewareChain := roleMiddleware.Middleware()
 	requireAdmin := middlewares.RequireRoles("Admin_Admin_14")
 
-	routerRole.POST("/",
-		roleMiddlewareChain(requireAdmin(roleHandler.Create)),
+	routerRole.POST(
+		"",
+		params.apiHandler.Handle(
+			"create-role",
+			roleMiddlewareChain(requireAdmin(roleHandler.Create)),
+		),
 	)
 
-	routerRole.POST("/:id", roleMiddlewareChain(requireAdmin(roleHandler.Update)))
+	routerRole.POST(
+		"/:id",
+		params.apiHandler.Handle(
+			"update-role",
+			roleMiddlewareChain(requireAdmin(roleHandler.Update)),
+		),
+	)
 
-	routerRole.DELETE("/:id", roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)))
-	routerRole.PUT("/restore/:id", roleMiddlewareChain(requireAdmin(roleHandler.Restore)))
-	routerRole.DELETE("/permanent/:id", roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)))
+	routerRole.PUT(
+		"/restore/:id",
+		params.apiHandler.Handle(
+			"restore-role",
+			roleMiddlewareChain(requireAdmin(roleHandler.Restore)),
+		),
+	)
 
-	routerRole.POST("/restore/all", roleMiddlewareChain(requireAdmin(roleHandler.RestoreAll)))
-	routerRole.POST("/permanent/all", roleMiddlewareChain(requireAdmin(roleHandler.DeleteAllPermanent)))
+	routerRole.DELETE(
+		"/:id",
+		params.apiHandler.Handle(
+			"delete-role",
+			roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)),
+		),
+	)
+
+	routerRole.DELETE(
+		"/permanent/:id",
+		params.apiHandler.Handle(
+			"delete-role-permanent",
+			roleMiddlewareChain(requireAdmin(roleHandler.DeletePermanent)),
+		),
+	)
+
+	routerRole.POST(
+		"/restore/all",
+		params.apiHandler.Handle(
+			"restore-all-roles",
+			roleMiddlewareChain(requireAdmin(roleHandler.RestoreAll)),
+		),
+	)
+
+	routerRole.POST(
+		"/permanent/all",
+		params.apiHandler.Handle(
+			"delete-all-roles-permanent",
+			roleMiddlewareChain(requireAdmin(roleHandler.DeleteAllPermanent)),
+		),
+	)
 
 	return roleHandler
 }
 
 // Create godoc.
 // @Summary Create a new role
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Create a new role with the provided details.
 // @Accept json
@@ -136,53 +142,38 @@ func NewRoleCommandHandleApi(params *roleCommandHandleDeps) *roleCommandHandleAp
 // @Success 200 {object} response.ApiResponseRole "Created role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid request body"
 // @Failure 500 {object} response.ErrorResponse "Failed to create role"
-// @Router /api/role [post]
+// @Router /api/role-command/create [post]
 func (h *roleCommandHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-	ctx := c.Request().Context()
+	var body requests.CreateRoleRequest
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	var req requests.CreateRoleRequest
-
-	if err := c.Bind(&req); err != nil {
-		logError("Failed to bind CreateRole request", err, zap.Error(err))
-
-		return role_errors.ErrApiBindCreateRole(c)
+	if err := c.Bind(&body); err != nil {
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
-	if err := req.Validate(); err != nil {
-		logError("Failed to validate CreateRole request", err, zap.Error(err))
-
-		return role_errors.ErrApiValidateCreateRole(c)
+	if err := body.Validate(); err != nil {
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
 	reqPb := &pb.CreateRoleRequest{
-		Name: req.Name,
+		Name: body.Name,
 	}
 
+	ctx := c.Request().Context()
+
 	res, err := h.role.CreateRole(ctx, reqPb)
-
 	if err != nil {
-		logError("Failed to create role", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedCreateRole(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
 	so := h.mapper.ToApiResponseRole(res)
-
-	logSuccess("Create role successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // Update godoc.
 // @Summary Update a role
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Update an existing role with the provided details.
 // @Accept json
@@ -192,62 +183,44 @@ func (h *roleCommandHandleApi) Create(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Updated role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid role ID or request body"
 // @Failure 500 {object} response.ErrorResponse "Failed to update role"
-// @Router /api/role/{id} [post]
+// @Router /api/role-command/update/{id} [post]
 func (h *roleCommandHandleApi) Update(c echo.Context) error {
-	const method = "Update"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	roleID, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil || roleID <= 0 {
-		logError("Failed to update role", err, zap.Error(err))
-
-		return role_errors.ErrInvalidRoleId(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
-	var req requests.UpdateRoleRequest
+	var body requests.UpdateRoleRequest
 
-	if err := c.Bind(&req); err != nil {
-		logError("Failed to bind UpdateRole request", err, zap.Error(err))
-
-		return role_errors.ErrApiBindUpdateRole(c)
+	if err := c.Bind(&body); err != nil {
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
-	if err := req.Validate(); err != nil {
-		logError("Failed to validate UpdateRole request", err, zap.Error(err))
-
-		return role_errors.ErrApiValidateUpdateRole(c)
+	if err := body.Validate(); err != nil {
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
 	reqPb := &pb.UpdateRoleRequest{
 		Id:   int32(roleID),
-		Name: req.Name,
+		Name: body.Name,
 	}
 
+	ctx := c.Request().Context()
+
 	res, err := h.role.UpdateRole(ctx, reqPb)
-
 	if err != nil {
-		logError("Failed to update role", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedUpdateRole(c)
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseRole(res)
-
-	logSuccess("Update role successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // Trashed godoc.
 // @Summary Soft-delete a role
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Soft-delete a role by its ID.
 // @Accept json
@@ -256,47 +229,32 @@ func (h *roleCommandHandleApi) Update(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Soft-deleted role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid role ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to soft-delete role"
-// @Router /api/role/{id} [delete]
+// @Router /api/role-command/trashed/{id} [post]
 func (h *roleCommandHandleApi) Trashed(c echo.Context) error {
-	const method = "Trashed"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	roleID, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil || roleID <= 0 {
-		logError("Failed to trash role", err, zap.Error(err))
-
-		return role_errors.ErrInvalidRoleId(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdRoleRequest{
 		RoleId: int32(roleID),
 	}
 
 	res, err := h.role.TrashedRole(ctx, req)
-
 	if err != nil {
-		logError("Failed to trash role", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedTrashedRole(c)
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseRoleDeleteAt(res)
-
-	logSuccess("Trash role successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // Restore godoc.
 // @Summary Restore a soft-deleted role
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Restore a soft-deleted role by its ID.
 // @Accept json
@@ -305,47 +263,32 @@ func (h *roleCommandHandleApi) Trashed(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Restored role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid role ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to restore role"
-// @Router /api/role/restore/{id} [put]
+// @Router /api/role-command/restore/{id} [post]
 func (h *roleCommandHandleApi) Restore(c echo.Context) error {
-	const method = "Restore"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	roleID, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil || roleID <= 0 {
-		logError("Failed to restore role", err, zap.Error(err))
-
-		return role_errors.ErrInvalidRoleId(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdRoleRequest{
 		RoleId: int32(roleID),
 	}
 
 	res, err := h.role.RestoreRole(ctx, req)
-
 	if err != nil {
-		logError("Failed to restore role", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedRestoreRole(c)
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseRole(res)
-
-	logSuccess("Restore role successfully", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseRoleDeleteAt(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // DeletePermanent godoc.
 // @Summary Permanently delete a role
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Permanently delete a role by its ID.
 // @Accept json
@@ -354,163 +297,149 @@ func (h *roleCommandHandleApi) Restore(c echo.Context) error {
 // @Success 200 {object} response.ApiResponseRole "Permanently deleted role data"
 // @Failure 400 {object} response.ErrorResponse "Invalid role ID"
 // @Failure 500 {object} response.ErrorResponse "Failed to delete role permanently"
-// @Router /api/role/permanent/{id} [delete]
+// @Router /api/role-command/permanent/{id} [delete]
 func (h *roleCommandHandleApi) DeletePermanent(c echo.Context) error {
-	const method = "DeletePermanent"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	roleID, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil || roleID <= 0 {
-		logError("Failed to delete role permanently", err, zap.Error(err))
-
-		return role_errors.ErrInvalidRoleId(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.FindByIdRoleRequest{
 		RoleId: int32(roleID),
 	}
 
 	res, err := h.role.DeleteRolePermanent(ctx, req)
-
 	if err != nil {
-		logError("Failed to delete role permanently", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedDeletePermanent(c)
+		return h.handleGrpcError(err, "DeleteRole")
 	}
 
 	so := h.mapper.ToApiResponseRoleDelete(res)
-
-	logSuccess("Delete role permanently successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // RestoreAll godoc.
 // @Summary Restore all soft-deleted roles
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Restore all soft-deleted roles.
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.ApiResponseRoleAll "Restored roles data"
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all roles"
-// @Router /api/role/restore/all [post]
+// @Router /api/role-command/restore/all [post]
 func (h *roleCommandHandleApi) RestoreAll(c echo.Context) error {
-	const method = "RestoreAll"
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	res, err := h.role.RestoreAllRole(ctx, &emptypb.Empty{})
-
 	if err != nil {
-		logError("Failed to restore all roles", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedRestoreAll(c)
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
 	so := h.mapper.ToApiResponseRoleAll(res)
-
-	logSuccess("Restore all roles successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // DeleteAllPermanent godoc.
 // @Summary Permanently delete all roles
-// @Tags Role
+// @Tags Role Command
 // @Security Bearer
 // @Description Permanently delete all roles.
 // @Accept json
 // @Produce json
 // @Success 200 {object} response.ApiResponseRoleAll "Permanently deleted roles data"
 // @Failure 500 {object} response.ErrorResponse "Failed to delete all roles permanently"
-// @Router /api/role/permanent/all [post]
+// @Router /api/role-command/permanent/all [delete]
 func (h *roleCommandHandleApi) DeleteAllPermanent(c echo.Context) error {
-	const method = "DeleteAllPermanent"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.role.DeleteAllRolePermanent(ctx, &emptypb.Empty{})
 	if err != nil {
-		logError("Failed to delete all roles permanently", err, zap.Error(err))
-
-		return role_errors.ErrApiFailedDeleteAll(c)
+		return h.handleGrpcError(err, "DeleteAll")
 	}
 
 	so := h.mapper.ToApiResponseRoleAll(res)
 
-	logSuccess("Delete all roles permanently successfully", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *roleCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *roleCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Role").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Role already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Role service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *roleCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *roleCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *roleCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

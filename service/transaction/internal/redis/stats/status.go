@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
 )
 
 type transactionStatsStatusCache struct {
@@ -17,18 +17,9 @@ func NewTransactionStatsStatusCache(store *sharedcachehelpers.CacheStore) Transa
 	return &transactionStatsStatusCache{store: store}
 }
 
-// GetMonthTransactionStatusSuccessCache retrieves cached monthly successful transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Request containing month and year filter.
-//
-// Returns:
-//   - []*response.TransactionResponseMonthStatusSuccess: List of successful monthly transactions.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsStatusCache) GetMonthTransactionStatusSuccessCache(ctx context.Context, req *requests.MonthStatusTransaction) ([]*response.TransactionResponseMonthStatusSuccess, bool) {
-	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionResponseMonthStatusSuccess](ctx, t.store, key)
+func (t *transactionStatsStatusCache) GetMonthTransactionStatusSuccessCache(ctx context.Context, req *requests.MonthStatusTransaction) ([]*db.GetMonthTransactionStatusSuccessRow, bool) {
+	key := fmt.Sprintf(monthTransactionStatusSuccessCacheKey, req.Month, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransactionStatusSuccessRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -37,33 +28,18 @@ func (t *transactionStatsStatusCache) GetMonthTransactionStatusSuccessCache(ctx 
 	return *result, true
 }
 
-// SetMonthTransactionStatusSuccessCache stores successful monthly transactions in cache.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Original request object.
-//   - data: Transactions to cache.
-func (t *transactionStatsStatusCache) SetMonthTransactionStatusSuccessCache(ctx context.Context, req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusSuccess) {
+func (t *transactionStatsStatusCache) SetMonthTransactionStatusSuccessCache(ctx context.Context, req *requests.MonthStatusTransaction, data []*db.GetMonthTransactionStatusSuccessRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(monthTopupStatusSuccessCacheKey, req.Month, req.Year)
+	key := fmt.Sprintf(monthTransactionStatusSuccessCacheKey, req.Month, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearTransactionStatusSuccessCache retrieves cached yearly successful transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which statistics are requested.
-//
-// Returns:
-//   - []*response.TransactionResponseYearStatusSuccess: List of successful yearly transactions.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsStatusCache) GetYearTransactionStatusSuccessCache(ctx context.Context, year int) ([]*response.TransactionResponseYearStatusSuccess, bool) {
-	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionResponseYearStatusSuccess](ctx, t.store, key)
+func (t *transactionStatsStatusCache) GetYearTransactionStatusSuccessCache(ctx context.Context, year int) ([]*db.GetYearlyTransactionStatusSuccessRow, bool) {
+	key := fmt.Sprintf(yearTransactionStatusSuccessCacheKey, year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransactionStatusSuccessRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -72,33 +48,18 @@ func (t *transactionStatsStatusCache) GetYearTransactionStatusSuccessCache(ctx c
 	return *result, true
 }
 
-// SetYearTransactionStatusSuccessCache caches yearly successful transaction statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as key.
-//   - data: Yearly successful transaction stats.
-func (t *transactionStatsStatusCache) SetYearTransactionStatusSuccessCache(ctx context.Context, year int, data []*response.TransactionResponseYearStatusSuccess) {
+func (t *transactionStatsStatusCache) SetYearTransactionStatusSuccessCache(ctx context.Context, year int, data []*db.GetYearlyTransactionStatusSuccessRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(yearTopupStatusSuccessCacheKey, year)
+	key := fmt.Sprintf(yearTransactionStatusSuccessCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetMonthTransactionStatusFailedCache retrieves cached monthly failed transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Request containing month and year filter.
-//
-// Returns:
-//   - []*response.TransactionResponseMonthStatusFailed: List of failed monthly transactions.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsStatusCache) GetMonthTransactionStatusFailedCache(ctx context.Context, req *requests.MonthStatusTransaction) ([]*response.TransactionResponseMonthStatusFailed, bool) {
-	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionResponseMonthStatusFailed](ctx, t.store, key)
+func (t *transactionStatsStatusCache) GetMonthTransactionStatusFailedCache(ctx context.Context, req *requests.MonthStatusTransaction) ([]*db.GetMonthTransactionStatusFailedRow, bool) {
+	key := fmt.Sprintf(monthTransactionStatusFailedCacheKey, req.Month, req.Year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetMonthTransactionStatusFailedRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -107,33 +68,18 @@ func (t *transactionStatsStatusCache) GetMonthTransactionStatusFailedCache(ctx c
 	return *result, true
 }
 
-// SetMonthTransactionStatusFailedCache caches monthly failed transaction statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: Original request object.
-//   - data: List of failed monthly transactions.
-func (t *transactionStatsStatusCache) SetMonthTransactionStatusFailedCache(ctx context.Context, req *requests.MonthStatusTransaction, data []*response.TransactionResponseMonthStatusFailed) {
+func (t *transactionStatsStatusCache) SetMonthTransactionStatusFailedCache(ctx context.Context, req *requests.MonthStatusTransaction, data []*db.GetMonthTransactionStatusFailedRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(monthTopupStatusFailedCacheKey, req.Month, req.Year)
+	key := fmt.Sprintf(monthTransactionStatusFailedCacheKey, req.Month, req.Year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }
 
-// GetYearTransactionStatusFailedCache retrieves cached yearly failed transactions.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year for which data is requested.
-//
-// Returns:
-//   - []*response.TransactionResponseYearStatusFailed: List of failed transactions.
-//   - bool: Whether the cache was found.
-func (t *transactionStatsStatusCache) GetYearTransactionStatusFailedCache(ctx context.Context, year int) ([]*response.TransactionResponseYearStatusFailed, bool) {
-	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
-	result, found := sharedcachehelpers.GetFromCache[[]*response.TransactionResponseYearStatusFailed](ctx, t.store, key)
+func (t *transactionStatsStatusCache) GetYearTransactionStatusFailedCache(ctx context.Context, year int) ([]*db.GetYearlyTransactionStatusFailedRow, bool) {
+	key := fmt.Sprintf(yearTransactionStatusFailedCacheKey, year)
+	result, found := sharedcachehelpers.GetFromCache[[]*db.GetYearlyTransactionStatusFailedRow](ctx, t.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -142,17 +88,11 @@ func (t *transactionStatsStatusCache) GetYearTransactionStatusFailedCache(ctx co
 	return *result, true
 }
 
-// SetYearTransactionStatusFailedCache caches yearly failed transaction statistics.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - year: The year used as key.
-//   - data: List of failed yearly transactions.
-func (t *transactionStatsStatusCache) SetYearTransactionStatusFailedCache(ctx context.Context, year int, data []*response.TransactionResponseYearStatusFailed) {
+func (t *transactionStatsStatusCache) SetYearTransactionStatusFailedCache(ctx context.Context, year int, data []*db.GetYearlyTransactionStatusFailedRow) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(yearTopupStatusFailedCacheKey, year)
+	key := fmt.Sprintf(yearTransactionStatusFailedCacheKey, year)
 	sharedcachehelpers.SetToCache(ctx, t.store, key, &data, ttlDefault)
 }

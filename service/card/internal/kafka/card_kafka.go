@@ -75,7 +75,7 @@ func (s *cardKafkaHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cla
 		if errRes != nil {
 			s.logger.Error("card service error", zap.Any("error", errRes))
 
-			return fmt.Errorf("card service error: %v", errRes.Message)
+			return fmt.Errorf("card service error: %v", errRes)
 		}
 	}
 

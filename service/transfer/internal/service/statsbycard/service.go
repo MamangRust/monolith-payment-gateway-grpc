@@ -2,8 +2,7 @@ package transferstatsbycardservice
 
 import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/transfer"
-	"github.com/MamangRust/monolith-payment-gateway-transfer/internal/errorhandler"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	mencache "github.com/MamangRust/monolith-payment-gateway-transfer/internal/redis/statsbycard"
 	repository "github.com/MamangRust/monolith-payment-gateway-transfer/internal/repository/statsbycard"
 )
@@ -19,30 +18,26 @@ type transferStatsByCardService struct {
 }
 
 type DepsStats struct {
-	Cache        mencache.TransferStatsByCardCache
-	ErrorHandler errorhandler.TransferStatisticByCardErrorHandler
-	Logger       logger.LoggerInterface
-	Repository   repository.TransferStatsByCardRepository
-	MappeAmount  responseservice.TransferAmountResponseMapper
-	MapperStatus responseservice.TransferStatsStatusResponseMapper
+	Cache         mencache.TransferStatsByCardCache
+	Logger        logger.LoggerInterface
+	Repository    repository.TransferStatsByCardRepository
+	Observability observability.TraceLoggerObservability
 }
 
 func NewTransferStatsByCardService(deps *DepsStats) TransferStatsByCardService {
 	return &transferStatsByCardService{
 		TransferStatsByCardAmountService: NewTransferStatsByCardAmountService(&transferStatsByCardAmountDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Cache,
-			Sender:       deps.Repository,
-			Receiver:     deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MappeAmount,
+			Cache:         deps.Cache,
+			Sender:        deps.Repository,
+			Receiver:      deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 		TransferStatsByCardStatusService: NewTransferStatsByCardStatusService(&transferStatsByCardStatusDeps{
-			ErrorHandler: deps.ErrorHandler,
-			Cache:        deps.Cache,
-			Repository:   deps.Repository,
-			Logger:       deps.Logger,
-			Mapper:       deps.MapperStatus,
+			Cache:         deps.Cache,
+			Repository:    deps.Repository,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
 		}),
 	}
 }

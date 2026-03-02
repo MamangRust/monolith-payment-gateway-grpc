@@ -1,23 +1,18 @@
 package userhandler
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
+	user_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/user"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/user"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/user"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type userQueryHandleApi struct {
@@ -27,11 +22,9 @@ type userQueryHandleApi struct {
 
 	mapper apimapper.UserQueryResponseMapper
 
-	trace trace.Tracer
+	cache user_cache.UserMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type userQueryHandleDeps struct {
@@ -42,50 +35,35 @@ type userQueryHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.UserQueryResponseMapper
+
+	cache user_cache.UserMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewUserQueryHandleApi(params *userQueryHandleDeps) *userQueryHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "user_query_handler_requests_total",
-			Help: "Total number of user query requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "user_query_handler_request_duration_seconds",
-			Help:    "Duration of user query requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	userQueryHandleApi := &userQueryHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("user-query-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerUser := params.router.Group("/api/user-query")
 
-	routerUser.GET("", userQueryHandleApi.FindAllUser)
-	routerUser.GET("/:id", userQueryHandleApi.FindById)
-	routerUser.GET("/active", userQueryHandleApi.FindByActive)
-	routerUser.GET("/trashed", userQueryHandleApi.FindByTrashed)
+	routerUser.GET("", params.apiHandler.Handle("find-all-users", userQueryHandleApi.FindAllUser))
+	routerUser.GET("/:id", params.apiHandler.Handle("find-user-by-id", userQueryHandleApi.FindById))
+	routerUser.GET("/active", params.apiHandler.Handle("find-active-users", userQueryHandleApi.FindByActive))
+	routerUser.GET("/trashed", params.apiHandler.Handle("find-trashed-users", userQueryHandleApi.FindByTrashed))
 
 	return userQueryHandleApi
 }
 
 // @Security Bearer
 // @Summary Find all users
-// @Tags User Command
+// @Tags User Query
 // @Description Retrieve a list of all users
 // @Accept json
 // @Produce json
@@ -96,48 +74,52 @@ func NewUserQueryHandleApi(params *userQueryHandleDeps) *userQueryHandleApi {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user-query [get]
 func (h *userQueryHandleApi) FindAllUser(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllUser"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	req := &requests.FindAllUsers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedUsersCache(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllUserRequest{
+	grpcReq := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindAll(ctx, req)
-
+	res, err := h.client.FindAll(ctx, grpcReq)
 	if err != nil {
-		logError("Failed to retrieve user data", err, zap.Error(err))
-
-		return user_errors.ErrApiFailedFindAll(c)
+		return h.handleGrpcError(err, "FindAllUser")
 	}
 
-	so := h.mapper.ToApiResponsePaginationUser(res)
+	apiResponse := h.mapper.ToApiResponsePaginationUser(res)
 
-	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
+	h.cache.SetCachedUsersCache(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Security Bearer
 // @Summary Find user by ID
-// @Tags User Command
+// @Tags User Query
 // @Description Retrieve a user by ID
 // @Accept json
 // @Produce json
@@ -147,21 +129,16 @@ func (h *userQueryHandleApi) FindAllUser(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user-query/{id} [get]
 func (h *userQueryHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return errors.NewBadRequestError("id is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id, err := strconv.Atoi(c.Param("id"))
-
-	if err != nil {
-		logError("Invalid user ID", err, zap.Error(err))
-
-		return user_errors.ErrApiUserInvalidId(c)
+	cachedData, found := h.cache.GetCachedUserCache(ctx, id)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
 	req := &pb.FindByIdUserRequest{
@@ -169,175 +146,162 @@ func (h *userQueryHandleApi) FindById(c echo.Context) error {
 	}
 
 	user, err := h.client.FindById(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve user data", err, zap.Error(err))
-
-		return user_errors.ErrApiUserNotFound(c)
+		return h.handleGrpcError(err, "FindById")
 	}
 
-	so := h.mapper.ToApiResponseUser(user)
+	apiResponse := h.mapper.ToApiResponseUser(user)
 
-	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
+	h.cache.SetCachedUserCache(ctx, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Security Bearer
 // @Summary Retrieve active users
-// @Tags User Command
+// @Tags User Query
 // @Description Retrieve a list of active users
 // @Accept json
 // @Produce json
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Number of items per page" default(10)
 // @Param search query string false "Search query"
-// @Success 200 {object} response.ApiResponsesUser "List of active users"
+// @Success 200 {object} response.ApiResponsePaginationUserDeleteAt "List of active users"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user-query/active [get]
 func (h *userQueryHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	req := &requests.FindAllUsers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedUserActiveCache(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllUserRequest{
+	grpcReq := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByActive(ctx, req)
-
+	res, err := h.client.FindByActive(ctx, grpcReq)
 	if err != nil {
-		logError("Failed to retrieve user data", err, zap.Error(err))
-
-		return user_errors.ErrApiFailedFindActive(c)
+		return h.handleGrpcError(err, "FindByActive")
 	}
 
-	so := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
 
-	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
+	h.cache.SetCachedUserActiveCache(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // @Security Bearer
 // FindByTrashed retrieves a list of trashed user records.
 // @Summary Retrieve trashed users
-// @Tags User Command
+// @Tags User Query
 // @Description Retrieve a list of trashed user records
 // @Accept json
 // @Produce json
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Number of items per page" default(10)
 // @Param search query string false "Search query"
-// @Success 200 {object} response.ApiResponsesUser "List of trashed user data"
+// @Success 200 {object} response.ApiResponsePaginationUserDeleteAt "List of trashed user data"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve user data"
 // @Router /api/user-query/trashed [get]
 func (h *userQueryHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
+	page, err := strconv.Atoi(c.QueryParam("page"))
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+	req := &requests.FindAllUsers{
+		Page:     page,
+		PageSize: pageSize,
+		Search:   search,
+	}
 
-	defer func() {
-		end()
-	}()
+	cachedData, found := h.cache.GetCachedUserTrashedCache(ctx, req)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
+	}
 
-	page := shared.ParseQueryInt(c, "page", defaultPage)
-	pageSize := shared.ParseQueryInt(c, "page_size", defaultPageSize)
-	search := c.QueryParam("search")
-
-	req := &pb.FindAllUserRequest{
+	grpcReq := &pb.FindAllUserRequest{
 		Page:     int32(page),
 		PageSize: int32(pageSize),
 		Search:   search,
 	}
 
-	res, err := h.client.FindByTrashed(ctx, req)
-
+	res, err := h.client.FindByTrashed(ctx, grpcReq)
 	if err != nil {
-		logError("Failed to retrieve user data", err, zap.Error(err))
-
-		return user_errors.ErrApiFailedFindTrashed(c)
+		return h.handleGrpcError(err, "FindByTrashed")
 	}
 
-	so := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
+	apiResponse := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
 
-	logSuccess("Successfully retrieve user data", zap.Bool("success", true))
+	h.cache.SetCachedUserTrashedCache(ctx, req, apiResponse)
 
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *userQueryHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *userQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("User").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("User already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("User service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *userQueryHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

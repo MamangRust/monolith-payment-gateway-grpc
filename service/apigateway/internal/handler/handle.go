@@ -15,128 +15,124 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/auth"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc"
 )
 
-// ServiceConnections holds gRPC connections to external monolith.
+// ServiceConnections aggregates gRPC connections to backend services.
 type ServiceConnections struct {
-	// Auth is the gRPC connection to the authentication service.
-	Auth *grpc.ClientConn
-
-	// Role is the gRPC connection to the role management service.
-	Role *grpc.ClientConn
-
-	// Card is the gRPC connection to the card service.
-	Card *grpc.ClientConn
-
-	// Merchant is the gRPC connection to the merchant service.
-	Merchant *grpc.ClientConn
-
-	// User is the gRPC connection to the user management service.
-	User *grpc.ClientConn
-
-	// Saldo is the gRPC connection to the saldo/balance service.
-	Saldo *grpc.ClientConn
-
-	// Topup is the gRPC connection to the top-up service.
-	Topup *grpc.ClientConn
-
-	// Transaction is the gRPC connection to the transaction service.
+	Auth        *grpc.ClientConn
+	Role        *grpc.ClientConn
+	Card        *grpc.ClientConn
+	Merchant    *grpc.ClientConn
+	User        *grpc.ClientConn
+	Saldo       *grpc.ClientConn
+	Topup       *grpc.ClientConn
 	Transaction *grpc.ClientConn
-
-	// Transfer is the gRPC connection to the fund transfer service.
-	Transfer *grpc.ClientConn
-
-	// Withdraw is the gRPC connection to the withdrawal service.
-	Withdraw *grpc.ClientConn
+	Transfer    *grpc.ClientConn
+	Withdraw    *grpc.ClientConn
 }
 
-// Deps holds dependencies required to initialize HTTP API handlers.
 type Deps struct {
-	// Kafka is the Kafka instance used for producing and consuming messages.
-	Kafka *kafka.Kafka
-
-	// Token is responsible for creating and verifying authentication tokens.
-	Token auth.TokenManager
-
-	// E is the Echo instance used for HTTP routing.
-	E *echo.Echo
-
-	Mencache mencache.CacheApiGateway
-
-	// Logger is the logging instance for structured and leveled logs.
-	Logger logger.LoggerInterface
-
-	// ServiceConnections holds all gRPC connections to other monolith.
+	Kafka              *kafka.Kafka
+	Token              auth.TokenManager
+	E                  *echo.Echo
+	Logger             logger.LoggerInterface
 	ServiceConnections *ServiceConnections
+	Cache              *cache.CacheStore
 }
 
-// NewHandler sets up all the handlers for the API Gateway.
-// It takes a pointer to a Deps struct, which contains all the dependencies
-// required to set up the handlers.
 func NewHandler(deps *Deps) {
+	observability, _ := observability.NewObservability("apigateway", deps.Logger)
+
+	apiHandler := errors.NewApiHandler(observability, deps.Logger)
+
+	cache_apigateway := mencache.NewCacheApiGateway(deps.Cache)
+
 	authhandler.RegisterAuthHandler(&authhandler.DepsAuth{
-		Client: deps.ServiceConnections.Auth,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Auth,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	cardhandler.RegisterCardHandler(&cardhandler.DepsCard{
-		Client: deps.ServiceConnections.Card,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Card,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	merchanthandler.RegisterMerchantHandler(&merchanthandler.DepsMerchant{
-		Client: deps.ServiceConnections.Merchant,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Merchant,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	merchantdocumenthandler.RegisterMerchantDocumentHandler(&merchantdocumenthandler.DepsMerchantDocument{
-		Client: deps.ServiceConnections.Merchant,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Merchant,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	rolehandler.RegisterRoleHandler(&rolehandler.DepsRole{
-		Kafka:  deps.Kafka,
-		Client: deps.ServiceConnections.Role,
-		E:      deps.E,
-		Logger: deps.Logger,
-		Cache:  deps.Mencache,
+		Kafka:      deps.Kafka,
+		Client:     deps.ServiceConnections.Role,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		CacheStore: deps.Cache,
+		Cache:      cache_apigateway,
+		ApiHandler: apiHandler,
 	})
 
 	saldohandler.RegisterSaldoHandler(&saldohandler.DepsSaldo{
-		Client: deps.ServiceConnections.Saldo,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Saldo,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	topuphandler.RegisterTopupHandler(&topuphandler.DepsTopup{
-		Client: deps.ServiceConnections.Topup,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Topup,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	transactionhandler.RegisterTransactionHandler(&transactionhandler.DepsTransaction{
-		Kafka:  deps.Kafka,
-		Client: deps.ServiceConnections.Transaction,
-		E:      deps.E,
-		Logger: deps.Logger,
-		Cache:  deps.Mencache,
+		Kafka:           deps.Kafka,
+		Client:          deps.ServiceConnections.Transaction,
+		E:               deps.E,
+		Logger:          deps.Logger,
+		Cache:           deps.Cache,
+		ApiHandler:      apiHandler,
+		CacheApiGateway: cache_apigateway,
 	})
 
 	userhandler.RegisterUserHandler(&userhandler.DepsUser{
-		Client: deps.ServiceConnections.User,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.User,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 
 	withdrawhandler.RegisterWithdrawHandler(&withdrawhandler.DepsWithdraw{
-		Client: deps.ServiceConnections.Withdraw,
-		E:      deps.E,
-		Logger: deps.Logger,
+		Client:     deps.ServiceConnections.Withdraw,
+		E:          deps.E,
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		ApiHandler: apiHandler,
 	})
 }

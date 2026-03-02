@@ -2,8 +2,6 @@ package repository
 
 import (
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	rolemapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/role"
-	usermapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/user"
 )
 
 type Repositories interface {
@@ -19,13 +17,11 @@ type repositories struct {
 }
 
 func NewRepositories(db *db.Queries) Repositories {
-	usermapper := usermapper.NewUserRecordMapper()
-	rolemapper := rolemapper.NewRoleQueryRecordMapping()
 
 	return &repositories{
-		userCommand: NewUserCommandRepository(db, usermapper.CommandMapper()),
-		userQuery:   NewUserQueryRepository(db, usermapper.QueryMapper()),
-		role:        NewRoleRepository(db, rolemapper),
+		userCommand: NewUserCommandRepository(db),
+		userQuery:   NewUserQueryRepository(db),
+		role:        NewRoleRepository(db),
 	}
 }
 

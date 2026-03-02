@@ -7,7 +7,8 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/redis/go-redis/v9"
 
-	sharedcachehelpers "github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 )
 
 type Mencache interface {
@@ -29,17 +30,12 @@ type mencache struct {
 
 // Deps is a struct that represents the dependencies needed to create a Mencache
 type Deps struct {
-	Redis  *redis.Client
-	Logger logger.LoggerInterface
+	Redis   *redis.Client
+	Logger  logger.LoggerInterface
+	Metrics observability.CacheMetricsInterface
 }
 
-// NewMencache creates a new Mencache instance using the provided dependencies.
-// It initializes a cache store with the given context, Redis client, and logger,
-// and returns a Mencache struct with initialized caches for card command, dashboard,
-// query, statistic, and statistic by number.
-func NewMencache(deps *Deps) Mencache {
-	cacheStore := sharedcachehelpers.NewCacheStore(deps.Redis, deps.Logger)
-
+func NewMencache(cacheStore *cache.CacheStore) Mencache {
 	return &mencache{
 		CardCommandCache:     NewCardCommandCache(cacheStore),
 		CardQueryCache:       NewCardQueryCache(cacheStore),

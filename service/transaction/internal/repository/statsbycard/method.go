@@ -5,34 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/record"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/repository"
-	recordmapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/record/transaction/statsbycard"
 )
 
 type transactionStatsByCardMethodRepository struct {
-	db     *db.Queries
-	mapper recordmapper.TransactionStatisticByCardMethodMapper
+	db *db.Queries
 }
 
-func NewTransactionStatsByCardMethodRepository(db *db.Queries, mapper recordmapper.TransactionStatisticByCardMethodMapper) TransactionStatsByCardMethodRepository {
+func NewTransactionStatsByCardMethodRepository(db *db.Queries) TransactionStatsByCardMethodRepository {
 	return &transactionStatsByCardMethodRepository{
-		db:     db,
-		mapper: mapper,
+		db: db,
 	}
 }
 
-// GetMonthlyPaymentMethodsByCardNumber retrieves monthly transaction method statistics by card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TransactionMonthMethod: List of monthly payment method usage.
-//   - error: Error if any occurs.
-func (r *transactionStatsByCardMethodRepository) GetMonthlyPaymentMethodsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*record.TransactionMonthMethod, error) {
+func (r *transactionStatsByCardMethodRepository) GetMonthlyPaymentMethodsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetMonthlyPaymentMethodsByCardNumberRow, error) {
 	year := req.Year
 	cardNumber := req.CardNumber
 
@@ -45,19 +32,10 @@ func (r *transactionStatsByCardMethodRepository) GetMonthlyPaymentMethodsByCardN
 		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsByCardFailed
 	}
 
-	return r.mapper.ToTransactionMonthlyMethodsByCardNumber(res), nil
+	return res, nil
 }
 
-// GetYearlyPaymentMethodsByCardNumber retrieves yearly transaction method statistics by card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing year and card number.
-//
-// Returns:
-//   - []*record.TransactionYearMethod: List of yearly payment method usage.
-//   - error: Error if any occurs.
-func (r *transactionStatsByCardMethodRepository) GetYearlyPaymentMethodsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*record.TransactionYearMethod, error) {
+func (r *transactionStatsByCardMethodRepository) GetYearlyPaymentMethodsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetYearlyPaymentMethodsByCardNumberRow, error) {
 	year := req.Year
 	cardNumber := req.CardNumber
 
@@ -70,5 +48,5 @@ func (r *transactionStatsByCardMethodRepository) GetYearlyPaymentMethodsByCardNu
 		return nil, transaction_errors.ErrGetYearlyPaymentMethodsByCardFailed
 	}
 
-	return r.mapper.ToTransactionYearlyMethodsByCardNumber(res), nil
+	return res, nil
 }

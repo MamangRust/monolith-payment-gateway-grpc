@@ -1,22 +1,20 @@
 package topuphandler
 
 import (
-	"context"
 	"net/http"
-	"time"
+	"strconv"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/shared"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
+	topup_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/topup"
+	pbtopup "github.com/MamangRust/monolith-payment-gateway-pb/topup"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/topup"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type topupStatsStatusHandleApi struct {
@@ -26,11 +24,9 @@ type topupStatsStatusHandleApi struct {
 
 	mapper apimapper.TopupStatsStatusResponseMapper
 
-	trace trace.Tracer
+	cache topup_cache.TopupMencach
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type topupStatsStatusHandleDeps struct {
@@ -41,48 +37,33 @@ type topupStatsStatusHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.TopupStatsStatusResponseMapper
+
+	cache topup_cache.TopupMencach
+
+	apiHandler errors.ApiHandler
 }
 
 func NewTopupStatsStatusHandleApi(params *topupStatsStatusHandleDeps) *topupStatsStatusHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "topup_stats_status_handler_requests_total",
-			Help: "Total number of topup stats status requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "topup_stats_status_handler_request_duration_seconds",
-			Help:    "Duration of topup stats status requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
 
 	topupHandler := &topupStatsStatusHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("topup-stats-status-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	routerTopup := params.router.Group("/api/topup-stats-status")
 
-	routerTopup.GET("/monthly-success", topupHandler.FindMonthlyTopupStatusSuccess)
-	routerTopup.GET("/yearly-success", topupHandler.FindYearlyTopupStatusSuccess)
-	routerTopup.GET("/monthly-failed", topupHandler.FindMonthlyTopupStatusFailed)
-	routerTopup.GET("/yearly-failed", topupHandler.FindYearlyTopupStatusFailed)
+	routerTopup.GET("/monthly-success", params.apiHandler.Handle("find-monthly-topup-status-success", topupHandler.FindMonthlyTopupStatusSuccess))
+	routerTopup.GET("/yearly-success", params.apiHandler.Handle("find-yearly-topup-status-success", topupHandler.FindYearlyTopupStatusSuccess))
+	routerTopup.GET("/monthly-failed", params.apiHandler.Handle("find-monthly-topup-status-failed", topupHandler.FindMonthlyTopupStatusFailed))
+	routerTopup.GET("/yearly-failed", params.apiHandler.Handle("find-yearly-topup-status-failed", topupHandler.FindYearlyTopupStatusFailed))
 
-	routerTopup.GET("/monthly-success-by-card", topupHandler.FindMonthlyTopupStatusSuccessByCardNumber)
-	routerTopup.GET("/yearly-success-by-card", topupHandler.FindYearlyTopupStatusSuccessByCardNumber)
-	routerTopup.GET("/monthly-failed-by-card", topupHandler.FindMonthlyTopupStatusFailedByCardNumber)
-	routerTopup.GET("/yearly-failed-by-card", topupHandler.FindYearlyTopupStatusFailedByCardNumber)
+	routerTopup.GET("/monthly-success-by-card", params.apiHandler.Handle("find-monthly-topup-status-success-by-card", topupHandler.FindMonthlyTopupStatusSuccessByCardNumber))
+	routerTopup.GET("/yearly-success-by-card", params.apiHandler.Handle("find-yearly-topup-status-success-by-card", topupHandler.FindYearlyTopupStatusSuccessByCardNumber))
+	routerTopup.GET("/monthly-failed-by-card", params.apiHandler.Handle("find-monthly-topup-status-failed-by-card", topupHandler.FindMonthlyTopupStatusFailedByCardNumber))
+	routerTopup.GET("/yearly-failed-by-card", params.apiHandler.Handle("find-yearly-topup-status-failed-by-card", topupHandler.FindYearlyTopupStatusFailedByCardNumber))
 
 	return topupHandler
 }
@@ -101,43 +82,44 @@ func NewTopupStatsStatusHandleApi(params *topupStatsStatusHandleDeps) *topupStat
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly top-up status for successful transactions"
 // @Router /api/topup-stats-status/monthly-success [get]
 func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccess(c echo.Context) error {
-	const method = "FindMonthlyTopupStatusSuccess"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthTopupStatus{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTopupStatusSuccessCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTopupStatusSuccess(ctx, &pb.FindMonthlyTopupStatus{
+	res, err := h.client.FindMonthlyTopupStatusSuccess(ctx, &pbtopup.FindMonthlyTopupStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindMonthlyTopupStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve monthly topup status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTopupStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
+	h.cache.SetMonthTopupStatusSuccessCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find monthly topup status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTopupStatusSuccess retrieves the yearly top-up status for successful transactions.
@@ -153,36 +135,32 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccess(c echo.Context
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly top-up status for successful transactions"
 // @Router /api/topup-stats-status/yearly-success [get]
 func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccess(c echo.Context) error {
-	const method = "FindYearlyTopupStatusSuccess"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTopupStatusSuccessCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTopupStatusSuccess(ctx, &pb.FindYearTopupStatus{
+	res, err := h.client.FindYearlyTopupStatusSuccess(ctx, &pbtopup.FindYearTopupStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindYearlyTopupStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve yearly topup status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTopupStatusSuccess")
 	}
 
-	so := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
+	h.cache.SetYearlyTopupStatusSuccessCache(ctx, year, apiResponse)
 
-	logSuccess("success find yearly topup status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTopupStatusFailed retrieves the monthly top-up status for failed transactions.
@@ -199,43 +177,44 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccess(c echo.Context)
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly top-up status for failed transactions"
 // @Router /api/topup-stats-status/monthly-failed [get]
 func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailed(c echo.Context) error {
-	const method = "FindMonthlyTopupStatusFailed"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthTopupStatus{
+		Year:  year,
+		Month: month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTopupStatusFailedCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindMonthlyTopupStatusFailed(ctx, &pb.FindMonthlyTopupStatus{
+	res, err := h.client.FindMonthlyTopupStatusFailed(ctx, &pbtopup.FindMonthlyTopupStatus{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindMonthlyTopupStatusFailed(c)
+		h.logger.Debug("Failed to retrieve monthly topup status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTopupStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
+	h.cache.SetMonthTopupStatusFailedCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find monthly topup status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTopupStatusFailed retrieves the yearly top-up status for failed transactions.
@@ -251,36 +230,32 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailed(c echo.Context)
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly top-up status for failed transactions"
 // @Router /api/topup-stats-status/yearly-failed [get]
 func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusFailed(c echo.Context) error {
-	const method = "FindYearlyTopupStatusFailed"
+	yearStr := c.QueryParam("year")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTopupStatusFailedCache(ctx, year)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTopupStatusFailed(ctx, &pb.FindYearTopupStatus{
+	res, err := h.client.FindYearlyTopupStatusFailed(ctx, &pbtopup.FindYearTopupStatus{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindYearlyTopupStatusFailed(c)
+		h.logger.Debug("Failed to retrieve yearly topup status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTopupStatusFailed")
 	}
 
-	so := h.mapper.ToApiResponseTopupYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTopupYearStatusFailed(res)
+	h.cache.SetYearlyTopupStatusFailedCache(ctx, year, apiResponse)
 
-	logSuccess("success find yearly topup status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTopupStatusSuccess retrieves the monthly top-up status for successful transactions.
@@ -296,52 +271,53 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusFailed(c echo.Context) 
 // @Success 200 {object} response.ApiResponseTopupMonthStatusSuccess "Monthly top-up status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly top-up status for successful transactions"
-// @Router /api/topup-stats-status/monthly-success-by-card [get]
+// @Router /api/topup-stats-status/monthly-success [get]
 func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTopupStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthTopupStatusCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTopupStatusSuccessByCardNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyTopupStatusSuccessByCardNumber(ctx, &pb.FindMonthlyTopupStatusCardNumber{
+	res, err := h.client.FindMonthlyTopupStatusSuccessByCardNumber(ctx, &pbtopup.FindMonthlyTopupStatusCardNumber{
 		Year:       int32(year),
 		Month:      int32(month),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindMonthlyTopupStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve monthly topup status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTopupStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
+	h.cache.SetMonthTopupStatusSuccessByCardNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find monthly topup status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTopupStatusSuccess retrieves the yearly top-up status for successful transactions.
@@ -356,45 +332,45 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccessByCardNumber(c 
 // @Success 200 {object} response.ApiResponseTopupYearStatusSuccess "Yearly top-up status for successful transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly top-up status for successful transactions"
-// @Router /api/topup-stats-status/yearly-success-by-card [get]
+// @Router /api/topup-stats-status/yearly-success [get]
 func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccessByCardNumber(c echo.Context) error {
-	const method = "FindYearlyTopupStatusSuccessByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearTopupStatusCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTopupStatusSuccessByCardNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTopupStatusSuccessByCardNumber(ctx, &pb.FindYearTopupStatusCardNumber{
+	res, err := h.client.FindYearlyTopupStatusSuccessByCardNumber(ctx, &pbtopup.FindYearTopupStatusCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly topup status success", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindYearlyTopupStatusSuccess(c)
+		h.logger.Debug("Failed to retrieve yearly topup status success", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTopupStatusSuccessByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
+	apiResponse := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
+	h.cache.SetYearlyTopupStatusSuccessByCardNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find yearly topup status success", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindMonthlyTopupStatusFailed retrieves the monthly top-up status for failed transactions.
@@ -410,52 +386,53 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccessByCardNumber(c e
 // @Success 200 {object} response.ApiResponseTopupMonthStatusFailed "Monthly top-up status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year or month"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve monthly top-up status for failed transactions"
-// @Router /api/topup-stats-status/monthly-failed-by-card [get]
+// @Router /api/topup-stats-status/monthly-failed [get]
 func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindMonthlyTopupStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	monthStr := c.QueryParam("month")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month <= 0 || month > 12 {
+		return errors.NewBadRequestError("invalid month parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.MonthTopupStatusCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
+		Month:      month,
 	}
 
-	month, err := shared.ParseQueryMonth(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetMonthTopupStatusFailedByCardNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
-	}
-
-	res, err := h.client.FindMonthlyTopupStatusFailedByCardNumber(ctx, &pb.FindMonthlyTopupStatusCardNumber{
+	res, err := h.client.FindMonthlyTopupStatusFailedByCardNumber(ctx, &pbtopup.FindMonthlyTopupStatusCardNumber{
 		Year:       int32(year),
 		Month:      int32(month),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindMonthlyTopupStatusFailed(c)
+		h.logger.Debug("Failed to retrieve monthly topup status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindMonthlyTopupStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
+	h.cache.SetMonthTopupStatusFailedByCardNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find monthly topup status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
 // FindYearlyTopupStatusFailedByCardNumber retrieves the yearly top-up status for failed transactions.
@@ -470,97 +447,79 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailedByCardNumber(c e
 // @Success 200 {object} response.ApiResponseTopupYearStatusFailed "Yearly top-up status for failed transactions"
 // @Failure 400 {object} response.ErrorResponse "Invalid year"
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve yearly top-up status for failed transactions"
-// @Router /api/topup-stats-status/yearly-failed-by-card [get]
+// @Router /api/topup-stats-status/yearly-failed [get]
 func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusFailedByCardNumber(c echo.Context) error {
-	const method = "FindYearlyTopupStatusFailedByCardNumber"
+	yearStr := c.QueryParam("year")
+	cardNumber := c.QueryParam("card_number")
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year <= 0 {
+		return errors.NewBadRequestError("invalid year parameter")
+	}
+
+	if cardNumber == "" {
+		return errors.NewBadRequestError("card_number is required")
+	}
+
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	year, err := shared.ParseQueryYear(c, h.logger)
-
-	if err != nil {
-		return err
+	reqCache := &requests.YearTopupStatusCardNumber{
+		CardNumber: cardNumber,
+		Year:       year,
 	}
 
-	cardNumber, err := shared.ParseQueryCard(c, h.logger)
-
-	if err != nil {
-		return err
+	cachedData, found := h.cache.GetYearlyTopupStatusFailedByCardNumberCache(ctx, reqCache)
+	if found {
+		return c.JSON(http.StatusOK, cachedData)
 	}
 
-	res, err := h.client.FindYearlyTopupStatusFailedByCardNumber(ctx, &pb.FindYearTopupStatusCardNumber{
+	res, err := h.client.FindYearlyTopupStatusFailedByCardNumber(ctx, &pbtopup.FindYearTopupStatusCardNumber{
 		Year:       int32(year),
 		CardNumber: cardNumber,
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly topup status failed", err, zap.Error(err))
-
-		return topup_errors.ErrApiFailedFindYearlyTopupStatusFailed(c)
+		h.logger.Debug("Failed to retrieve yearly topup status failed", zap.Error(err))
+		return h.handleGrpcError(err, "FindYearlyTopupStatusFailedByCardNumber")
 	}
 
-	so := h.mapper.ToApiResponseTopupYearStatusFailed(res)
+	apiResponse := h.mapper.ToApiResponseTopupYearStatusFailed(res)
+	h.cache.SetYearlyTopupStatusFailedByCardNumberCache(ctx, reqCache, apiResponse)
 
-	logSuccess("success find yearly topup status failed", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
+	return c.JSON(http.StatusOK, apiResponse)
 }
 
-func (s *topupStatsStatusHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *topupStatsStatusHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Topup").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Topup already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *topupStatsStatusHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

@@ -1,120 +1,77 @@
 package merchanthandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
+	merchant_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/merchant"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/merchant"
+	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type merchantCommandHandleApi struct {
-	// client is the gRPC client used to interact with the MerchantService.
 	client pb.MerchantCommandServiceClient
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
 
-	// mapper transforms gRPC responses into standardized HTTP API responses.
 	mapper apimapper.MerchantCommandResponseMapper
 
-	// trace provides distributed tracing capabilities.
-	trace trace.Tracer
+	cache merchant_cache.MerchantMencache
 
-	// requestCounter records the number of HTTP requests handled by this service.
-	requestCounter *prometheus.CounterVec
-
-	// requestDuration records the duration of HTTP request handling in seconds.
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
-// merchantCommandHandleDeps contains the necessary dependencies for the NewMerchantCommandHandleApi function.
 type merchantCommandHandleDeps struct {
-	// client is the gRPC client used to interact with the MerchantCommandServiceClient.
 	client pb.MerchantCommandServiceClient
 
-	// router is the Echo router used to register HTTP routes.
 	router *echo.Echo
 
-	// logger provides structured and leveled logging capabilities.
 	logger logger.LoggerInterface
 
-	// mapper transforms gRPC responses into standardized HTTP API responses.
 	mapper apimapper.MerchantCommandResponseMapper
+
+	cache merchant_cache.MerchantMencache
+
+	apiHandler errors.ApiHandler
 }
 
-// NewMerchantCommandHandleApi initializes a new merchantCommandHandleApi and sets up the routes for merchant-related operations.
-//
-// This function registers various HTTP endpoints related to merchant management, including creation, updating, deletion, and retrieval of merchants.
-// It also collects Prometheus metrics for tracking the number of requests and their durations, helping to monitor the performance and reliability of the handler.
-// The routes are grouped under "/api/merchant-command".
-//
-// Parameters:
-// - params: A pointer to merchantCommandHandleDeps containing the necessary dependencies such as router, logger, client, and mapper.
-//
-// Returns:
-// - A pointer to a newly created merchantCommandHandleApi.
 func NewMerchantCommandHandleApi(params *merchantCommandHandleDeps) *merchantCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "merchant_command_handler_requests_total",
-			Help: "Total number of merchant command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "merchant_command_handler_request_duration_seconds",
-			Help:    "Duration of merchant command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	merchantHandler := &merchantCommandHandleApi{
-		client:          params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("merchant-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerMerchant := params.router.Group("/api/merchant-command")
 
-	routerMerchant.POST("/create", merchantHandler.Create)
-	routerMerchant.POST("/updates/:id", merchantHandler.Update)
-	routerMerchant.POST("/update-status/:id", merchantHandler.UpdateStatus)
+	routerMerchant.POST("/create", params.apiHandler.Handle("create-merchant", merchantHandler.Create))
+	routerMerchant.POST("/updates/:id", params.apiHandler.Handle("update-merchant", merchantHandler.Update))
 
-	routerMerchant.POST("/trashed/:id", merchantHandler.TrashedMerchant)
-	routerMerchant.POST("/restore/:id", merchantHandler.RestoreMerchant)
-	routerMerchant.DELETE("/permanent/:id", merchantHandler.Delete)
+	routerMerchant.POST("/trashed/:id", params.apiHandler.Handle("trash-merchant", merchantHandler.TrashedMerchant))
+	routerMerchant.POST("/restore/:id", params.apiHandler.Handle("restore-merchant", merchantHandler.RestoreMerchant))
+	routerMerchant.DELETE("/permanent/:id", params.apiHandler.Handle("delete-merchant-permanent", merchantHandler.Delete))
 
-	routerMerchant.POST("/restore/all", merchantHandler.RestoreAllMerchant)
-	routerMerchant.POST("/permanent/all", merchantHandler.DeleteAllMerchantPermanent)
+	routerMerchant.POST("/restore/all", params.apiHandler.Handle("restore-all-merchants", merchantHandler.RestoreAllMerchant))
+	routerMerchant.POST("/permanent/all", params.apiHandler.Handle("delete-all-merchants-permanent", merchantHandler.DeleteAllMerchantPermanent))
 
 	return merchantHandler
 }
 
 // Create godoc
 // @Summary Create a new merchant
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Create a new merchant with the given name and user ID
 // @Accept json
@@ -125,28 +82,18 @@ func NewMerchantCommandHandleApi(params *merchantCommandHandleDeps) *merchantCom
 // @Failure 500 {object} response.ErrorResponse "Failed to create merchant"
 // @Router /api/merchant-command/create [post]
 func (h *merchantCommandHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateMerchantRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind CreateMerchant request", err, zap.Error(err))
-
-		return merchant_errors.ErrApiBindCreateMerchant(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Validation Error", err, zap.Error(err))
-
-		return merchant_errors.ErrApiValidateCreateMerchant(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	req := &pb.CreateMerchantRequest{
 		Name:   body.Name,
@@ -156,21 +103,17 @@ func (h *merchantCommandHandleApi) Create(c echo.Context) error {
 	res, err := h.client.CreateMerchant(ctx, req)
 
 	if err != nil {
-		logError("Failed to create merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedCreateMerchant(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
 	so := h.mapper.ToApiResponseMerchant(res)
-
-	logSuccess("Merchant created successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // Update godoc
 // @Summary Update a merchant
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Update a merchant with the given ID
 // @Accept json
@@ -181,37 +124,24 @@ func (h *merchantCommandHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update merchant"
 // @Router /api/merchant-command/update/{id} [post]
 func (h *merchantCommandHandleApi) Update(c echo.Context) error {
-	const method = "FindMonthlyAmountByApikeys"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		logError("Invalid merchant ID", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateMerchantRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateMerchant request", err, zap.Error(err))
-
-		return merchant_errors.ErrApiBindUpdateMerchant(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Validation Error", err, zap.Error(err))
-
-		return merchant_errors.ErrApiValidateUpdateMerchant(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
+	ctx := c.Request().Context()
 	req := &pb.UpdateMerchantRequest{
 		MerchantId: int32(id),
 		Name:       body.Name,
@@ -222,86 +152,17 @@ func (h *merchantCommandHandleApi) Update(c echo.Context) error {
 	res, err := h.client.UpdateMerchant(ctx, req)
 
 	if err != nil {
-		logError("Failed to update merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedUpdateMerchant(c)
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseMerchant(res)
-
-	logSuccess("Merchant updated successfully", zap.Bool("success", true))
-
-	return c.JSON(http.StatusOK, so)
-}
-
-// UpdateStatus godoc
-// @Summary Update merchant status
-// @Tags Merchant
-// @Security Bearer
-// @Description Update the status of a merchant with the given ID
-// @Accept json
-// @Produce json
-// @Param id path int true "Merchant ID"
-// @Param body body requests.UpdateMerchantStatusRequest true "Update merchant status request"
-// @Success 200 {object} response.ApiResponseMerchant "Updated merchant status"
-// @Failure 400 {object} response.ErrorResponse "Bad request or validation error"
-// @Failure 500 {object} response.ErrorResponse "Failed to update merchant status"
-// @Router /api/merchant-command/update-status/{id} [post]
-func (h *merchantCommandHandleApi) UpdateStatus(c echo.Context) error {
-	const method = "UpdateStatus"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
-	id, err := strconv.Atoi(c.Param("id"))
-
-	if err != nil {
-		logError("Invalid merchant ID", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
-	}
-
-	var body requests.UpdateMerchantStatusRequest
-
-	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateMerchantStatus request", err, zap.Error(err))
-
-		return merchant_errors.ErrApiBindUpdateMerchantStatus(c)
-	}
-
-	if err := body.Validate(); err != nil {
-		logError("Validation Error", err, zap.Error(err))
-
-		return merchant_errors.ErrApiValidateUpdateMerchantStatus(c)
-	}
-
-	req := &pb.UpdateMerchantStatusRequest{
-		MerchantId: int32(id),
-		Status:     body.Status,
-	}
-
-	res, err := h.client.UpdateMerchantStatus(ctx, req)
-
-	if err != nil {
-		logError("Failed to update merchant status", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedUpdateMerchantStatus(c)
-	}
-
-	so := h.mapper.ToApiResponseMerchant(res)
-
-	logSuccess("Merchant status updated successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // TrashedMerchant godoc
 // @Summary Trashed a merchant
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Trashed a merchant by its ID
 // @Accept json
@@ -312,45 +173,32 @@ func (h *merchantCommandHandleApi) UpdateStatus(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed merchant"
 // @Router /api/merchant-command/trashed/{id} [post]
 func (h *merchantCommandHandleApi) TrashedMerchant(c echo.Context) error {
-	const method = "TrashedMerchant"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid merchant ID", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.TrashedMerchant(ctx, &pb.FindByIdMerchantRequest{
 		MerchantId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to trashed merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedTrashMerchant(c)
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseMerchantDeleteAt(res)
-
-	logSuccess("Merchant trashed successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // RestoreMerchant godoc
 // @Summary Restore a merchant
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Restore a merchant by its ID
 // @Accept json
@@ -361,45 +209,32 @@ func (h *merchantCommandHandleApi) TrashedMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore merchant"
 // @Router /api/merchant-command/restore/{id} [post]
 func (h *merchantCommandHandleApi) RestoreMerchant(c echo.Context) error {
-	const method = "FindMonthlyAmountByApikeys"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid merchant ID", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.RestoreMerchant(ctx, &pb.FindByIdMerchantRequest{
 		MerchantId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to restore merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedRestoreMerchant(c)
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseMerchant(res)
-
-	logSuccess("Merchant restored successfully", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseMerchantDeleteAt(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // Delete godoc
 // @Summary Delete a merchant permanently
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Delete a merchant by its ID permanently
 // @Accept json
@@ -410,45 +245,32 @@ func (h *merchantCommandHandleApi) RestoreMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete merchant"
 // @Router /api/merchant-command/{id} [delete]
 func (h *merchantCommandHandleApi) Delete(c echo.Context) error {
-	const method = "Delete"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Invalid merchant ID", err, zap.Error(err))
-
-		return merchant_errors.ErrApiInvalidMerchantID(c)
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.client.DeleteMerchantPermanent(ctx, &pb.FindByIdMerchantRequest{
 		MerchantId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to delete merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedDeleteMerchantPermanent(c)
+		return h.handleGrpcError(err, "DeletePermanent")
 	}
 
 	so := h.mapper.ToApiResponseMerchantDelete(res)
-
-	logSuccess("Merchant deleted successfully", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // RestoreAllMerchant godoc.
 // @Summary Restore all merchant records
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Restore all merchant records that were previously deleted.
 // @Accept json
@@ -457,33 +279,24 @@ func (h *merchantCommandHandleApi) Delete(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all merchant records"
 // @Router /api/merchant-command/restore/all [post]
 func (h *merchantCommandHandleApi) RestoreAllMerchant(c echo.Context) error {
-	const method = "FindMonthlyAmountByApikeys"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.client.RestoreAllMerchant(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to restore all merchant", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedRestoreAllMerchant(c)
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
-	so := h.mapper.ToApiResponseMerchantAll(res)
+	h.logger.Debug("Successfully restored all merchant")
 
-	logSuccess("Merchant restored successfully", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseMerchantAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // DeleteAllMerchantPermanent godoc.
 // @Summary Permanently delete all merchant records
-// @Tags Merchant
+// @Tags Merchant Command
 // @Security Bearer
 // @Description Permanently delete all merchant records from the database.
 // @Accept json
@@ -492,81 +305,95 @@ func (h *merchantCommandHandleApi) RestoreAllMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to permanently delete all merchant records"
 // @Router /api/merchant-command/permanent/all [post]
 func (h *merchantCommandHandleApi) DeleteAllMerchantPermanent(c echo.Context) error {
-	const method = "DeleteAllMerchantPermanent"
-
-	end, logSuccess, logError := h.startTracingAndLogging(c.Request().Context(), method)
-	defer func() {
-
-		end()
-	}()
-
 	ctx := c.Request().Context()
 
 	res, err := h.client.DeleteAllMerchantPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all merchant permanently", err, zap.Error(err))
-
-		return merchant_errors.ErrApiFailedDeleteAllMerchantPermanent(c)
+		return h.handleGrpcError(err, "DeleteAll")
 	}
 
-	so := h.mapper.ToApiResponseMerchantAll(res)
+	h.logger.Debug("Successfully deleted all merchant permanently")
 
-	logSuccess("Merchant deleted successfully", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseMerchantAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *merchantCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *merchantCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Merchant").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Merchant already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *merchantCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *merchantCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *merchantCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }

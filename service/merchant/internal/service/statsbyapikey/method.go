@@ -3,16 +3,14 @@ package merchantstatsbyapikeyservice
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-payment-gateway-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-merchant/internal/redis/statsbyapikey"
 	repository "github.com/MamangRust/monolith-payment-gateway-merchant/internal/repository/statsbyapikey"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/merchant"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
+	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
@@ -20,140 +18,101 @@ import (
 type merchantStatsMethodByApiKeyDeps struct {
 	Cache mencache.MerchantStatsMethodByApiKeyCache
 
-	ErrorHandler errorhandler.MerchantStatisticByApikeyErrorHandler
-
 	Repository repository.MerchantStatsMethodByApiKeyRepository
 
 	Logger logger.LoggerInterface
 
-	Mapper responseservice.MerchantPaymentMethodResponseMapper
+	Observability observability.TraceLoggerObservability
 }
 
 type merchantStatsMethodByApiKeyService struct {
-	mencache mencache.MerchantStatsMethodByApiKeyCache
+	cache mencache.MerchantStatsMethodByApiKeyCache
 
 	repository repository.MerchantStatsMethodByApiKeyRepository
 
-	errorHandler errorhandler.MerchantStatisticByApikeyErrorHandler
-
 	logger logger.LoggerInterface
-
-	mapper responseservice.MerchantPaymentMethodResponseMapper
 
 	observability observability.TraceLoggerObservability
 }
 
 func NewMerchantStatsMethodByApiKeyService(params *merchantStatsMethodByApiKeyDeps) MerchantStatsByApiKeyMethodService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "merchant_stats_method_byapikey_service_request_total",
-		Help: "The total number of requests MerchantStatsMethodByApiKeyService",
-	}, []string{"method", "status"})
-
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "merchant_stats_method_byapikey_service_request_duration_seconds",
-		Help:    "The duration of requests MerchantStatsMethodByApiKeyService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("merchant-stats-method-by-apikey-service"), params.Logger, requestCounter, requestDuration)
-
 	return &merchantStatsMethodByApiKeyService{
-		mencache:      params.Cache,
+		cache:         params.Cache,
 		repository:    params.Repository,
 		logger:        params.Logger,
-		mapper:        params.Mapper,
-		errorHandler:  params.ErrorHandler,
-		observability: observability,
+		observability: params.Observability,
 	}
 }
 
-// FindMonthlyPaymentMethodByApikeys retrieves monthly payment method statistics for a merchant using API key.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the API key and the target year.
-//
-// Returns:
-//   - []*response.MerchantResponseMonthlyPaymentMethod: A slice of monthly payment method statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsMethodByApiKeyService) FindMonthlyPaymentMethodByApikeys(ctx context.Context, req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseMonthlyPaymentMethod, *response.ErrorResponse) {
-	api_key := req.Apikey
-	year := req.Year
-
+func (s *merchantStatsMethodByApiKeyService) FindMonthlyPaymentMethodByApikey(ctx context.Context, req *requests.MonthYearPaymentMethodApiKey) ([]*db.GetMonthlyPaymentMethodByApikeyRow, error) {
 	const method = "FindMonthlyPaymentMethodByApikeys"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("api_key", api_key), attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("api_key", req.Apikey),
+		attribute.Int("year", req.Year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetMonthlyPaymentMethodByApikeysCache(ctx, req); found {
-		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+	if cachedMerchant, found := s.cache.GetMonthlyPaymentMethodByApikeysCache(ctx, req); found {
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
 
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetMonthlyPaymentMethodByApikey(ctx, req)
-
+	dbRows, err := s.repository.GetMonthlyPaymentMethodByApikey(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleMonthlyPaymentMethodByApikeysError(
-			err, method, "FAILED_FIND_MONTHLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetMonthlyPaymentMethodByApikeyRow](
+			s.logger,
+			merchant_errors.ErrFailedFindMonthlyPaymentMethodByApikeys,
+			method,
+			span,
+
+			zap.String("api_key", req.Apikey),
+			zap.Int("year", req.Year),
 		)
 	}
 
-	so := s.mapper.ToMerchantMonthlyPaymentMethods(res)
+	s.cache.SetMonthlyPaymentMethodByApikeysCache(ctx, req, dbRows)
 
-	s.mencache.SetMonthlyPaymentMethodByApikeysCache(ctx, req, so)
-
-	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found monthly payment methods by API key (from DB)", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
+	return dbRows, nil
 }
 
-// FindYearlyPaymentMethodByApikeys retrieves yearly payment method statistics for a merchant using API key.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing the API key and the target year.
-//
-// Returns:
-//   - []*response.MerchantResponseYearlyPaymentMethod: A slice of yearly payment method statistics.
-//   - *response.ErrorResponse: An error returned if the retrieval fails.
-func (s *merchantStatsMethodByApiKeyService) FindYearlyPaymentMethodByApikeys(ctx context.Context, req *requests.MonthYearPaymentMethodApiKey) ([]*response.MerchantResponseYearlyPaymentMethod, *response.ErrorResponse) {
-	api_key := req.Apikey
-	year := req.Year
-
+func (s *merchantStatsMethodByApiKeyService) FindYearlyPaymentMethodByApikey(ctx context.Context, req *requests.MonthYearPaymentMethodApiKey) ([]*db.GetYearlyPaymentMethodByApikeyRow, error) {
 	const method = "FindYearlyPaymentMethodByApikeys"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.String("api_key", api_key), attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.String("api_key", req.Apikey),
+		attribute.Int("year", req.Year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if cachedMerchant, found := s.mencache.GetYearlyPaymentMethodByApikeysCache(ctx, req); found {
-		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", api_key), zap.Int("year", year))
+	if cachedMerchant, found := s.cache.GetYearlyPaymentMethodByApikeysCache(ctx, req); found {
+		logSuccess("Successfully fetched merchant from cache", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
 		return cachedMerchant, nil
 	}
 
-	res, err := s.repository.GetYearlyPaymentMethodByApikey(ctx, req)
-
+	dbRows, err := s.repository.GetYearlyPaymentMethodByApikey(ctx, req)
 	if err != nil {
-		return s.errorHandler.HandleYearlyPaymentMethodByApikeysError(
-			err, method, "FAILED_FIND_YEARLY_PAYMENT_METHOD_BY_APIKEYS", span, &status,
-			zap.Error(err),
+		status = "error"
+		return errorhandler.HandleError[[]*db.GetYearlyPaymentMethodByApikeyRow](
+			s.logger,
+			merchant_errors.ErrFailedFindYearlyPaymentMethodByApikeys,
+			method,
+			span,
+
+			zap.String("api_key", req.Apikey),
+			zap.Int("year", req.Year),
 		)
 	}
 
-	so := s.mapper.ToMerchantYearlyPaymentMethods(res)
+	s.cache.SetYearlyPaymentMethodByApikeysCache(ctx, req, dbRows)
 
-	s.mencache.SetYearlyPaymentMethodByApikeysCache(ctx, req, so)
-
-	logSuccess("Successfully fetched merchant", zap.String("api_key", api_key), zap.Int("year", year))
-
-	return so, nil
+	logSuccess("Successfully found yearly payment methods by API key (from DB)", zap.String("api_key", req.Apikey), zap.Int("year", req.Year))
+	return dbRows, nil
 }

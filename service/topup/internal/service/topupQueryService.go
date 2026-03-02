@@ -3,323 +3,294 @@ package service
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errorhandler"
 	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/service"
-	responseservice "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/service/topup"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-topup/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-payment-gateway-topup/internal/redis"
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-// topupQueryDeps holds the dependencies required to construct a topupQueryService.
 type topupQueryDeps struct {
-	// Ctx is the context used for request-scoped operations, cancellations, and timeouts.
-	Ctx context.Context
-
-	// ErrorHandler handles domain-specific errors during top-up query operations.
-	ErrorHandler errorhandler.TopupQueryErrorHandler
-
-	// Cache provides caching capabilities for frequently accessed top-up query data.
-	Cache mencache.TopupQueryCache
-
-	// Repository provides access to read-only top-up data from the database.
-	Repository repository.TopupQueryRepository
-
-	// Logger provides structured logging support for debugging and monitoring.
-	Logger logger.LoggerInterface
-
-	// Mapper transforms internal domain data to top-up response DTOs.
-	Mapper responseservice.TopupQueryResponseMapper
+	Cache         mencache.TopupQueryCache
+	Repository    repository.TopupQueryRepository
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
-// topupQueryService handles the logic for querying top-up operations.
-// It integrates caching, error handling, tracing, and metrics tracking.
 type topupQueryService struct {
-	// ctx is the context used for request-scoped operations, cancellations, and timeouts.
-	ctx context.Context
-
-	// errorhandler handles domain-specific errors during top-up query operations.
-	errorhandler errorhandler.TopupQueryErrorHandler
-
-	// mencache provides caching capabilities for frequently accessed top-up query data.
-	mencache mencache.TopupQueryCache
-
-	// topupQueryRepository provides access to read-only top-up data from the database.
+	cache                mencache.TopupQueryCache
 	topupQueryRepository repository.TopupQueryRepository
-
-	// logger provides structured logging support for debugging and monitoring.
-	logger logger.LoggerInterface
-
-	// mapper transforms internal domain data to top-up response DTOs.
-	mapper responseservice.TopupQueryResponseMapper
+	logger               logger.LoggerInterface
 
 	observability observability.TraceLoggerObservability
 }
 
-// NewTopupQueryService initializes a new instance of topupQueryService with the provided parameters.
-//
-// It sets up Prometheus metrics for counting and measuring the duration of top-up query requests.
-//
-// Parameters:
-// - params: A pointer to topupQueryDeps containing the necessary dependencies.
-//
-// Returns:
-// - A pointer to a newly created topupQueryService.
 func NewTopupQueryService(
 	params *topupQueryDeps,
 ) TopupQueryService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "topup_query_service_request_total",
-			Help: "Total number of requests to the TopupQueryService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "topup_query_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the TopupQueryService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
-	observability := observability.NewTraceLoggerObservability(otel.Tracer("topup-query-service"), params.Logger, requestCounter, requestDuration)
-
 	return &topupQueryService{
-		ctx:                  params.Ctx,
-		errorhandler:         params.ErrorHandler,
-		mencache:             params.Cache,
+		cache:                params.Cache,
 		topupQueryRepository: params.Repository,
 		logger:               params.Logger,
-		mapper:               params.Mapper,
-		observability:        observability,
+		observability:        params.Observability,
 	}
 }
 
-// FindAll retrieves all topup records based on the given filter request.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter and pagination criteria.
-//
-// Returns:
-//   - []*response.TopupResponse: List of topup responses.
-//   - *int: Total number of matching records.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupQueryService) FindAll(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponse, *int, *response.ErrorResponse) {
-	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
-
+func (s *topupQueryService) FindAll(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetTopupsRow, *int, error) {
 	const method = "FindAll"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTopupsCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTopupsCache(ctx, req); found {
 		logSuccess("Successfully retrieved all topup records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	topups, totalRecords, err := s.topupQueryRepository.FindAllTopups(ctx, req)
+	topups, err := s.topupQueryRepository.FindAllTopups(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_TOPUPS", span, &status, topup_errors.ErrFailedFindAllTopups, zap.Error(err))
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTopupsRow](
+			s.logger,
+			topup_errors.ErrFailedFindAllTopups,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTopupResponses(topups)
+	var totalCount int
 
-	s.mencache.SetCachedTopupsCache(ctx, req, so, totalRecords)
+	if len(topups) > 0 {
+		totalCount = int(topups[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved all topup records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedTopupsCache(ctx, req, topups, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched topup",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return topups, &totalCount, nil
 }
 
-// FindAllByCardNumber retrieves all topup records filtered by a specific card number.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing card number and filter criteria.
-//
-// Returns:
-//   - []*response.TopupResponse: List of topup responses.
-//   - *int: Total number of matching records.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupQueryService) FindAllByCardNumber(ctx context.Context, req *requests.FindAllTopupsByCardNumber) ([]*response.TopupResponse, *int, *response.ErrorResponse) {
+func (s *topupQueryService) FindAllByCardNumber(ctx context.Context, req *requests.FindAllTopupsByCardNumber) ([]*db.GetTopupsByCardNumberRow, *int, error) {
+	const method = "FindAllByCardNumber"
 
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
-	cardNumber := req.CardNumber
+	card_number := req.CardNumber
 
-	const method = "FindAllByCardNumber"
-
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search), attribute.String("cardNumber", cardNumber))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCacheTopupByCardCache(ctx, req); found {
+	if data, total, found := s.cache.GetCacheTopupByCardCache(ctx, req); found {
 		logSuccess("Successfully retrieved all topup records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	topups, totalRecords, err := s.topupQueryRepository.FindAllTopupByCardNumber(ctx, req)
+	topups, err := s.topupQueryRepository.FindAllTopupByCardNumber(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_TOPUPS_BY_CARD", span, &status, topup_errors.ErrFailedFindAllTopupsByCardNumber)
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTopupsByCardNumberRow](
+			s.logger,
+			topup_errors.ErrFailedFindAllTopupsByCardNumber,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+			zap.String("card_number", card_number),
+		)
 	}
 
-	so := s.mapper.ToTopupResponses(topups)
+	var totalCount int
 
-	s.mencache.SetCacheTopupByCardCache(ctx, req, so, totalRecords)
+	if len(topups) > 0 {
+		totalCount = int(topups[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved all topup records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCacheTopupByCardCache(ctx, req, topups, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched topup by card number",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("card_number", card_number))
+
+	return topups, &totalCount, nil
 }
 
-// FindById retrieves a topup record by its ID.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - topupID: The ID of the topup to be retrieved.
-//
-// Returns:
-//   - *response.TopupResponse: The topup data if found.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupQueryService) FindById(ctx context.Context, topupID int) (*response.TopupResponse, *response.ErrorResponse) {
+func (s *topupQueryService) FindById(ctx context.Context, topupID int) (*db.GetTopupByIDRow, error) {
 	const method = "FindById"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("topup.id", topupID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("topup_id", topupID))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedTopupCache(ctx, topupID); found {
+	if data, found := s.cache.GetCachedTopupCache(ctx, topupID); found {
 		logSuccess("Successfully retrieved topup from cache", zap.Int("topup.id", topupID))
 		return data, nil
 	}
 
 	topup, err := s.topupQueryRepository.FindById(ctx, topupID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TopupResponse](s.logger, err, method, "FAILED_FIND_TOPUP", span, &status, topup_errors.ErrFailedFindTopupById, zap.Error(err))
+		status = "error"
+		return errorhandler.HandleError[*db.GetTopupByIDRow](
+			s.logger,
+			topup_errors.ErrTopupNotFoundRes,
+			method,
+			span,
+
+			zap.Int("topup_id", topupID),
+		)
 	}
 
-	so := s.mapper.ToTopupResponse(topup)
+	s.cache.SetCachedTopupCache(ctx, topup)
 
-	s.mencache.SetCachedTopupCache(ctx, so)
+	logSuccess("Successfully fetched topup", zap.Int("topup_id", topupID))
 
-	logSuccess("Successfully retrieved topup", zap.Int("topup.id", topupID))
-
-	return so, nil
+	return topup, nil
 }
 
-// FindByActive retrieves all active (non-deleted) topup records.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter and pagination criteria.
-//
-// Returns:
-//   - []*response.TopupResponseDeleteAt: List of active topup records.
-//   - *int: Total number of matching records.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupQueryService) FindByActive(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *topupQueryService) FindByActive(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetActiveTopupsRow, *int, error) {
+	const method = "FindByActive"
+
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	const method = "FindAll"
-
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTopupActiveCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTopupActiveCache(ctx, req); found {
 		logSuccess("Successfully retrieved all topup records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	topups, totalRecords, err := s.topupQueryRepository.FindByActive(ctx, req)
-
+	topups, err := s.topupQueryRepository.FindByActive(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_ACTIVE_TOPUPS", span, &status, topup_errors.ErrFailedFindActiveTopups)
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetActiveTopupsRow](
+			s.logger,
+			topup_errors.ErrFailedFindActiveTopups,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTopupResponsesDeleteAt(topups)
+	var totalCount int
 
-	s.mencache.SetCachedTopupActiveCache(ctx, req, so, totalRecords)
+	if len(topups) > 0 {
+		totalCount = int(topups[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	logSuccess("Successfully retrieved all topup records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	s.cache.SetCachedTopupActiveCache(ctx, req, topups, &totalCount)
 
-	return so, totalRecords, nil
+	logSuccess("Successfully fetched active topup",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return topups, &totalCount, nil
 }
 
-// FindByTrashed retrieves all soft-deleted (trashed) topup records.
-//
-// Parameters:
-//   - ctx: The context for timeout and cancellation.
-//   - req: The request containing filter and pagination criteria.
-//
-// Returns:
-//   - []*response.TopupResponseDeleteAt: List of trashed topup records.
-//   - *int: Total number of matching records.
-//   - *response.ErrorResponse: Error details if retrieval fails.
-func (s *topupQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllTopups) ([]*response.TopupResponseDeleteAt, *int, *response.ErrorResponse) {
-	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
-
+func (s *topupQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllTopups) ([]*db.GetTrashedTopupsRow, *int, error) {
 	const method = "FindByTrashed"
 
-	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedTopupTrashedCache(ctx, req); found {
+	if data, total, found := s.cache.GetCachedTopupTrashedCache(ctx, req); found {
 		logSuccess("Successfully retrieved all topup records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	topups, totalRecords, err := s.topupQueryRepository.FindByTrashed(ctx, req)
-
+	topups, err := s.topupQueryRepository.FindByTrashed(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_TOPUPS", span, &status, topup_errors.ErrFailedFindTrashedTopups)
+		status = "error"
+		return errorhandler.HandlerErrorPagination[[]*db.GetTrashedTopupsRow](
+			s.logger,
+			topup_errors.ErrFailedFindTrashedTopups,
+			method,
+			span,
+
+			zap.Int("page", page),
+			zap.Int("pageSize", pageSize),
+			zap.String("search", search),
+		)
 	}
 
-	so := s.mapper.ToTopupResponsesDeleteAt(topups)
+	var totalCount int
 
-	logSuccess("Successfully retrieved all topup records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	if len(topups) > 0 {
+		totalCount = int(topups[0].TotalCount)
+	} else {
+		totalCount = 0
+	}
 
-	return so, totalRecords, nil
+	s.cache.SetCachedTopupTrashedCache(ctx, req, topups, &totalCount)
+
+	logSuccess("Successfully fetched trashed topup",
+		zap.Int("totalRecords", totalCount),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize))
+
+	return topups, &totalCount, nil
 }
 
-// normalizePagination validates and normalizes pagination parameters.
-// Ensures the page is set to at least 1 and pageSize to a default of 10 if
-// they are not positive. Returns the normalized page and pageSize values.
-//
-// Parameters:
-//   - page: The requested page number.
-//   - pageSize: The number of items per page.
-//
-// Returns:
-//   - The normalized page and pageSize values.
 func (s *topupQueryService) normalizePagination(page, pageSize int) (int, int) {
 	if page <= 0 {
 		page = 1

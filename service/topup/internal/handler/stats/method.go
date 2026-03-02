@@ -3,206 +3,164 @@ package topupstatshandler
 import (
 	"context"
 
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	pbtopup "github.com/MamangRust/monolith-payment-gateway-pb/topup"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup/stats"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/response"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/grpc"
-	protomapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/proto/topup"
 	"github.com/MamangRust/monolith-payment-gateway-topup/internal/service"
-	"go.uber.org/zap"
-
-	servicestats "github.com/MamangRust/monolith-payment-gateway-topup/internal/service/stats"
-	servicestatsbycard "github.com/MamangRust/monolith-payment-gateway-topup/internal/service/statsbycard"
 )
 
 type topupMethodHandleGrpc struct {
 	pb.UnimplementedTopupStatsMethodServiceServer
 
-	servicestats servicestats.TopupStatsService
-
-	servicestatsbycard servicestatsbycard.TopupStatsByCardService
-
-	logger logger.LoggerInterface
-
-	mapper protomapper.TopupStatsMethodProtoMapper
+	service service.Service
 }
 
 func NewTopupStatsMethodHandleGrpc(
 	service service.Service,
-	logger logger.LoggerInterface,
-	mapper protomapper.TopupStatsMethodProtoMapper,
 ) TopupStatsMethodHandleGrpc {
 	return &topupMethodHandleGrpc{
-		servicestats:       service,
-		servicestatsbycard: service,
-		logger:             logger,
-		mapper:             mapper,
+		service: service,
 	}
 }
 
-// FindMonthlyTopupMethods fetches monthly topup methods for a given year.
-//
-// Parameters:
-//   - ctx: the context.Context object passed through the gRPC request.
-//   - req: a pointer to a FindYearTopupStatus message containing the year.
-//
-// Returns:
-//   - A pointer to an ApiResponseTopupMonthMethod message containing the methods.
-//   - An error, if the topup query service returns an error or if the year is invalid.
-func (s *topupMethodHandleGrpc) FindMonthlyTopupMethods(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupMonthMethod, error) {
+func (s *topupMethodHandleGrpc) FindMonthlyTopupMethods(ctx context.Context, req *pbtopup.FindYearTopupStatus) (*pb.ApiResponseTopupMonthMethod, error) {
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching monthly topup methods",
-		zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch monthly topup methods", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
-	methods, err := s.servicestats.FindMonthlyTopupMethods(ctx, year)
+	methods, err := s.service.FindMonthlyTopupMethods(ctx, year)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch monthly topup methods", zap.Any("error", err), zap.Int("year", year))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTopupMonthMethod("success", "Successfully fetched monthly topup methods", methods)
+	protoData := make([]*pb.TopupMonthMethodResponse, len(methods))
+	for i, item := range methods {
+		protoData[i] = &pb.TopupMonthMethodResponse{
+			Month:       item.Month,
+			TopupMethod: item.TopupMethod,
+			TotalTopups: item.TotalTopups,
+			TotalAmount: item.TotalAmount,
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly topup methods",
-		zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTopupMonthMethod{
+		Status:  "success",
+		Message: "Successfully fetched monthly topup methods",
+		Data:    protoData,
+	}, nil
 }
 
-// FindYearlyTopupMethods fetches yearly topup methods for a given year.
-//
-// Parameters:
-//   - ctx: the context.Context object passed through the gRPC request.
-//   - req: a pointer to a FindYearTopupStatus message containing the year.
-//
-// Returns:
-//   - A pointer to an ApiResponseTopupYearMethod message containing the methods.
-//   - An error, if the topup query service returns an error or if the year is invalid.
-func (s *topupMethodHandleGrpc) FindYearlyTopupMethods(ctx context.Context, req *pb.FindYearTopupStatus) (*pb.ApiResponseTopupYearMethod, error) {
+func (s *topupMethodHandleGrpc) FindYearlyTopupMethods(ctx context.Context, req *pbtopup.FindYearTopupStatus) (*pb.ApiResponseTopupYearMethod, error) {
 	year := int(req.GetYear())
 
-	s.logger.Info("Fetching yearly topup methods",
-		zap.Int("year", year))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch yearly topup methods", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
-	methods, err := s.servicestats.FindYearlyTopupMethods(ctx, year)
+	methods, err := s.service.FindYearlyTopupMethods(ctx, year)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch yearly topup methods", zap.Any("error", err), zap.Int("year", year))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTopupYearMethod("success", "Successfully fetched yearly topup methods", methods)
+	protoData := make([]*pb.TopupYearlyMethodResponse, len(methods))
+	for i, item := range methods {
+		protoData[i] = &pb.TopupYearlyMethodResponse{
+			Year:        item.Year.Int.String(),
+			TopupMethod: item.TopupMethod,
+			TotalTopups: int32(item.TotalTopups),
+			TotalAmount: int32(item.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly topup methods",
-		zap.Int("year", year))
-
-	return so, nil
+	return &pb.ApiResponseTopupYearMethod{
+		Status:  "success",
+		Message: "Successfully fetched yearly topup methods",
+		Data:    protoData,
+	}, nil
 }
 
-// FindMonthlyTopupMethodsByCardNumber fetches monthly topup methods for a specific card number and year.
-//
-// Parameters:
-//   - ctx: the context.Context object passed through the gRPC request.
-//   - req: a pointer to a FindYearTopupCardNumber message containing the year and card number.
-//
-// Returns:
-//   - A pointer to an ApiResponseTopupMonthMethod message containing the methods.
-//   - An error, if the topup query service returns an error or if the year or card number is invalid.
-func (s *topupMethodHandleGrpc) FindMonthlyTopupMethodsByCardNumber(ctx context.Context, req *pb.FindYearTopupCardNumber) (*pb.ApiResponseTopupMonthMethod, error) {
+func (s *topupMethodHandleGrpc) FindMonthlyTopupMethodsByCardNumber(ctx context.Context, req *pbtopup.FindYearTopupCardNumber) (*pb.ApiResponseTopupMonthMethod, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching monthly topup methods by card number",
-		zap.Int("year", year),
-		zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearMonthMethod{
+	reqService := requests.YearMonthMethod{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	methods, err := s.servicestatsbycard.FindMonthlyTopupMethodsByCardNumber(ctx, reqService)
+	methods, err := s.service.FindMonthlyTopupMethodsByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch monthly topup methods by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTopupMonthMethod("success", "Successfully fetched monthly topup methods by card number", methods)
+	protoData := make([]*pb.TopupMonthMethodResponse, len(methods))
+	for i, item := range methods {
+		protoData[i] = &pb.TopupMonthMethodResponse{
+			Month:       item.Month,
+			TopupMethod: item.TopupMethod,
+			TotalTopups: item.TotalTopups,
+			TotalAmount: item.TotalAmount,
+		}
+	}
 
-	s.logger.Info("Successfully fetched monthly topup methods by card number",
-		zap.Int("year", year),
-		zap.String("card_number", cardNumber))
-
-	return so, nil
+	return &pb.ApiResponseTopupMonthMethod{
+		Status:  "success",
+		Message: "Successfully fetched monthly topup methods by card number",
+		Data:    protoData,
+	}, nil
 }
 
-// FindYearlyTopupMethodsByCardNumber fetches yearly topup methods for a specific card number and year.
-//
-// Parameters:
-//   - ctx: the context.Context object passed through the gRPC request.
-//   - req: a pointer to a FindYearTopupCardNumber message containing the year and card number.
-//
-// Returns:
-//   - A pointer to an ApiResponseTopupYearMethod message containing the methods.
-//   - An error, if the topup query service returns an error or if the year or card number is invalid.
-func (s *topupMethodHandleGrpc) FindYearlyTopupMethodsByCardNumber(ctx context.Context, req *pb.FindYearTopupCardNumber) (*pb.ApiResponseTopupYearMethod, error) {
+func (s *topupMethodHandleGrpc) FindYearlyTopupMethodsByCardNumber(ctx context.Context, req *pbtopup.FindYearTopupCardNumber) (*pb.ApiResponseTopupYearMethod, error) {
 	year := int(req.GetYear())
 	cardNumber := req.GetCardNumber()
 
-	s.logger.Info("Fetching yearly topup methods by card number",
-		zap.Int("year", year),
-		zap.String("card_number", cardNumber))
-
 	if year <= 0 {
-		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.Int("year", year))
 		return nil, topup_errors.ErrGrpcTopupInvalidYear
 	}
 
 	if cardNumber == "" {
-		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.String("card_number", cardNumber))
 		return nil, topup_errors.ErrGrpcInvalidCardNumber
 	}
 
-	reqService := &requests.YearMonthMethod{
+	reqService := requests.YearMonthMethod{
 		Year:       year,
 		CardNumber: cardNumber,
 	}
 
-	methods, err := s.servicestatsbycard.FindYearlyTopupMethodsByCardNumber(ctx, reqService)
+	methods, err := s.service.FindYearlyTopupMethodsByCardNumber(ctx, &reqService)
 
 	if err != nil {
-		s.logger.Error("Failed to fetch yearly topup methods by card number", zap.Any("error", err), zap.Int("year", year), zap.String("card_number", cardNumber))
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapper.ToProtoResponseTopupYearMethod("success", "Successfully fetched yearly topup methods by card number", methods)
+	protoData := make([]*pb.TopupYearlyMethodResponse, len(methods))
+	for i, item := range methods {
+		protoData[i] = &pb.TopupYearlyMethodResponse{
+			Year:        item.Year.Int.String(),
+			TopupMethod: item.TopupMethod,
+			TotalTopups: int32(item.TotalTopups),
+			TotalAmount: int32(item.TotalAmount),
+		}
+	}
 
-	s.logger.Info("Successfully fetched yearly topup methods by card number",
-		zap.Int("year", year),
-		zap.String("card_number", cardNumber))
-
-	return so, nil
+	return &pb.ApiResponseTopupYearMethod{
+		Status:  "success",
+		Message: "Successfully fetched yearly topup methods by card number",
+		Data:    protoData,
+	}, nil
 }

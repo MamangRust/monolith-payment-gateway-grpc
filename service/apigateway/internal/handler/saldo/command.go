@@ -1,23 +1,21 @@
 package saldohandler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
+	saldo_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/internal/redis/api/saldo"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	saldo_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/saldo_errors/api"
-	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/response/api/saldo"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/saldo"
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -28,11 +26,9 @@ type saldoCommandHandleApi struct {
 
 	mapper apimapper.SaldoCommandResponseMapper
 
-	trace trace.Tracer
+	cache saldo_cache.SaldoMencache
 
-	requestCounter *prometheus.CounterVec
-
-	requestDuration *prometheus.HistogramVec
+	apiHandler errors.ApiHandler
 }
 
 type saldoCommandHandleDeps struct {
@@ -43,53 +39,38 @@ type saldoCommandHandleDeps struct {
 	logger logger.LoggerInterface
 
 	mapper apimapper.SaldoCommandResponseMapper
+
+	cache saldo_cache.SaldoMencache
+
+	apiHandler errors.ApiHandler
 }
 
 func NewSaldoCommandHandleApi(params *saldoCommandHandleDeps) *saldoCommandHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "saldo_command_handler_requests_total",
-			Help: "Total number of saldo command requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "saldo_command_handler_request_duration_seconds",
-			Help:    "Duration of saldo command requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
 
 	saldoHandler := &saldoCommandHandleApi{
-		saldo:           params.client,
-		logger:          params.logger,
-		mapper:          params.mapper,
-		trace:           otel.Tracer("saldo-command-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		saldo:      params.client,
+		logger:     params.logger,
+		mapper:     params.mapper,
+		cache:      params.cache,
+		apiHandler: params.apiHandler,
 	}
 
 	routerSaldo := params.router.Group("/api/saldo-command")
 
-	routerSaldo.POST("/create", saldoHandler.Create)
-	routerSaldo.POST("/update/:id", saldoHandler.Update)
-	routerSaldo.POST("/trashed/:id", saldoHandler.TrashSaldo)
-	routerSaldo.POST("/restore/:id", saldoHandler.RestoreSaldo)
-	routerSaldo.DELETE("/permanent/:id", saldoHandler.Delete)
+	routerSaldo.POST("/create", params.apiHandler.Handle("create-saldo", saldoHandler.Create))
+	routerSaldo.POST("/update/:id", params.apiHandler.Handle("update-saldo", saldoHandler.Update))
+	routerSaldo.POST("/trashed/:id", params.apiHandler.Handle("trash-saldo", saldoHandler.TrashSaldo))
+	routerSaldo.POST("/restore/:id", params.apiHandler.Handle("restore-saldo", saldoHandler.RestoreSaldo))
+	routerSaldo.DELETE("/permanent/:id", params.apiHandler.Handle("delete-saldo-permanent", saldoHandler.Delete))
 
-	routerSaldo.POST("/restore/all", saldoHandler.RestoreAllSaldo)
-	routerSaldo.POST("/permanent/all", saldoHandler.DeleteAllSaldoPermanent)
+	routerSaldo.POST("/restore/all", params.apiHandler.Handle("restore-all-saldos", saldoHandler.RestoreAllSaldo))
+	routerSaldo.POST("/permanent/all", params.apiHandler.Handle("delete-all-saldos-permanent", saldoHandler.DeleteAllSaldoPermanent))
 
 	return saldoHandler
 }
 
 // @Summary Create a new saldo
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Create a new saldo record with the provided card number and total balance.
 // @Accept json
@@ -100,28 +81,18 @@ func NewSaldoCommandHandleApi(params *saldoCommandHandleDeps) *saldoCommandHandl
 // @Failure 500 {object} response.ErrorResponse "Failed to create saldo"
 // @Router /api/saldo-command/create [post]
 func (h *saldoCommandHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	var body requests.CreateSaldoRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind CreateSaldo request", err, zap.Error(err))
-
-		return saldo_errors.ErrApiBindCreateSaldo(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate CreateSaldo request", err, zap.Error(err))
-
-		return saldo_errors.ErrApiValidateCreateSaldo(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.saldo.CreateSaldo(ctx, &pb.CreateSaldoRequest{
 		CardNumber:   body.CardNumber,
@@ -129,20 +100,18 @@ func (h *saldoCommandHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to create saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedCreateSaldo(c)
+		return h.handleGrpcError(err, "Create")
 	}
 
 	so := h.mapper.ToApiResponseSaldo(res)
 
-	logSuccess("Successfully create saldo", zap.Bool("success", true))
+	h.cache.SetCachedSaldoById(ctx, so.Data.ID, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Summary Update an existing saldo
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Update an existing saldo record with the provided card number and total balance.
 // @Accept json
@@ -154,36 +123,24 @@ func (h *saldoCommandHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update saldo"
 // @Router /api/saldo-command/update/{id} [post]
 func (h *saldoCommandHandleApi) Update(c echo.Context) error {
-	const method = "Update"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	idint, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidSaldoID(c)
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateSaldoRequest
 
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind UpdateSaldo request", err, zap.Error(err))
-
-		return saldo_errors.ErrApiBindUpdateSaldo(c)
+		return errors.NewBadRequestError("Invalid request")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate UpdateSaldo request", err, zap.Error(err))
-
-		return saldo_errors.ErrApiValidateUpdateSaldo(c)
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.saldo.UpdateSaldo(ctx, &pb.UpdateSaldoRequest{
 		SaldoId:      int32(idint),
@@ -192,20 +149,21 @@ func (h *saldoCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		logError("Failed to update saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedUpdateSaldo(c)
+		h.logger.Debug("Failed to update saldo", zap.Error(err))
+		return h.handleGrpcError(err, "Update")
 	}
 
 	so := h.mapper.ToApiResponseSaldo(res)
 
-	logSuccess("Successfully update saldo", zap.Bool("success", true))
+	h.cache.DeleteSaldoCache(ctx, idint)
+
+	h.cache.SetCachedSaldoById(ctx, so.Data.ID, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Summary Soft delete a saldo
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Soft delete an existing saldo record by its ID.
 // @Accept json
@@ -216,44 +174,35 @@ func (h *saldoCommandHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to trashed saldo"
 // @Router /api/saldo-command/trashed/{id} [post]
 func (h *saldoCommandHandleApi) TrashSaldo(c echo.Context) error {
-	const method = "TrashSaldo"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidSaldoID(c)
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.saldo.TrashedSaldo(ctx, &pb.FindByIdSaldoRequest{
 		SaldoId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to trashed saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedTrashSaldo(c)
+		h.logger.Debug("Failed to trashed saldo", zap.Error(err))
+		return h.handleGrpcError(err, "Trashed")
 	}
 
 	so := h.mapper.ToApiResponseSaldoDeleteAt(res)
 
-	logSuccess("Successfully trashed saldo", zap.Bool("success", true))
+	h.cache.DeleteSaldoCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Summary Restore a trashed saldo
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Restore an existing saldo record from the trash by its ID.
 // @Accept json
@@ -264,44 +213,35 @@ func (h *saldoCommandHandleApi) TrashSaldo(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore saldo"
 // @Router /api/saldo-command/restore/{id} [post]
 func (h *saldoCommandHandleApi) RestoreSaldo(c echo.Context) error {
-	const method = "RestoreSaldo"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidSaldoID(c)
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.saldo.RestoreSaldo(ctx, &pb.FindByIdSaldoRequest{
 		SaldoId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to restore saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedRestoreSaldo(c)
+		h.logger.Debug("Failed to restore saldo", zap.Error(err))
+		return h.handleGrpcError(err, "Restore")
 	}
 
-	so := h.mapper.ToApiResponseSaldo(res)
+	so := h.mapper.ToApiResponseSaldoDeleteAt(res)
 
-	logSuccess("Successfully restored saldo", zap.Bool("success", true))
+	h.cache.DeleteSaldoCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Summary Permanently delete a saldo
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Permanently delete an existing saldo record by its ID.
 // @Accept json
@@ -312,45 +252,36 @@ func (h *saldoCommandHandleApi) RestoreSaldo(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete saldo"
 // @Router /api/saldo-command/permanent/{id} [delete]
 func (h *saldoCommandHandleApi) Delete(c echo.Context) error {
-	const method = "Delete"
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
-
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		logError("Bad Request: Invalid ID", err, zap.Error(err))
-
-		return saldo_errors.ErrApiInvalidSaldoID(c)
+		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
+		return errors.NewBadRequestError("id is required")
 	}
+
+	ctx := c.Request().Context()
 
 	res, err := h.saldo.DeleteSaldoPermanent(ctx, &pb.FindByIdSaldoRequest{
 		SaldoId: int32(idInt),
 	})
 
 	if err != nil {
-		logError("Failed to delete saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedDeleteSaldoPermanent(c)
+		h.logger.Debug("Failed to delete saldo", zap.Error(err))
+		return h.handleGrpcError(err, "DeleteSaldo")
 	}
 
 	so := h.mapper.ToApiResponseSaldoDelete(res)
 
-	logSuccess("Successfully deleted saldo", zap.Bool("success", true))
+	h.cache.DeleteSaldoCache(ctx, idInt)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // RestoreAllSaldo restores all saldo records.
 // @Summary Restore all saldo records
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Restore all saldo records that were previously deleted.
 // @Accept json
@@ -359,32 +290,24 @@ func (h *saldoCommandHandleApi) Delete(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all saldo records"
 // @Router /api/saldo-command/restore/all [post]
 func (h *saldoCommandHandleApi) RestoreAllSaldo(c echo.Context) error {
-	const method = "RestoreAllSaldo"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.saldo.RestoreAllSaldo(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to restore all saldo", err, zap.Error(err))
-
-		return saldo_errors.ErrApiFailedRestoreAllSaldo(c)
+		h.logger.Error("Failed to restore all saldo", zap.Error(err))
+		return h.handleGrpcError(err, "RestoreAll")
 	}
 
-	so := h.mapper.ToApiResponseSaldoAll(res)
+	h.logger.Debug("Successfully restored all saldo")
 
-	logSuccess("Successfully restored all saldo", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseSaldoAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
 // @Summary Permanently delete all saldo records
-// @Tags Saldo-Command
+// @Tags Saldo Command
 // @Security Bearer
 // @Description Permanently delete all saldo records from the database.
 // @Accept json
@@ -393,80 +316,97 @@ func (h *saldoCommandHandleApi) RestoreAllSaldo(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to permanently delete all saldo records"
 // @Router /api/saldo-command/permanent/all [post]
 func (h *saldoCommandHandleApi) DeleteAllSaldoPermanent(c echo.Context) error {
-	const method = "DeleteAllSaldoPermanent"
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() {
-		end()
-	}()
 
 	res, err := h.saldo.DeleteAllSaldoPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		logError("Failed to delete all saldo permanently", err, zap.Error(err))
+		h.logger.Error("Failed to permanently delete all saldo", zap.Error(err))
 
-		return saldo_errors.ErrApiFailedDeleteAllSaldoPermanent(c)
+		return h.handleGrpcError(err, "DeleteAll")
 	}
 
-	so := h.mapper.ToApiResponseSaldoAll(res)
+	h.logger.Debug("Successfully deleted all saldo permanently")
 
-	logSuccess("Successfully deleted all saldo", zap.Bool("success", true))
+	so := h.mapper.ToApiResponseSaldoAll(res)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *saldoCommandHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func (h *saldoCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
 
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
+	switch st.Code() {
+	case codes.NotFound:
+		return errors.NewNotFoundError("Saldo").WithInternal(err)
 
-	status := "success"
+	case codes.AlreadyExists:
+		return errors.NewConflictError("Saldo already exists").WithInternal(err)
 
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
+	case codes.InvalidArgument:
+		return errors.NewBadRequestError(st.Message()).WithInternal(err)
+
+	case codes.PermissionDenied:
+		return errors.ErrForbidden.WithInternal(err)
+
+	case codes.Unauthenticated:
+		return errors.ErrUnauthorized.WithInternal(err)
+
+	case codes.ResourceExhausted:
+		return errors.ErrTooManyRequests.WithInternal(err)
+
+	case codes.Unavailable:
+		return errors.NewServiceUnavailableError("Saldo service").WithInternal(err)
+
+	case codes.DeadlineExceeded:
+		return errors.ErrTimeout.WithInternal(err)
+
+	default:
+		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
 	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
 }
 
-func (s *saldoCommandHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+func (h *saldoCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {
+	var validationErrs []errors.ValidationError
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		for _, fe := range ve {
+			validationErrs = append(validationErrs, errors.ValidationError{
+				Field:   fe.Field(),
+				Message: h.getValidationMessage(fe),
+			})
+		}
+		return validationErrs
+	}
+
+	return []errors.ValidationError{
+		{
+			Field:   "general",
+			Message: err.Error(),
+		},
+	}
+}
+
+func (h *saldoCommandHandleApi) getValidationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "min":
+		return fmt.Sprintf("Must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("Must be at most %s", fe.Param())
+	case "gte":
+		return fmt.Sprintf("Must be greater than or equal to %s", fe.Param())
+	case "lte":
+		return fmt.Sprintf("Must be less than or equal to %s", fe.Param())
+	case "oneof":
+		return fmt.Sprintf("Must be one of: %s", fe.Param())
+	default:
+		return fmt.Sprintf("Validation failed on '%s' tag", fe.Tag())
+	}
 }
