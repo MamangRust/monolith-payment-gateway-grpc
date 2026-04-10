@@ -1,20 +1,24 @@
 package main
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-card/internal/apps"
+	"github.com/MamangRust/monolith-payment-gateway-card/apps"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/server"
 )
 
 func main() {
-	server, err := apps.NewServer(&apps.Config{
+	srv, err := apps.NewServer(&server.Config{
 		ServiceName:    "card-service",
 		ServiceVersion: "1.0.0",
 		Environment:    "production",
 		OtelEndpoint:   "otel-collector:4317",
+		Port:           50054,
 	})
 
 	if err != nil {
 		panic(err)
 	}
 
-	server.Run()
+	if err := srv.Run(); err != nil {
+		panic(err)
+	}
 }

@@ -5,9 +5,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-email/internal/config"
-	"github.com/MamangRust/monolith-payment-gateway-email/internal/handler"
-	"github.com/MamangRust/monolith-payment-gateway-email/internal/mailer"
+	"github.com/MamangRust/monolith-payment-gateway-email/config"
+	"github.com/MamangRust/monolith-payment-gateway-email/handler"
+	"github.com/MamangRust/monolith-payment-gateway-email/mailer"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/dotenv"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"

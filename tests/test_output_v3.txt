@@ -1,0 +1,351 @@
+=== RUN   TestAuthHandlerApiSuite
+2026/04/10 18:11:45 github.com/testcontainers/testcontainers-go - Connected to docker: 
+  Server Version: 29.1.3
+  API Version: 1.46
+  Operating System: Linux Mint 22.1
+  Total Memory: 19741 MB
+  Testcontainers for Go Version: v0.35.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: ff017a2c874778faae90bb634a005542231f1c70f3e25cff95369b366ec00496
+  Test ProcessID: 687edc3b-6218-460f-80f5-4b9a16676f76
+2026/04/10 18:11:45 🐳 Creating container for image postgres:16-alpine
+2026/04/10 18:11:45 🐳 Creating container for image testcontainers/ryuk:0.11.0
+2026/04/10 18:11:45 ✅ Container created: 3a693b060016
+2026/04/10 18:11:45 🐳 Starting container: 3a693b060016
+2026/04/10 18:11:45 ✅ Container started: 3a693b060016
+2026/04/10 18:11:45 ⏳ Waiting for container id 3a693b060016 image: testcontainers/ryuk:0.11.0. Waiting for: &{Port:8080/tcp timeout:<nil> PollInterval:100ms skipInternalCheck:false}
+2026/04/10 18:11:45 🔔 Container is ready: 3a693b060016
+2026/04/10 18:11:45 ✅ Container created: 6acd19393936
+2026/04/10 18:11:45 🐳 Starting container: 6acd19393936
+2026/04/10 18:11:45 ✅ Container started: 6acd19393936
+2026/04/10 18:11:45 ⏳ Waiting for container id 6acd19393936 image: postgres:16-alpine. Waiting for: &{timeout:<nil> deadline:0xc0001369c0 Strategies:[0xc000131560]}
+2026/04/10 18:11:48 🔔 Container is ready: 6acd19393936
+2026/04/10 18:11:48 🐳 Creating container for image redis:7-alpine
+2026/04/10 18:11:48 ✅ Container created: 9ff6d7fdbbed
+2026/04/10 18:11:48 🐳 Starting container: 9ff6d7fdbbed
+2026/04/10 18:11:49 ✅ Container started: 9ff6d7fdbbed
+2026/04/10 18:11:49 ⏳ Waiting for container id 9ff6d7fdbbed image: redis:7-alpine. Waiting for: &{timeout:<nil> Log:* Ready to accept connections IsRegexp:false Occurrence:1 PollInterval:100ms check:<nil> submatchCallback:<nil> re:<nil> log:[]}
+2026/04/10 18:11:49 🔔 Container is ready: 9ff6d7fdbbed
+2026/04/10 18:11:49 OK   20240205133621_add_pgcrypto_and_uuid_columns.sql (13.1ms)
+2026/04/10 18:11:49 OK   20240205133622_create_users.sql (16.73ms)
+2026/04/10 18:11:49 OK   20240205133624_create_reset_token.sql (15.53ms)
+2026/04/10 18:11:49 OK   20241212095411_create_cards_table.sql (14.23ms)
+2026/04/10 18:11:49 OK   20241212095457_create_merchants_table.sql (15.89ms)
+2026/04/10 18:11:49 OK   20241212095458_create_merchant_documents_table.sql (12.94ms)
+2026/04/10 18:11:49 OK   20241212095522_create_saldos_table.sql (12.58ms)
+2026/04/10 18:11:49 OK   20241212095555_create_transactions_table.sql (14.96ms)
+2026/04/10 18:11:49 OK   20241212095620_create_transfers_table.sql (14.04ms)
+2026/04/10 18:11:49 OK   20241212095650_create_topups_table.sql (14.17ms)
+2026/04/10 18:11:49 OK   20241212095720_create_withdraws_table.sql (13.62ms)
+2026/04/10 18:11:49 OK   20241231190107_create_role.sql (9.54ms)
+2026/04/10 18:11:49 OK   20241231190118_create_user_role.sql (13.2ms)
+2026/04/10 18:11:49 OK   20241231194859_create_refreshtoken.sql (10.9ms)
+2026/04/10 18:11:49 goose: successfully migrated database to version: 20241231194859
+=== RUN   TestAuthHandlerApiSuite/Test1_Register
+{"level":"info","ts":"2026-04-10T18:11:49.471+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: register"}
+{"level":"info","ts":"2026-04-10T18:11:49.474+0700","caller":"handler/auth.go:166","msg":"RegisterUser called","email":"auth.handler.api.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:49.474+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:11:49.631+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:auth.handler.api.test@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:11:49.631+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"auth.handler.api.test@example.com","first_name":"Auth","last_name":"API"}
+{"level":"info","ts":"2026-04-10T18:11:49.631+0700","caller":"handler/auth.go:182","msg":"RegisterUser successful","success":true}
+{"level":"info","ts":"2026-04-10T18:11:49.632+0700","caller":"observability/tracing_metrics.go:122","msg":"Request completed successfully"}
+=== RUN   TestAuthHandlerApiSuite/Test2_Login
+{"level":"info","ts":"2026-04-10T18:11:49.632+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:49.633+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"auth.handler.api.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:49.633+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"debug","ts":"2026-04-10T18:11:49.774+0700","caller":"service/tokenService.go:219","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2026-04-10T18:11:49.775+0700","caller":"service/tokenService.go:235","msg":"Created access token","userID":1}
+{"level":"debug","ts":"2026-04-10T18:11:49.775+0700","caller":"service/tokenService.go:219","msg":"Start: createRefreshToken"}
+{"level":"debug","ts":"2026-04-10T18:11:49.781+0700","caller":"service/tokenService.go:235","msg":"Created refresh token","userID":1}
+{"level":"info","ts":"2026-04-10T18:11:49.781+0700","caller":"observability/tracing_metrics.go:122","msg":"Successfully logged in","email":"auth.handler.api.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:49.781+0700","caller":"handler/auth.go:107","msg":"LoginUser successful","success":true}
+{"level":"debug","ts":"2026-04-10T18:11:49.782+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"auth:login:auth.handler.api.test@example.com","expiration":"5m0s"}
+{"level":"info","ts":"2026-04-10T18:11:49.782+0700","caller":"observability/tracing_metrics.go:122","msg":"Request completed successfully"}
+=== RUN   TestAuthHandlerApiSuite/Test3_GetMe
+{"level":"info","ts":"2026-04-10T18:11:49.782+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: GetMe"}
+{"level":"info","ts":"2026-04-10T18:11:49.783+0700","caller":"handler/auth.go:141","msg":"GetMe called"}
+{"level":"info","ts":"2026-04-10T18:11:49.783+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: GetMe"}
+{"level":"debug","ts":"2026-04-10T18:11:49.783+0700","caller":"service/identifiyService.go:179","msg":"Fetching user details","user.id":1}
+{"level":"debug","ts":"2026-04-10T18:11:49.784+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"identity:user_info:%!s(int32=1)","expiration":"5m0s"}
+{"level":"info","ts":"2026-04-10T18:11:49.784+0700","caller":"observability/tracing_metrics.go:122","msg":"User details fetched successfully","user.id":1}
+{"level":"info","ts":"2026-04-10T18:11:49.784+0700","caller":"handler/auth.go:149","msg":"GetMe successful","success":true}
+{"level":"debug","ts":"2026-04-10T18:11:49.785+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"auth:user_info:1","expiration":"5m0s"}
+{"level":"info","ts":"2026-04-10T18:11:49.785+0700","caller":"observability/tracing_metrics.go:122","msg":"Request completed successfully"}
+=== RUN   TestAuthHandlerApiSuite/Test4_LoginLockout
+{"level":"info","ts":"2026-04-10T18:11:49.785+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: register"}
+{"level":"info","ts":"2026-04-10T18:11:49.786+0700","caller":"handler/auth.go:166","msg":"RegisterUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:49.786+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:11:49.924+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:locked.api@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:11:49.924+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"locked.api@example.com","first_name":"Locked","last_name":"API"}
+{"level":"info","ts":"2026-04-10T18:11:49.924+0700","caller":"handler/auth.go:182","msg":"RegisterUser successful","success":true}
+{"level":"info","ts":"2026-04-10T18:11:49.925+0700","caller":"observability/tracing_metrics.go:122","msg":"Request completed successfully"}
+{"level":"info","ts":"2026-04-10T18:11:49.925+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:49.925+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:49.925+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.062+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.062+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.063+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = Unauthenticated desc = Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.063+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Unauthorized: rpc error: code = Unauthenticated desc = Failed password not match","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+{"level":"info","ts":"2026-04-10T18:11:50.063+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:50.064+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:50.064+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.200+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.200+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.200+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = Unauthenticated desc = Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.200+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Unauthorized: rpc error: code = Unauthenticated desc = Failed password not match","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+{"level":"info","ts":"2026-04-10T18:11:50.200+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:50.201+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:50.201+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.337+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.337+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.337+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = Unauthenticated desc = Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.337+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Unauthorized: rpc error: code = Unauthenticated desc = Failed password not match","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+{"level":"info","ts":"2026-04-10T18:11:50.338+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:50.338+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:50.338+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.475+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.475+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.475+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = Unauthenticated desc = Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.475+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Unauthorized: rpc error: code = Unauthenticated desc = Failed password not match","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+{"level":"info","ts":"2026-04-10T18:11:50.475+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:50.476+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:50.476+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.613+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.613+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.613+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = Unauthenticated desc = Failed password not match"}
+{"level":"error","ts":"2026-04-10T18:11:50.613+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Unauthorized: rpc error: code = Unauthenticated desc = Failed password not match","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+{"level":"info","ts":"2026-04-10T18:11:50.613+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: login"}
+{"level":"info","ts":"2026-04-10T18:11:50.614+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.api@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:50.614+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:50.614+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Account temporarily locked due to many failed attempts","trace_id":"00000000000000000000000000000000","status_code":403,"email":"locked.api@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:50.614+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Account temporarily locked due to many failed attempts"}
+{"level":"error","ts":"2026-04-10T18:11:50.614+0700","caller":"auth/auth.go:154","msg":"Login failed","error":"rpc error: code = PermissionDenied desc = Account temporarily locked due to many failed attempts"}
+{"level":"error","ts":"2026-04-10T18:11:50.614+0700","caller":"errors/api_error.go:67","msg":"API error in login","error":"Forbidden: rpc error: code = PermissionDenied desc = Account temporarily locked due to many failed attempts","trace.id":"00000000000000000000000000000000","path":"/api/auth/login","method":"POST"}
+2026/04/10 18:11:50 🐳 Stopping container: 6acd19393936
+2026/04/10 18:11:50 ✅ Container stopped: 6acd19393936
+2026/04/10 18:11:50 🐳 Terminating container: 6acd19393936
+2026/04/10 18:11:50 🚫 Container terminated: 6acd19393936
+2026/04/10 18:11:50 🐳 Stopping container: 9ff6d7fdbbed
+2026/04/10 18:11:51 ✅ Container stopped: 9ff6d7fdbbed
+2026/04/10 18:11:51 🐳 Terminating container: 9ff6d7fdbbed
+2026/04/10 18:11:51 🚫 Container terminated: 9ff6d7fdbbed
+--- PASS: TestAuthHandlerApiSuite (5.95s)
+    --- PASS: TestAuthHandlerApiSuite/Test1_Register (0.16s)
+    --- PASS: TestAuthHandlerApiSuite/Test2_Login (0.15s)
+    --- PASS: TestAuthHandlerApiSuite/Test3_GetMe (0.00s)
+    --- PASS: TestAuthHandlerApiSuite/Test4_LoginLockout (0.83s)
+=== RUN   TestAuthHandlerGapiSuite
+2026/04/10 18:11:51 🐳 Creating container for image postgres:16-alpine
+2026/04/10 18:11:51 ✅ Container created: 58fa71660f4d
+2026/04/10 18:11:51 🐳 Starting container: 58fa71660f4d
+2026/04/10 18:11:51 ✅ Container started: 58fa71660f4d
+2026/04/10 18:11:51 ⏳ Waiting for container id 58fa71660f4d image: postgres:16-alpine. Waiting for: &{timeout:<nil> deadline:0xc000295670 Strategies:[0xc000631bc0]}
+2026/04/10 18:11:54 🔔 Container is ready: 58fa71660f4d
+2026/04/10 18:11:54 🐳 Creating container for image redis:7-alpine
+2026/04/10 18:11:54 ✅ Container created: f62b7c530627
+2026/04/10 18:11:54 🐳 Starting container: f62b7c530627
+2026/04/10 18:11:54 ✅ Container started: f62b7c530627
+2026/04/10 18:11:54 ⏳ Waiting for container id f62b7c530627 image: redis:7-alpine. Waiting for: &{timeout:<nil> Log:* Ready to accept connections IsRegexp:false Occurrence:1 PollInterval:100ms check:<nil> submatchCallback:<nil> re:<nil> log:[]}
+2026/04/10 18:11:54 🔔 Container is ready: f62b7c530627
+2026/04/10 18:11:54 OK   20240205133621_add_pgcrypto_and_uuid_columns.sql (13.35ms)
+2026/04/10 18:11:54 OK   20240205133622_create_users.sql (17.46ms)
+2026/04/10 18:11:54 OK   20240205133624_create_reset_token.sql (15.8ms)
+2026/04/10 18:11:54 OK   20241212095411_create_cards_table.sql (16.38ms)
+2026/04/10 18:11:54 OK   20241212095457_create_merchants_table.sql (16.61ms)
+2026/04/10 18:11:54 OK   20241212095458_create_merchant_documents_table.sql (14.28ms)
+2026/04/10 18:11:54 OK   20241212095522_create_saldos_table.sql (13.19ms)
+2026/04/10 18:11:54 OK   20241212095555_create_transactions_table.sql (14.66ms)
+2026/04/10 18:11:54 OK   20241212095620_create_transfers_table.sql (13.32ms)
+2026/04/10 18:11:54 OK   20241212095650_create_topups_table.sql (16.63ms)
+2026/04/10 18:11:54 OK   20241212095720_create_withdraws_table.sql (11.72ms)
+2026/04/10 18:11:54 OK   20241231190107_create_role.sql (9.11ms)
+2026/04/10 18:11:54 OK   20241231190118_create_user_role.sql (13.37ms)
+2026/04/10 18:11:54 OK   20241231194859_create_refreshtoken.sql (10.89ms)
+2026/04/10 18:11:54 goose: successfully migrated database to version: 20241231194859
+=== RUN   TestAuthHandlerGapiSuite/Test1_Register
+{"level":"info","ts":"2026-04-10T18:11:54.964+0700","caller":"handler/auth.go:166","msg":"RegisterUser called","email":"auth.handler.gapi.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:54.964+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:11:55.119+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:auth.handler.gapi.test@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:11:55.119+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"auth.handler.gapi.test@example.com","first_name":"Auth","last_name":"Handler"}
+{"level":"info","ts":"2026-04-10T18:11:55.119+0700","caller":"handler/auth.go:182","msg":"RegisterUser successful","success":true}
+=== RUN   TestAuthHandlerGapiSuite/Test2_Login
+{"level":"info","ts":"2026-04-10T18:11:55.120+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"auth.handler.gapi.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.120+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"debug","ts":"2026-04-10T18:11:55.258+0700","caller":"service/tokenService.go:219","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2026-04-10T18:11:55.258+0700","caller":"service/tokenService.go:235","msg":"Created access token","userID":1}
+{"level":"debug","ts":"2026-04-10T18:11:55.258+0700","caller":"service/tokenService.go:219","msg":"Start: createRefreshToken"}
+{"level":"debug","ts":"2026-04-10T18:11:55.262+0700","caller":"service/tokenService.go:235","msg":"Created refresh token","userID":1}
+{"level":"info","ts":"2026-04-10T18:11:55.263+0700","caller":"observability/tracing_metrics.go:122","msg":"Successfully logged in","email":"auth.handler.gapi.test@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.263+0700","caller":"handler/auth.go:107","msg":"LoginUser successful","success":true}
+=== RUN   TestAuthHandlerGapiSuite/Test3_GetMe
+{"level":"info","ts":"2026-04-10T18:11:55.264+0700","caller":"handler/auth.go:141","msg":"GetMe called"}
+{"level":"info","ts":"2026-04-10T18:11:55.264+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: GetMe"}
+{"level":"debug","ts":"2026-04-10T18:11:55.264+0700","caller":"service/identifiyService.go:179","msg":"Fetching user details","user.id":1}
+{"level":"debug","ts":"2026-04-10T18:11:55.265+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"identity:user_info:%!s(int32=1)","expiration":"5m0s"}
+{"level":"info","ts":"2026-04-10T18:11:55.265+0700","caller":"observability/tracing_metrics.go:122","msg":"User details fetched successfully","user.id":1}
+{"level":"info","ts":"2026-04-10T18:11:55.265+0700","caller":"handler/auth.go:149","msg":"GetMe successful","success":true}
+=== RUN   TestAuthHandlerGapiSuite/Test4_LoginLockout
+{"level":"info","ts":"2026-04-10T18:11:55.266+0700","caller":"handler/auth.go:166","msg":"RegisterUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.266+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:11:55.404+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:locked.gapi@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:11:55.404+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"locked.gapi@example.com","first_name":"Locked","last_name":"Gapi"}
+{"level":"info","ts":"2026-04-10T18:11:55.405+0700","caller":"handler/auth.go:182","msg":"RegisterUser successful","success":true}
+{"level":"info","ts":"2026-04-10T18:11:55.405+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.405+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:55.543+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:55.544+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"info","ts":"2026-04-10T18:11:55.544+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.544+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:55.685+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:55.685+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"info","ts":"2026-04-10T18:11:55.686+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.686+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:55.823+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:55.823+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"info","ts":"2026-04-10T18:11:55.823+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.823+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:55.961+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:55.961+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"info","ts":"2026-04-10T18:11:55.962+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:55.962+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:56.101+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:56.101+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Failed password not match"}
+{"level":"info","ts":"2026-04-10T18:11:56.101+0700","caller":"handler/auth.go:94","msg":"LoginUser called","email":"locked.gapi@example.com"}
+{"level":"info","ts":"2026-04-10T18:11:56.101+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:11:56.102+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Account temporarily locked due to many failed attempts","trace_id":"00000000000000000000000000000000","status_code":403,"email":"locked.gapi@example.com"}
+{"level":"error","ts":"2026-04-10T18:11:56.102+0700","caller":"handler/auth.go:103","msg":"LoginUser failed","error":"Account temporarily locked due to many failed attempts"}
+2026/04/10 18:11:56 🐳 Stopping container: 58fa71660f4d
+2026/04/10 18:11:56 ✅ Container stopped: 58fa71660f4d
+2026/04/10 18:11:56 🐳 Terminating container: 58fa71660f4d
+2026/04/10 18:11:56 🚫 Container terminated: 58fa71660f4d
+2026/04/10 18:11:56 🐳 Stopping container: f62b7c530627
+2026/04/10 18:11:56 ✅ Container stopped: f62b7c530627
+2026/04/10 18:11:56 🐳 Terminating container: f62b7c530627
+2026/04/10 18:11:56 🚫 Container terminated: f62b7c530627
+--- PASS: TestAuthHandlerGapiSuite (5.46s)
+    --- PASS: TestAuthHandlerGapiSuite/Test1_Register (0.16s)
+    --- PASS: TestAuthHandlerGapiSuite/Test2_Login (0.14s)
+    --- PASS: TestAuthHandlerGapiSuite/Test3_GetMe (0.00s)
+    --- PASS: TestAuthHandlerGapiSuite/Test4_LoginLockout (0.84s)
+=== RUN   TestAuthRepositorySuite
+2026/04/10 18:11:56 🐳 Creating container for image postgres:16-alpine
+2026/04/10 18:11:56 ✅ Container created: 0e76acc989d6
+2026/04/10 18:11:56 🐳 Starting container: 0e76acc989d6
+2026/04/10 18:11:56 ✅ Container started: 0e76acc989d6
+2026/04/10 18:11:56 ⏳ Waiting for container id 0e76acc989d6 image: postgres:16-alpine. Waiting for: &{timeout:<nil> deadline:0xc0006593f0 Strategies:[0xc0008bba40]}
+2026/04/10 18:11:59 🔔 Container is ready: 0e76acc989d6
+2026/04/10 18:11:59 🐳 Creating container for image redis:7-alpine
+2026/04/10 18:11:59 ✅ Container created: 32b05fe70eb6
+2026/04/10 18:11:59 🐳 Starting container: 32b05fe70eb6
+2026/04/10 18:11:59 ✅ Container started: 32b05fe70eb6
+2026/04/10 18:11:59 ⏳ Waiting for container id 32b05fe70eb6 image: redis:7-alpine. Waiting for: &{timeout:<nil> Log:* Ready to accept connections IsRegexp:false Occurrence:1 PollInterval:100ms check:<nil> submatchCallback:<nil> re:<nil> log:[]}
+2026/04/10 18:12:00 🔔 Container is ready: 32b05fe70eb6
+2026/04/10 18:12:00 OK   20240205133621_add_pgcrypto_and_uuid_columns.sql (13.54ms)
+2026/04/10 18:12:00 OK   20240205133622_create_users.sql (16.61ms)
+2026/04/10 18:12:00 OK   20240205133624_create_reset_token.sql (14.7ms)
+2026/04/10 18:12:00 OK   20241212095411_create_cards_table.sql (13.89ms)
+2026/04/10 18:12:00 OK   20241212095457_create_merchants_table.sql (18.01ms)
+2026/04/10 18:12:00 OK   20241212095458_create_merchant_documents_table.sql (13.76ms)
+2026/04/10 18:12:00 OK   20241212095522_create_saldos_table.sql (12.21ms)
+2026/04/10 18:12:00 OK   20241212095555_create_transactions_table.sql (13.94ms)
+2026/04/10 18:12:00 OK   20241212095620_create_transfers_table.sql (13.91ms)
+2026/04/10 18:12:00 OK   20241212095650_create_topups_table.sql (14.21ms)
+2026/04/10 18:12:00 OK   20241212095720_create_withdraws_table.sql (11.4ms)
+2026/04/10 18:12:00 OK   20241231190107_create_role.sql (9.2ms)
+2026/04/10 18:12:00 OK   20241231190118_create_user_role.sql (13.62ms)
+2026/04/10 18:12:00 OK   20241231194859_create_refreshtoken.sql (10.94ms)
+2026/04/10 18:12:00 goose: successfully migrated database to version: 20241231194859
+=== RUN   TestAuthRepositorySuite/Test1_CreateUser
+=== RUN   TestAuthRepositorySuite/Test2_FindByEmail
+=== RUN   TestAuthRepositorySuite/Test3_UpdateVerification
+=== RUN   TestAuthRepositorySuite/Test4_RefreshToken
+=== RUN   TestAuthRepositorySuite/Test5_ResetToken
+2026/04/10 18:12:00 🐳 Stopping container: 0e76acc989d6
+2026/04/10 18:12:00 ✅ Container stopped: 0e76acc989d6
+2026/04/10 18:12:00 🐳 Terminating container: 0e76acc989d6
+2026/04/10 18:12:00 🚫 Container terminated: 0e76acc989d6
+2026/04/10 18:12:00 🐳 Stopping container: 32b05fe70eb6
+2026/04/10 18:12:00 ✅ Container stopped: 32b05fe70eb6
+2026/04/10 18:12:00 🐳 Terminating container: 32b05fe70eb6
+2026/04/10 18:12:00 🚫 Container terminated: 32b05fe70eb6
+--- PASS: TestAuthRepositorySuite (4.22s)
+    --- PASS: TestAuthRepositorySuite/Test1_CreateUser (0.02s)
+    --- PASS: TestAuthRepositorySuite/Test2_FindByEmail (0.01s)
+    --- PASS: TestAuthRepositorySuite/Test3_UpdateVerification (0.00s)
+    --- PASS: TestAuthRepositorySuite/Test4_RefreshToken (0.00s)
+    --- PASS: TestAuthRepositorySuite/Test5_ResetToken (0.00s)
+=== RUN   TestAuthServiceSuite
+2026/04/10 18:12:00 🐳 Creating container for image postgres:16-alpine
+2026/04/10 18:12:00 ✅ Container created: 80c9d646c8a4
+2026/04/10 18:12:00 🐳 Starting container: 80c9d646c8a4
+2026/04/10 18:12:01 ✅ Container started: 80c9d646c8a4
+2026/04/10 18:12:01 ⏳ Waiting for container id 80c9d646c8a4 image: postgres:16-alpine. Waiting for: &{timeout:<nil> deadline:0xc0007523a0 Strategies:[0xc0007cec00]}
+2026/04/10 18:12:03 🔔 Container is ready: 80c9d646c8a4
+2026/04/10 18:12:03 🐳 Creating container for image redis:7-alpine
+2026/04/10 18:12:04 ✅ Container created: 68abe59de3ef
+2026/04/10 18:12:04 🐳 Starting container: 68abe59de3ef
+2026/04/10 18:12:04 ✅ Container started: 68abe59de3ef
+2026/04/10 18:12:04 ⏳ Waiting for container id 68abe59de3ef image: redis:7-alpine. Waiting for: &{timeout:<nil> Log:* Ready to accept connections IsRegexp:false Occurrence:1 PollInterval:100ms check:<nil> submatchCallback:<nil> re:<nil> log:[]}
+2026/04/10 18:12:04 🔔 Container is ready: 68abe59de3ef
+2026/04/10 18:12:04 OK   20240205133621_add_pgcrypto_and_uuid_columns.sql (15.1ms)
+2026/04/10 18:12:04 OK   20240205133622_create_users.sql (17.31ms)
+2026/04/10 18:12:04 OK   20240205133624_create_reset_token.sql (15.08ms)
+2026/04/10 18:12:04 OK   20241212095411_create_cards_table.sql (14.53ms)
+2026/04/10 18:12:04 OK   20241212095457_create_merchants_table.sql (16.48ms)
+2026/04/10 18:12:04 OK   20241212095458_create_merchant_documents_table.sql (13.8ms)
+2026/04/10 18:12:04 OK   20241212095522_create_saldos_table.sql (12.35ms)
+2026/04/10 18:12:04 OK   20241212095555_create_transactions_table.sql (14.82ms)
+2026/04/10 18:12:04 OK   20241212095620_create_transfers_table.sql (13.76ms)
+2026/04/10 18:12:04 OK   20241212095650_create_topups_table.sql (14.13ms)
+2026/04/10 18:12:04 OK   20241212095720_create_withdraws_table.sql (12.18ms)
+2026/04/10 18:12:04 OK   20241231190107_create_role.sql (10.19ms)
+2026/04/10 18:12:04 OK   20241231190118_create_user_role.sql (20.81ms)
+2026/04/10 18:12:04 OK   20241231194859_create_refreshtoken.sql (12.98ms)
+2026/04/10 18:12:04 goose: successfully migrated database to version: 20241231194859
+=== RUN   TestAuthServiceSuite/Test1_Register
+{"level":"info","ts":"2026-04-10T18:12:04.786+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:12:04.938+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:auth.service.test@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:12:04.938+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"auth.service.test@example.com","first_name":"Auth","last_name":"Service"}
+=== RUN   TestAuthServiceSuite/Test2_Login
+{"level":"info","ts":"2026-04-10T18:12:04.938+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"debug","ts":"2026-04-10T18:12:05.075+0700","caller":"service/tokenService.go:219","msg":"Start: createAccessToken"}
+{"level":"debug","ts":"2026-04-10T18:12:05.075+0700","caller":"service/tokenService.go:235","msg":"Created access token","userID":1}
+{"level":"debug","ts":"2026-04-10T18:12:05.075+0700","caller":"service/tokenService.go:219","msg":"Start: createRefreshToken"}
+{"level":"debug","ts":"2026-04-10T18:12:05.079+0700","caller":"service/tokenService.go:235","msg":"Created refresh token","userID":1}
+{"level":"info","ts":"2026-04-10T18:12:05.080+0700","caller":"observability/tracing_metrics.go:122","msg":"Successfully logged in","email":"auth.service.test@example.com"}
+=== RUN   TestAuthServiceSuite/Test3_ForgotPassword
+{"level":"info","ts":"2026-04-10T18:12:05.080+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: ForgotPassword"}
+{"level":"debug","ts":"2026-04-10T18:12:05.084+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"password_reset:token:%!s(int=1)","expiration":"5m0s"}
+{"level":"info","ts":"2026-04-10T18:12:05.084+0700","caller":"observability/tracing_metrics.go:122","msg":"Successfully sent password reset email","email":"auth.service.test@example.com"}
+=== RUN   TestAuthServiceSuite/Test4_LoginLockout
+{"level":"info","ts":"2026-04-10T18:12:05.084+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Register"}
+{"level":"debug","ts":"2026-04-10T18:12:05.224+0700","caller":"cache/redis_cache.go:98","msg":"Successfully cached data","cacheKey":"register:verify_code:locked.user@example.com","expiration":"15m0s"}
+{"level":"info","ts":"2026-04-10T18:12:05.224+0700","caller":"observability/tracing_metrics.go:122","msg":"User registered successfully","email":"locked.user@example.com","first_name":"Locked","last_name":"User"}
+{"level":"info","ts":"2026-04-10T18:12:05.224+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.362+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.user@example.com"}
+{"level":"info","ts":"2026-04-10T18:12:05.362+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.498+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.user@example.com"}
+{"level":"info","ts":"2026-04-10T18:12:05.499+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.636+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.user@example.com"}
+{"level":"info","ts":"2026-04-10T18:12:05.636+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.774+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.user@example.com"}
+{"level":"info","ts":"2026-04-10T18:12:05.774+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.912+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Failed password not match","trace_id":"00000000000000000000000000000000","status_code":401,"email":"locked.user@example.com"}
+{"level":"info","ts":"2026-04-10T18:12:05.912+0700","caller":"observability/tracing_metrics.go:105","msg":"Start: Login"}
+{"level":"error","ts":"2026-04-10T18:12:05.912+0700","caller":"errorhandler/errorhandler.go:39","msg":"request failed","method":"Login","error":"Account temporarily locked due to many failed attempts","trace_id":"00000000000000000000000000000000","status_code":403,"email":"locked.user@example.com"}
+2026/04/10 18:12:05 🐳 Stopping container: 80c9d646c8a4
+2026/04/10 18:12:06 ✅ Container stopped: 80c9d646c8a4
+2026/04/10 18:12:06 🐳 Terminating container: 80c9d646c8a4
+2026/04/10 18:12:06 🚫 Container terminated: 80c9d646c8a4
+2026/04/10 18:12:06 🐳 Stopping container: 68abe59de3ef
+2026/04/10 18:12:06 ✅ Container stopped: 68abe59de3ef
+2026/04/10 18:12:06 🐳 Terminating container: 68abe59de3ef
+2026/04/10 18:12:06 🚫 Container terminated: 68abe59de3ef
+--- PASS: TestAuthServiceSuite (5.86s)
+    --- PASS: TestAuthServiceSuite/Test1_Register (0.15s)
+    --- PASS: TestAuthServiceSuite/Test2_Login (0.14s)
+    --- PASS: TestAuthServiceSuite/Test3_ForgotPassword (0.00s)
+    --- PASS: TestAuthServiceSuite/Test4_LoginLockout (0.83s)
+PASS
+ok  	github.com/MamangRust/monolith-payment-gateway-test/auth	21.565s

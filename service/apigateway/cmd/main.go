@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MamangRust/monolith-payment-gateway-apigateway/internal/app"
+	"github.com/MamangRust/monolith-payment-gateway-apigateway/app"
 	"go.uber.org/zap"
 )
 
