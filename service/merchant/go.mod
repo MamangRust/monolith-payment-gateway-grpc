@@ -7,6 +7,7 @@ require (
 	github.com/MamangRust/monolith-payment-gateway-pb v1.0.10
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.24
+	github.com/spf13/viper v1.21.0
 	go.opentelemetry.io/otel v1.40.0
 	go.uber.org/zap v1.27.1
 	google.golang.org/grpc v1.78.0
@@ -58,7 +59,6 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -86,5 +86,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
 )
-
-replace github.com/MamangRust/monolith-payment-gateway-pkg => ../../pkg
