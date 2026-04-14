@@ -1,12 +1,18 @@
 package apps
 
 import (
+	"context"
+
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	pbstats "github.com/MamangRust/monolith-payment-gateway-pb/saldo/stats"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/kafka"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/server"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/handler"
+	saldokafka "github.com/MamangRust/monolith-payment-gateway-saldo/kafka"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/repository"
 	"github.com/MamangRust/monolith-payment-gateway-saldo/service"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/server"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -17,11 +23,21 @@ func NewServer(cfg *server.Config) (*server.GRPCServer, error) {
 	}
 
 	repos := repository.NewRepositories(srv.DB)
+
+	mykafka := kafka.NewKafka(srv.Logger, []string{viper.GetString("KAFKA_BROKERS")})
+
 	svc := service.NewService(&service.Deps{
 		Cache:        srv.CacheStore,
 		Logger:       srv.Logger,
 		Repositories: repos,
 	})
+
+	kafkaHandler := saldokafka.NewSaldoKafkaHandler(svc, srv.Logger, context.Background())
+	err = mykafka.StartConsumers([]string{"saldo-service-topic-create-saldo"}, "saldo-service-group", kafkaHandler)
+	if err != nil {
+		srv.Logger.Error("Failed to start kafka consumers", zap.Error(err))
+	}
+
 	h := handler.NewHandler(svc)
 
 	srv.RegisterServices = func(gs *grpc.Server) {

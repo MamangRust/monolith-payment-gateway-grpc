@@ -36,9 +36,10 @@ func NewService(deps *Deps) *Service {
 	cache := mencache.NewMencache(deps.Cache)
 
 	tokenService := NewTokenService(&tokenServiceDeps{
-		Token:        deps.Token,
-		RefreshToken: deps.Repositories.RefreshToken,
-		Logger:       deps.Logger,
+		Token:         deps.Token,
+		RefreshToken:  deps.Repositories.RefreshToken,
+		Logger:        deps.Logger,
+		Observability: observability,
 	})
 
 	return &Service{

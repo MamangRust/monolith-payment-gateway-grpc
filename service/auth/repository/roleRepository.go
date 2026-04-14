@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/repository"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 )
 
 // roleRepository is a struct that implements the RoleRepository interface

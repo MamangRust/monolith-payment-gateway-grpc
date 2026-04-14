@@ -106,21 +106,34 @@ kube-status:
 kube-tunnel:
     minikube tunnel
 
-# Run auth service tests
+# Run unit tests in pkg/
+test-unit:
+    @echo "🧪 Running unit tests in pkg/..."
+    @cd pkg && go test ./... -v
+
+# Run integration tests in tests/
+test-integration:
+    @echo "🧪 Running integration tests in tests/..."
+    @cd tests && APP_ENV=development go test ./... -v
+
+# Run all tests (unit and integration)
+test-all: test-unit test-integration
+
+# Run auth service integration tests
 test-auth:
-    @APP_ENV=development go test service/auth/tests/... -v
+    @echo "🧪 Running auth integration tests..."
+    @cd tests && APP_ENV=development go test ./auth/... -v
 
 # Build all Go service binaries (from api-gateway to withdraw)
-build-all:
-    @echo "🚀 Building all service binaries..."
+build:
     @mkdir -p bin
-    @for service in {{SERVICES}}; do \
-        if [ -d "service/$service" ]; then \
-            echo "📦 Building $service..."; \
-            (cd service/$service && go build -o ../../bin/$service $([ -f cmd/main.go ] && echo "cmd/main.go" || echo "main.go")) || exit 1; \
-        fi \
+    @for mod in service/*/go.mod; do \
+        dir=$(dirname $mod); \
+        service=$(basename $dir); \
+        echo "🔨 Building $service..."; \
+        (cd $dir && go build -o ../../bin/$service ./cmd/main.go) || exit 1; \
     done
-    @echo "✅ All binaries built in bin/ directory."
+    @echo "✅ All services built successfully in bin/ folder."
 
 # Run go mod tidy for all services
 tidy-all:

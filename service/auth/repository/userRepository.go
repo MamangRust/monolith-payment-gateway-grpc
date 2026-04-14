@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
+	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
 )
 
 // userRepository is a struct that represents a user repository
