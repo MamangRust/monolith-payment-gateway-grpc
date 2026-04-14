@@ -1,5 +1,11 @@
 github.com/IBM/sarama v1.46.3 h1:njRsX6jNlnR+ClJ8XmkO+CM4unbrNr/2vB5KK6UA+IE=
 github.com/IBM/sarama v1.46.3/go.mod h1:GTUYiF9DMOZVe3FwyGT+dtSPceGFIgA+sPc5u6CBwko=
+github.com/MamangRust/monolith-payment-gateway-pb v1.0.10 h1:N16RhpwBJ2Kun/EEsUgcMmN0jypO0srBBgMIdvD84cU=
+github.com/MamangRust/monolith-payment-gateway-pb v1.0.10/go.mod h1:e3HtpLpr880TnZkkB6+/wC4ny5J9R0hprWxdSPnS9DE=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28 h1:s45SzYQOFGPnqMfmPwbStFwZYwEg500T+2fh5qpVbP4=
+github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28/go.mod h1:LUzh1HqtwysmcCq8htFaSrydcTGNqmHZrGTPPO+fiN4=
+github.com/MamangRust/monolith-payment-gateway-shared v1.0.29 h1:zIU6Yd99G5lI0eCSgdC4wPJPjkbJqNDsVm0RozqV/eU=
+github.com/MamangRust/monolith-payment-gateway-shared v1.0.29/go.mod h1:5MDs++6GP8FGMDDthzfsNeMMaHzS2Ne41d5THtWS3UY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=
