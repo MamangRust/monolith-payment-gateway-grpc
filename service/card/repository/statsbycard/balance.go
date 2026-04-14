@@ -28,7 +28,7 @@ func (r *cardStatsBalanceByCardRepository) GetMonthlyBalancesByCardNumber(ctx co
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyBalanceByCardFailed
+		return nil, card_errors.ErrGetMonthlyBalanceByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -41,7 +41,7 @@ func (r *cardStatsBalanceByCardRepository) GetYearlyBalanceByCardNumber(ctx cont
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyBalanceByCardFailed
+		return nil, card_errors.ErrGetYearlyBalanceByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

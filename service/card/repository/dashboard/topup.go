@@ -21,7 +21,7 @@ func (r *cardDashboardTopupRepository) GetTotalTopAmount(ctx context.Context) (*
 	res, err := r.db.GetTotalTopupAmount(ctx)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTopAmountFailed
+		return nil, card_errors.ErrGetTotalTopupsFailed.WithInternal(err)
 	}
 
 	return &res, nil
@@ -31,7 +31,7 @@ func (r *cardDashboardTopupRepository) GetTotalTopupAmountByCardNumber(ctx conte
 	res, err := r.db.GetTotalTopupAmountByCardNumber(ctx, cardNumber)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTopupAmountByCardFailed
+		return nil, card_errors.ErrGetTotalTopupAmountByCardFailed.WithInternal(err)
 	}
 
 	return &res, nil

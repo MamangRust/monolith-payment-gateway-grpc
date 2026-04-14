@@ -11,8 +11,6 @@ import (
 	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type merchantQueryHandleApi struct {
@@ -107,7 +105,7 @@ func (h *merchantQueryHandleApi) FindAll(c echo.Context) error {
 
 	res, err := h.client.FindAllMerchant(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAllMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesMerchant(res)
@@ -148,7 +146,7 @@ func (h *merchantQueryHandleApi) FindById(c echo.Context) error {
 
 	res, err := h.client.FindByIdMerchant(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByIdMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchant(res)
@@ -188,7 +186,7 @@ func (h *merchantQueryHandleApi) FindByApiKey(c echo.Context) error {
 
 	res, err := h.client.FindByApiKey(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByApiKey")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchant(res)
@@ -229,7 +227,7 @@ func (h *merchantQueryHandleApi) FindByMerchantUserId(c echo.Context) error {
 
 	res, err := h.client.FindByMerchantUserId(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByMerchantUserId")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchants(res)
@@ -285,7 +283,7 @@ func (h *merchantQueryHandleApi) FindByActive(c echo.Context) error {
 
 	res, err := h.client.FindByActive(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByActive")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesMerchantDeleteAt(res)
@@ -341,7 +339,7 @@ func (h *merchantQueryHandleApi) FindByTrashed(c echo.Context) error {
 
 	res, err := h.client.FindByTrashed(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByTrashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesMerchantDeleteAt(res)
@@ -349,40 +347,4 @@ func (h *merchantQueryHandleApi) FindByTrashed(c echo.Context) error {
 	h.cache.SetCachedMerchantTrashed(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *merchantQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

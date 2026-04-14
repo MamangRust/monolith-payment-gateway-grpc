@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type topupStatsStatusHandleApi struct {
@@ -113,7 +111,7 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccess(c echo.Context
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupStatusSuccess")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
@@ -154,7 +152,7 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccess(c echo.Context)
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupStatusSuccess")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
@@ -208,7 +206,7 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailed(c echo.Context)
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupStatusFailed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
@@ -249,7 +247,7 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusFailed(c echo.Context) 
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupStatusFailed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearStatusFailed(res)
@@ -311,7 +309,7 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusSuccessByCardNumber(c 
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupStatusSuccessByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthStatusSuccess(res)
@@ -364,7 +362,7 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusSuccessByCardNumber(c e
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupStatusSuccessByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearStatusSuccess(res)
@@ -426,7 +424,7 @@ func (h *topupStatsStatusHandleApi) FindMonthlyTopupStatusFailedByCardNumber(c e
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupStatusFailedByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthStatusFailed(res)
@@ -479,47 +477,11 @@ func (h *topupStatsStatusHandleApi) FindYearlyTopupStatusFailedByCardNumber(c ec
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupStatusFailedByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearStatusFailed(res)
 	h.cache.SetYearlyTopupStatusFailedByCardNumberCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *topupStatsStatusHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Topup").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Topup already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

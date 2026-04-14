@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/withdraw"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type withdrawQueryHandleApi struct {
@@ -110,7 +108,8 @@ func (h *withdrawQueryHandleApi) FindAll(c echo.Context) error {
 
 	res, err := h.client.FindAllWithdraw(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAll")
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationWithdraw(res)
@@ -173,7 +172,8 @@ func (h *withdrawQueryHandleApi) FindAllByCardNumber(c echo.Context) error {
 
 	res, err := h.client.FindAllWithdrawByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAllByCardNumber")
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationWithdraw(res)
@@ -212,7 +212,8 @@ func (h *withdrawQueryHandleApi) FindById(c echo.Context) error {
 
 	withdraw, err := h.client.FindByIdWithdraw(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindById")
+		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdraw(withdraw)
@@ -244,7 +245,7 @@ func (h *withdrawQueryHandleApi) FindByCardNumber(c echo.Context) error {
 	withdraw, err := h.client.FindByCardNumber(ctx, req)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponsesWithdraw(withdraw)
@@ -296,7 +297,7 @@ func (h *withdrawQueryHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
@@ -349,47 +350,11 @@ func (h *withdrawQueryHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve withdraw data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationWithdrawDeleteAt(res)
 	h.cache.SetCachedWithdrawTrashedCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *withdrawQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Withdraw").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Withdraw already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Withdraw service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

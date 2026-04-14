@@ -28,7 +28,7 @@ func (r *topupCommandRepository) CreateTopup(ctx context.Context, request *reque
 	res, err := r.db.CreateTopup(ctx, req)
 
 	if err != nil {
-		return nil, topup_errors.ErrCreateTopupFailed
+		return nil, topup_errors.ErrCreateTopupFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -45,7 +45,7 @@ func (r *topupCommandRepository) UpdateTopup(ctx context.Context, request *reque
 	res, err := r.db.UpdateTopup(ctx, req)
 
 	if err != nil {
-		return nil, topup_errors.ErrUpdateTopupFailed
+		return nil, topup_errors.ErrUpdateTopupFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -60,7 +60,7 @@ func (r *topupCommandRepository) UpdateTopupAmount(ctx context.Context, request 
 	res, err := r.db.UpdateTopupAmount(ctx, req)
 
 	if err != nil {
-		return nil, topup_errors.ErrUpdateTopupAmountFailed
+		return nil, topup_errors.ErrUpdateTopupAmountFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -75,7 +75,7 @@ func (r *topupCommandRepository) UpdateTopupStatus(ctx context.Context, request 
 	res, err := r.db.UpdateTopupStatus(ctx, req)
 
 	if err != nil {
-		return nil, topup_errors.ErrUpdateTopupStatusFailed
+		return nil, topup_errors.ErrUpdateTopupStatusFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -84,7 +84,7 @@ func (r *topupCommandRepository) UpdateTopupStatus(ctx context.Context, request 
 func (r *topupCommandRepository) TrashedTopup(ctx context.Context, topup_id int) (*db.Topup, error) {
 	res, err := r.db.TrashTopup(ctx, int32(topup_id))
 	if err != nil {
-		return nil, topup_errors.ErrTrashedTopupFailed
+		return nil, topup_errors.ErrTrashedTopupFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -92,7 +92,7 @@ func (r *topupCommandRepository) TrashedTopup(ctx context.Context, topup_id int)
 func (r *topupCommandRepository) RestoreTopup(ctx context.Context, topup_id int) (*db.Topup, error) {
 	res, err := r.db.RestoreTopup(ctx, int32(topup_id))
 	if err != nil {
-		return nil, topup_errors.ErrRestoreTopupFailed
+		return nil, topup_errors.ErrRestoreTopupFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -100,7 +100,7 @@ func (r *topupCommandRepository) RestoreTopup(ctx context.Context, topup_id int)
 func (r *topupCommandRepository) DeleteTopupPermanent(ctx context.Context, topup_id int) (bool, error) {
 	err := r.db.DeleteTopupPermanently(ctx, int32(topup_id))
 	if err != nil {
-		return false, topup_errors.ErrDeleteTopupPermanentFailed
+		return false, topup_errors.ErrDeleteTopupPermanentFailed.WithInternal(err)
 	}
 	return true, nil
 }
@@ -109,7 +109,7 @@ func (r *topupCommandRepository) RestoreAllTopup(ctx context.Context) (bool, err
 	err := r.db.RestoreAllTopups(ctx)
 
 	if err != nil {
-		return false, topup_errors.ErrRestoreAllTopupFailed
+		return false, topup_errors.ErrRestoreAllTopupFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -119,7 +119,7 @@ func (r *topupCommandRepository) DeleteAllTopupPermanent(ctx context.Context) (b
 	err := r.db.DeleteAllPermanentTopups(ctx)
 
 	if err != nil {
-		return false, topup_errors.ErrDeleteAllTopupPermanentFailed
+		return false, topup_errors.ErrDeleteAllTopupPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

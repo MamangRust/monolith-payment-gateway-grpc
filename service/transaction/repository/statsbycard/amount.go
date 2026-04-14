@@ -28,7 +28,7 @@ func (r *transactionStatsByCardAmountRepository) GetMonthlyAmountsByCardNumber(c
 		Column2:    time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthlyAmountsByCardFailed
+		return nil, transaction_errors.ErrGetMonthlyAmountsByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -43,7 +43,7 @@ func (r *transactionStatsByCardAmountRepository) GetYearlyAmountsByCardNumber(ct
 		Column2:    year,
 	})
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyAmountsByCardFailed
+		return nil, transaction_errors.ErrGetYearlyAmountsByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

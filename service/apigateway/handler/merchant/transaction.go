@@ -6,8 +6,6 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	merchant_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/redis/api/merchant"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
@@ -111,7 +109,7 @@ func (h *merchantTransactionHandleApi) FindAllTransactions(c echo.Context) error
 
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
@@ -138,7 +136,7 @@ func (h *merchantTransactionHandleApi) FindAllTransactions(c echo.Context) error
 func (h *merchantTransactionHandleApi) FindAllTransactionByMerchant(c echo.Context) error {
 	merchantID, err := strconv.Atoi(c.Param("merchant_id"))
 	if err != nil || merchantID <= 0 {
-		return err
+		return errors.NewBadRequestError("merchant_id is required and must be a positive integer")
 	}
 
 	page, err := strconv.Atoi(c.QueryParam("page"))
@@ -178,7 +176,7 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByMerchant(c echo.Conte
 
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
@@ -242,7 +240,7 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByApikey(c echo.Context
 
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantsTransactionResponse(res)
@@ -250,40 +248,4 @@ func (h *merchantTransactionHandleApi) FindAllTransactionByApikey(c echo.Context
 	h.cache.SetCacheMerchantTransactionApikey(ctx, cacheReq, so)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *merchantTransactionHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

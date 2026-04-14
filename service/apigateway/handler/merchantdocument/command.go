@@ -14,8 +14,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -103,7 +101,7 @@ func (h *merchantCommandDocumentHandleApi) Create(c echo.Context) error {
 
 	res, err := h.merchantDocument.Create(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "CreateMerchantDocument")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocument(res)
@@ -153,7 +151,7 @@ func (h *merchantCommandDocumentHandleApi) Update(c echo.Context) error {
 
 	res, err := h.merchantDocument.Update(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "UpdateMerchantDocument")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocument(res)
@@ -201,7 +199,7 @@ func (h *merchantCommandDocumentHandleApi) UpdateStatus(c echo.Context) error {
 
 	res, err := h.merchantDocument.UpdateStatus(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "UpdateMerchantDocumentStatus")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocument(res)
@@ -235,7 +233,7 @@ func (h *merchantCommandDocumentHandleApi) TrashedDocument(c echo.Context) error
 
 	res, err := h.merchantDocument.Trashed(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "TrashedMerchantDocument")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocumentDeleteAt(res)
@@ -269,7 +267,7 @@ func (h *merchantCommandDocumentHandleApi) RestoreDocument(c echo.Context) error
 
 	res, err := h.merchantDocument.Restore(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreMerchantDocument")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocumentDeleteAt(res)
@@ -303,7 +301,7 @@ func (h *merchantCommandDocumentHandleApi) Delete(c echo.Context) error {
 
 	res, err := h.merchantDocument.DeletePermanent(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteMerchantDocumentPermanent")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocumentDelete(res)
@@ -326,7 +324,7 @@ func (h *merchantCommandDocumentHandleApi) RestoreAllDocuments(c echo.Context) e
 
 	res, err := h.merchantDocument.RestoreAll(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAllMerchantDocuments")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocumentAll(res)
@@ -349,48 +347,12 @@ func (h *merchantCommandDocumentHandleApi) DeleteAllDocumentsPermanent(c echo.Co
 
 	res, err := h.merchantDocument.DeleteAllPermanent(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAllMerchantDocumentsPermanent")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMerchantDocumentAll(res)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *merchantCommandDocumentHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant Document").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant Document already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant Document service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *merchantCommandDocumentHandleApi) parseValidationErrors(err error) []errors.ValidationError {

@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/user"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -106,7 +104,7 @@ func (h *userCommandHandleApi) Create(c echo.Context) error {
 	res, err := h.client.Create(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUser(res)
@@ -162,7 +160,7 @@ func (h *userCommandHandleApi) Update(c echo.Context) error {
 	res, err := h.client.Update(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUser(res)
@@ -201,7 +199,7 @@ func (h *userCommandHandleApi) TrashedUser(c echo.Context) error {
 	user, err := h.client.TrashedUser(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "TrashedUser")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUserDeleteAt(user)
@@ -239,7 +237,7 @@ func (h *userCommandHandleApi) RestoreUser(c echo.Context) error {
 	user, err := h.client.RestoreUser(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restoreuser")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUserDeleteAt(user)
@@ -277,7 +275,7 @@ func (h *userCommandHandleApi) DeleteUserPermanent(c echo.Context) error {
 	user, err := h.client.DeleteUserPermanent(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteuserPermanent")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUserDelete(user)
@@ -305,7 +303,7 @@ func (h *userCommandHandleApi) RestoreAllUser(c echo.Context) error {
 	res, err := h.client.RestoreAllUser(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAllUser")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUserAll(res)
@@ -333,7 +331,7 @@ func (h *userCommandHandleApi) DeleteAllUserPermanent(c echo.Context) error {
 	res, err := h.client.DeleteAllUserPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAllUserPermanent")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseUserAll(res)
@@ -341,42 +339,6 @@ func (h *userCommandHandleApi) DeleteAllUserPermanent(c echo.Context) error {
 	h.logger.Debug("Successfully deleted all user permanently")
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *userCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("User").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("User already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("User service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *userCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

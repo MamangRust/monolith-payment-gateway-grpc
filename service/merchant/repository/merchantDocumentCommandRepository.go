@@ -31,7 +31,7 @@ func (r *merchantDocumentCommandRepository) CreateMerchantDocument(ctx context.C
 
 	res, err := r.db.CreateMerchantDocument(ctx, req)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrCreateMerchantDocumentFailed
+		return nil, merchantdocument_errors.ErrCreateMerchantDocumentFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -50,7 +50,7 @@ func (r *merchantDocumentCommandRepository) UpdateMerchantDocument(ctx context.C
 
 	res, err := r.db.UpdateMerchantDocument(ctx, req)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrUpdateMerchantDocumentFailed
+		return nil, merchantdocument_errors.ErrUpdateMerchantDocumentFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -67,7 +67,7 @@ func (r *merchantDocumentCommandRepository) UpdateMerchantDocumentStatus(ctx con
 
 	res, err := r.db.UpdateMerchantDocumentStatus(ctx, req)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrUpdateMerchantDocumentStatusFailed
+		return nil, merchantdocument_errors.ErrUpdateMerchantDocumentStatusFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -76,7 +76,7 @@ func (r *merchantDocumentCommandRepository) UpdateMerchantDocumentStatus(ctx con
 func (r *merchantDocumentCommandRepository) TrashedMerchantDocument(ctx context.Context, documentID int) (*db.MerchantDocument, error) {
 	res, err := r.db.TrashMerchantDocument(ctx, int32(documentID))
 	if err != nil {
-		return nil, merchantdocument_errors.ErrTrashedMerchantDocumentFailed
+		return nil, merchantdocument_errors.ErrTrashedMerchantDocumentFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -85,7 +85,7 @@ func (r *merchantDocumentCommandRepository) TrashedMerchantDocument(ctx context.
 func (r *merchantDocumentCommandRepository) RestoreMerchantDocument(ctx context.Context, documentID int) (*db.MerchantDocument, error) {
 	res, err := r.db.RestoreMerchantDocument(ctx, int32(documentID))
 	if err != nil {
-		return nil, merchantdocument_errors.ErrRestoreMerchantDocumentFailed
+		return nil, merchantdocument_errors.ErrRestoreMerchantDocumentFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -94,7 +94,7 @@ func (r *merchantDocumentCommandRepository) RestoreMerchantDocument(ctx context.
 func (r *merchantDocumentCommandRepository) DeleteMerchantDocumentPermanent(ctx context.Context, documentID int) (bool, error) {
 	err := r.db.DeleteMerchantDocumentPermanently(ctx, int32(documentID))
 	if err != nil {
-		return false, merchantdocument_errors.ErrDeleteMerchantDocumentPermanentFailed
+		return false, merchantdocument_errors.ErrDeleteMerchantDocumentPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -103,7 +103,7 @@ func (r *merchantDocumentCommandRepository) DeleteMerchantDocumentPermanent(ctx 
 func (r *merchantDocumentCommandRepository) RestoreAllMerchantDocument(ctx context.Context) (bool, error) {
 	err := r.db.RestoreAllMerchantDocuments(ctx)
 	if err != nil {
-		return false, merchantdocument_errors.ErrRestoreAllMerchantDocumentsFailed
+		return false, merchantdocument_errors.ErrRestoreAllMerchantDocumentsFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -112,7 +112,7 @@ func (r *merchantDocumentCommandRepository) RestoreAllMerchantDocument(ctx conte
 func (r *merchantDocumentCommandRepository) DeleteAllMerchantDocumentPermanent(ctx context.Context) (bool, error) {
 	err := r.db.DeleteAllPermanentMerchantDocuments(ctx)
 	if err != nil {
-		return false, merchantdocument_errors.ErrDeleteAllMerchantDocumentsPermanentFailed
+		return false, merchantdocument_errors.ErrDeleteAllMerchantDocumentsPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

@@ -24,7 +24,7 @@ func (r *merchantStatsMethodRepository) GetMonthlyPaymentMethodsMerchant(ctx con
 	res, err := r.db.GetMonthlyPaymentMethodsMerchant(ctx, yearStart)
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyPaymentMethodsMerchantFailed
+		return nil, merchant_errors.ErrGetMonthlyPaymentMethodsMerchantFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *merchantStatsMethodRepository) GetYearlyPaymentMethodMerchant(ctx conte
 	res, err := r.db.GetYearlyPaymentMethodMerchant(ctx, year)
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyPaymentMethodMerchantFailed
+		return nil, merchant_errors.ErrGetYearlyPaymentMethodMerchantFailed.WithInternal(err)
 	}
 
 	return res, nil

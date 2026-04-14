@@ -29,7 +29,7 @@ func (r *transactionStatsByCardMethodRepository) GetMonthlyPaymentMethodsByCardN
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsByCardFailed
+		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -45,7 +45,7 @@ func (r *transactionStatsByCardMethodRepository) GetYearlyPaymentMethodsByCardNu
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyPaymentMethodsByCardFailed
+		return nil, transaction_errors.ErrGetYearlyPaymentMethodsByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

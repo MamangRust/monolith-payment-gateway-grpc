@@ -7,6 +7,7 @@ import (
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
 )
 
@@ -34,7 +35,7 @@ func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.Fi
 	res, err := r.db.GetUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
-		return nil, user_errors.ErrFindAllUsers
+		return nil, user_errors.ErrFindAllUsers.WithInternal(err)
 	}
 
 	return res, nil
@@ -45,10 +46,10 @@ func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*db.Ge
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
+			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil
@@ -66,7 +67,7 @@ func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.Fi
 	res, err := r.db.GetActiveUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
-		return nil, user_errors.ErrFindActiveUsers
+		return nil, user_errors.ErrFindActiveUsers.WithInternal(err)
 	}
 
 	return res, nil
@@ -84,7 +85,7 @@ func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.F
 	res, err := r.db.GetTrashedUsersWithPagination(ctx, reqDb)
 
 	if err != nil {
-		return nil, user_errors.ErrFindTrashedUsers
+		return nil, user_errors.ErrFindTrashedUsers.WithInternal(err)
 	}
 
 	return res, nil
@@ -95,10 +96,10 @@ func (r *userQueryRepository) FindByEmail(ctx context.Context, email string) (*d
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
+			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil

@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/withdraw"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type withdrawStatsStatusHandleApi struct {
@@ -112,7 +110,7 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccess(c echo.C
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly withdraw status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusSuccess")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
@@ -153,7 +151,7 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccess(c echo.Co
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly withdraw status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyWithdrawStatusSuccess")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
@@ -207,7 +205,7 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailed(c echo.Co
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly withdraw status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusFailed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
@@ -248,7 +246,7 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusFailed(c echo.Con
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly withdraw status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyWithdrawStatusFailed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
@@ -310,7 +308,7 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusSuccessByCardNum
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly withdraw status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusSuccessByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusSuccess(res)
@@ -363,7 +361,7 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusSuccessByCardNumb
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly withdraw status success", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyWithdrawStatusSuccessByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusSuccess(res)
@@ -425,7 +423,7 @@ func (h *withdrawStatsStatusHandleApi) FindMonthlyWithdrawStatusFailedByCardNumb
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly withdraw status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyWithdrawStatusFailedByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawMonthStatusFailed(res)
@@ -478,47 +476,11 @@ func (h *withdrawStatsStatusHandleApi) FindYearlyWithdrawStatusFailedByCardNumbe
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly withdraw status failed", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyWithdrawStatusFailedByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseWithdrawYearStatusFailed(res)
 	h.cache.SetCachedYearlyWithdrawStatusFailedByCardNumber(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *withdrawStatsStatusHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Withdraw").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Withdraw already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Withdraw service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

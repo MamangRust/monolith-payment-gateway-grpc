@@ -5,17 +5,14 @@ import (
 	"strconv"
 
 	topup_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/redis/api/topup"
-	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup/stats"
-
 	pbtopup "github.com/MamangRust/monolith-payment-gateway-pb/topup"
+	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup/stats"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type topupStatsAmountHandleApi struct {
@@ -96,7 +93,7 @@ func (h *topupStatsAmountHandleApi) FindMonthlyTopupAmounts(c echo.Context) erro
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup amounts", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupAmounts")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthAmount(res)
@@ -136,7 +133,7 @@ func (h *topupStatsAmountHandleApi) FindYearlyTopupAmounts(c echo.Context) error
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup amounts", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupAmounts")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearAmount(res)
@@ -188,7 +185,7 @@ func (h *topupStatsAmountHandleApi) FindMonthlyTopupAmountsByCardNumber(c echo.C
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup amounts by card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupAmountsByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthAmount(res)
@@ -240,47 +237,11 @@ func (h *topupStatsAmountHandleApi) FindYearlyTopupAmountsByCardNumber(c echo.Co
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup amounts by card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupAmountsByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearAmount(res)
 	h.cache.SetYearlyTopupAmountsByCardNumberCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *topupStatsAmountHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Topup").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Topup already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

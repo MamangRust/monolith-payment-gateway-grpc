@@ -26,7 +26,7 @@ func (r *transferStatsAmountSenderRepository) GetMonthlyTransferAmountsBySenderC
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetMonthlyTransferAmountsBySenderCardFailed
+		return nil, transfer_errors.ErrGetMonthlyTransferAmountsBySenderCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -39,7 +39,7 @@ func (r *transferStatsAmountSenderRepository) GetYearlyTransferAmountsBySenderCa
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetYearlyTransferAmountsBySenderCardFailed
+		return nil, transfer_errors.ErrGetYearlyTransferAmountsBySenderCardFailed.WithInternal(err)
 	}
 
 	return res, nil

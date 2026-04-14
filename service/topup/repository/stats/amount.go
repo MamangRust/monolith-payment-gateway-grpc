@@ -24,7 +24,7 @@ func (r *topupStatsAmountRepository) GetMonthlyTopupAmounts(ctx context.Context,
 	res, err := r.db.GetMonthlyTopupAmounts(ctx, yearStart)
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthlyTopupAmountsFailed
+		return nil, topup_errors.ErrGetMonthlyTopupAmountsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *topupStatsAmountRepository) GetYearlyTopupAmounts(ctx context.Context, 
 	res, err := r.db.GetYearlyTopupAmounts(ctx, year)
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupAmountsFailed
+		return nil, topup_errors.ErrGetYearlyTopupAmountsFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -35,7 +35,7 @@ func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusSuccessByCardNumbe
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthTopupStatusSuccessByCardFailed
+		return nil, topup_errors.ErrGetMonthTopupStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -48,7 +48,7 @@ func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusSuccessByCardNumb
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed
+		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -74,7 +74,7 @@ func (r *topupStatsByCardStatusRepository) GetMonthTopupStatusFailedByCardNumber
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthTopupStatusFailedByCardFailed
+		return nil, topup_errors.ErrGetMonthTopupStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -87,7 +87,7 @@ func (r *topupStatsByCardStatusRepository) GetYearlyTopupStatusFailedByCardNumbe
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed
+		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

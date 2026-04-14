@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	merchant_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_errors/repository"
 )
 
@@ -30,7 +33,7 @@ func (r *merchantQueryRepository) FindAllMerchants(ctx context.Context, req *req
 	merchant, err := r.db.GetMerchants(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindAllMerchantsFailed
+		return nil, merchant_errors.ErrFindAllMerchantsFailed.WithInternal(err)
 	}
 
 	return merchant, nil
@@ -48,7 +51,7 @@ func (r *merchantQueryRepository) FindByActive(ctx context.Context, req *request
 	res, err := r.db.GetActiveMerchants(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindActiveMerchantsFailed
+		return nil, merchant_errors.ErrFindActiveMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -66,7 +69,7 @@ func (r *merchantQueryRepository) FindByTrashed(ctx context.Context, req *reques
 	res, err := r.db.GetTrashedMerchants(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindTrashedMerchantsFailed
+		return nil, merchant_errors.ErrFindTrashedMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -76,7 +79,10 @@ func (r *merchantQueryRepository) FindByMerchantId(ctx context.Context, merchant
 	res, err := r.db.GetMerchantByID(ctx, int32(merchant_id))
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindMerchantByIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, merchant_errors.ErrFindMerchantByIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil
@@ -86,7 +92,10 @@ func (r *merchantQueryRepository) FindByApiKey(ctx context.Context, api_key stri
 	res, err := r.db.GetMerchantByApiKey(ctx, api_key)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindMerchantByApiKeyFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, merchant_errors.ErrFindMerchantByApiKeyFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil
@@ -96,16 +105,23 @@ func (r *merchantQueryRepository) FindByName(ctx context.Context, name string) (
 	res, err := r.db.GetMerchantByName(ctx, name)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindMerchantByNameFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, merchant_errors.ErrFindMerchantByNameFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil
 }
+
 func (r *merchantQueryRepository) FindByMerchantUserId(ctx context.Context, user_id int) ([]*db.GetMerchantsByUserIDRow, error) {
 	res, err := r.db.GetMerchantsByUserID(ctx, int32(user_id))
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindMerchantByUserIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, merchant_errors.ErrFindMerchantByUserIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil

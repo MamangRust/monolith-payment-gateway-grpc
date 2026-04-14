@@ -12,8 +12,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type cardStatsTransferHandleApi struct {
@@ -95,7 +93,7 @@ func (h *cardStatsTransferHandleApi) FindMonthlyTransferSenderAmount(c echo.Cont
 
 	res, err := h.card.FindMonthlyTransferSenderAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTransferSenderAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -135,7 +133,7 @@ func (h *cardStatsTransferHandleApi) FindYearlyTransferSenderAmount(c echo.Conte
 
 	res, err := h.card.FindYearlyTransferSenderAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTransferSenderAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
@@ -175,7 +173,7 @@ func (h *cardStatsTransferHandleApi) FindMonthlyTransferReceiverAmount(c echo.Co
 
 	res, err := h.card.FindMonthlyTransferReceiverAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTransferReceiverAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -215,7 +213,7 @@ func (h *cardStatsTransferHandleApi) FindYearlyTransferReceiverAmount(c echo.Con
 
 	res, err := h.card.FindYearlyTransferReceiverAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTransferReceiverAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
@@ -267,7 +265,7 @@ func (h *cardStatsTransferHandleApi) FindMonthlyTransferSenderAmountByCardNumber
 
 	res, err := h.card.FindMonthlyTransferSenderAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTransferSenderAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -320,7 +318,7 @@ func (h *cardStatsTransferHandleApi) FindYearlyTransferSenderAmountByCardNumber(
 
 	res, err := h.card.FindYearlyTransferSenderAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTransferSenderAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
@@ -373,7 +371,7 @@ func (h *cardStatsTransferHandleApi) FindMonthlyTransferReceiverAmountByCardNumb
 
 	res, err := h.card.FindMonthlyTransferReceiverAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTransferReceiverAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -426,47 +424,11 @@ func (h *cardStatsTransferHandleApi) FindYearlyTransferReceiverAmountByCardNumbe
 
 	res, err := h.card.FindYearlyTransferReceiverAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTransferReceiverAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
 	h.cache.SetYearlyTransferByReceiverCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *cardStatsTransferHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Card").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Card already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

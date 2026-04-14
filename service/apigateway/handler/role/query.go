@@ -15,8 +15,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/role"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type roleQueryHandlerApi struct {
@@ -125,7 +123,7 @@ func (h *roleQueryHandlerApi) FindAll(c echo.Context) error {
 
 	res, err := h.role.FindAllRole(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationRole(res)
@@ -166,7 +164,7 @@ func (h *roleQueryHandlerApi) FindById(c echo.Context) error {
 
 	res, err := h.role.FindByIdRole(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindById")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseRole(res)
@@ -224,7 +222,7 @@ func (h *roleQueryHandlerApi) FindByActive(c echo.Context) error {
 
 	res, err := h.role.FindByActive(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByActive")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
@@ -282,7 +280,7 @@ func (h *roleQueryHandlerApi) FindByTrashed(c echo.Context) error {
 
 	res, err := h.role.FindByTrashed(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByTrashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationRoleDeleteAt(res)
@@ -323,7 +321,7 @@ func (h *roleQueryHandlerApi) FindByUserId(c echo.Context) error {
 
 	res, err := h.role.FindByUserId(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByUserId")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesRole(res)
@@ -331,40 +329,4 @@ func (h *roleQueryHandlerApi) FindByUserId(c echo.Context) error {
 	h.cache.SetCachedRoleByUserId(ctx, userID, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *roleQueryHandlerApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Role").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Role already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Role service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

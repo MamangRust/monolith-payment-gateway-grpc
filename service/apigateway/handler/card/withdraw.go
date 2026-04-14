@@ -12,8 +12,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type cardStatsWithdrawHandleApi struct {
@@ -86,7 +84,7 @@ func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmount(c echo.Context) e
 
 	res, err := h.card.FindMonthlyWithdrawAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyWithdrawAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -126,7 +124,7 @@ func (h *cardStatsWithdrawHandleApi) FindYearlyWithdrawAmount(c echo.Context) er
 
 	res, err := h.card.FindYearlyWithdrawAmount(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyWithdrawAmount")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
@@ -178,7 +176,7 @@ func (h *cardStatsWithdrawHandleApi) FindMonthlyWithdrawAmountByCardNumber(c ech
 
 	res, err := h.card.FindMonthlyWithdrawAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyWithdrawAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyAmounts(res)
@@ -230,47 +228,11 @@ func (h *cardStatsWithdrawHandleApi) FindYearlyWithdrawAmountByCardNumber(c echo
 
 	res, err := h.card.FindYearlyWithdrawAmountByCardNumber(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyWithdrawAmountByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyAmounts(res)
 	h.cache.SetYearlyWithdrawByNumberCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *cardStatsWithdrawHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Card").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Card already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

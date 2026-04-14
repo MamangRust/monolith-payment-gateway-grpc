@@ -12,8 +12,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // cardQueryHandleApi handles card query HTTP APIs.
@@ -111,7 +109,7 @@ func (h *cardQueryHandleApi) FindAll(c echo.Context) error {
 
 	cards, err := h.card.FindAllCard(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAllCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesCard(cards)
@@ -151,7 +149,7 @@ func (h *cardQueryHandleApi) FindById(c echo.Context) error {
 
 	card, err := h.card.FindByIdCard(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByIdCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseCard(card)
@@ -196,7 +194,7 @@ func (h *cardQueryHandleApi) FindByUserID(c echo.Context) error {
 
 	card, err := h.card.FindByUserIdCard(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByUserIdCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseCard(card)
@@ -248,7 +246,7 @@ func (h *cardQueryHandleApi) FindByActive(c echo.Context) error {
 
 	res, err := h.card.FindByActiveCard(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByActiveCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesCardDeletedAt(res)
@@ -302,7 +300,7 @@ func (h *cardQueryHandleApi) FindByTrashed(c echo.Context) error {
 
 	res, err := h.card.FindByTrashedCard(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByTrashedCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsesCardDeletedAt(res)
@@ -335,46 +333,10 @@ func (h *cardQueryHandleApi) FindByCardNumber(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to fetch card record", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCard(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *cardQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Card").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Card already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

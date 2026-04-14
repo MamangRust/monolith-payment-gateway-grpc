@@ -24,7 +24,7 @@ func (r *topupStatsMethodRepository) GetMonthlyTopupMethods(ctx context.Context,
 	res, err := r.db.GetMonthlyTopupMethods(ctx, yearStart)
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthlyTopupMethodsFailed
+		return nil, topup_errors.ErrGetMonthlyTopupMethodsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *topupStatsMethodRepository) GetYearlyTopupMethods(ctx context.Context, 
 	res, err := r.db.GetYearlyTopupMethods(ctx, year)
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupMethodsFailed
+		return nil, topup_errors.ErrGetYearlyTopupMethodsFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -103,7 +101,7 @@ func (h *merchantCommandHandleApi) Create(c echo.Context) error {
 	res, err := h.client.CreateMerchant(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchant(res)
@@ -152,7 +150,7 @@ func (h *merchantCommandHandleApi) Update(c echo.Context) error {
 	res, err := h.client.UpdateMerchant(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchant(res)
@@ -188,7 +186,7 @@ func (h *merchantCommandHandleApi) TrashedMerchant(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantDeleteAt(res)
@@ -224,7 +222,7 @@ func (h *merchantCommandHandleApi) RestoreMerchant(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantDeleteAt(res)
@@ -260,7 +258,7 @@ func (h *merchantCommandHandleApi) Delete(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeletePermanent")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseMerchantDelete(res)
@@ -284,7 +282,7 @@ func (h *merchantCommandHandleApi) RestoreAllMerchant(c echo.Context) error {
 	res, err := h.client.RestoreAllMerchant(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all merchant")
@@ -310,7 +308,7 @@ func (h *merchantCommandHandleApi) DeleteAllMerchantPermanent(c echo.Context) er
 	res, err := h.client.DeleteAllMerchantPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all merchant permanently")
@@ -318,42 +316,6 @@ func (h *merchantCommandHandleApi) DeleteAllMerchantPermanent(c echo.Context) er
 	so := h.mapper.ToApiResponseMerchantAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *merchantCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *merchantCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

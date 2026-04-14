@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	merchantdocument_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/merchant_document_errors/repository"
 )
 
@@ -13,17 +16,7 @@ type merchantDocumentQueryRepository struct {
 	db *db.Queries
 }
 
-// NewMerchantDocumentQueryRepository creates a new instance of merchantDocumentQueryRepository with the provided
-// database queries, context, and merchant document record mapper. This repository is responsible for querying
-// merchant documents from the database.
-//
-// Parameters:
-//   - db: A pointer to the db.Queries object for executing database queries.
-//   - ctx: The context to be used for database operations, allowing for cancellation and timeout.
-//   - mapper: A MerchantDocumentMapping that provides methods to map database rows to MerchantDocumentRecord domain models.
-//
-// Returns:
-//   - A pointer to the newly created merchantDocumentQueryRepository instance.
+// NewMerchantDocumentQueryRepository creates a new instance of merchantDocumentQueryRepository.
 func NewMerchantDocumentQueryRepository(db *db.Queries) MerchantDocumentQueryRepository {
 	return &merchantDocumentQueryRepository{
 		db: db,
@@ -41,7 +34,7 @@ func (r *merchantDocumentQueryRepository) FindAllDocuments(ctx context.Context, 
 
 	docs, err := r.db.GetMerchantDocuments(ctx, params)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrFindAllMerchantDocumentsFailed
+		return nil, merchantdocument_errors.ErrFindAllMerchantDocumentsFailed.WithInternal(err)
 	}
 
 	return docs, nil
@@ -58,7 +51,7 @@ func (r *merchantDocumentQueryRepository) FindByActiveDocuments(ctx context.Cont
 
 	docs, err := r.db.GetActiveMerchantDocuments(ctx, params)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrFindActiveMerchantDocumentsFailed
+		return nil, merchantdocument_errors.ErrFindActiveMerchantDocumentsFailed.WithInternal(err)
 	}
 
 	return docs, nil
@@ -75,7 +68,7 @@ func (r *merchantDocumentQueryRepository) FindByTrashedDocuments(ctx context.Con
 
 	docs, err := r.db.GetTrashedMerchantDocuments(ctx, params)
 	if err != nil {
-		return nil, merchantdocument_errors.ErrFindTrashedMerchantDocumentsFailed
+		return nil, merchantdocument_errors.ErrFindTrashedMerchantDocumentsFailed.WithInternal(err)
 	}
 
 	return docs, nil
@@ -84,7 +77,10 @@ func (r *merchantDocumentQueryRepository) FindByTrashedDocuments(ctx context.Con
 func (r *merchantDocumentQueryRepository) FindByIdDocument(ctx context.Context, id int) (*db.GetMerchantDocumentRow, error) {
 	doc, err := r.db.GetMerchantDocument(ctx, int32(id))
 	if err != nil {
-		return nil, merchantdocument_errors.ErrFindMerchantDocumentByIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, merchantdocument_errors.ErrFindMerchantDocumentByIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return doc, nil
 }

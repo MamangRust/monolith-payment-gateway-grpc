@@ -14,8 +14,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -104,8 +102,7 @@ func (h *withdrawCommandHandleApi) Create(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to create withdraw", zap.Error(err))
-
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseWithdraw(res)
@@ -154,7 +151,8 @@ func (h *withdrawCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		h.logger.Debug("Failed to update withdraw", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseWithdraw(res)
@@ -190,7 +188,8 @@ func (h *withdrawCommandHandleApi) TrashWithdraw(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		h.logger.Debug("Failed to trash withdraw", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseWithdrawDeleteAt(res)
@@ -225,7 +224,8 @@ func (h *withdrawCommandHandleApi) RestoreWithdraw(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		h.logger.Debug("Failed to restore withdraw", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseWithdrawDeleteAt(res)
@@ -260,7 +260,8 @@ func (h *withdrawCommandHandleApi) DeleteWithdrawPermanent(c echo.Context) error
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteWithdraw")
+		h.logger.Debug("Failed to delete withdraw permanent", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseWithdrawDelete(res)
@@ -286,7 +287,8 @@ func (h *withdrawCommandHandleApi) RestoreAllWithdraw(c echo.Context) error {
 	res, err := h.client.RestoreAllWithdraw(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		h.logger.Debug("Failed to restore all withdraw", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all withdraw")
@@ -312,7 +314,8 @@ func (h *withdrawCommandHandleApi) DeleteAllWithdrawPermanent(c echo.Context) er
 	res, err := h.client.DeleteAllWithdrawPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAll")
+		h.logger.Debug("Failed to delete all withdraw permanent", zap.Error(err))
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all withdraw permanently")
@@ -320,42 +323,6 @@ func (h *withdrawCommandHandleApi) DeleteAllWithdrawPermanent(c echo.Context) er
 	so := h.mapper.ToApiResponseWithdrawAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *withdrawCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Withdraw").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Withdraw already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Withdraw service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *withdrawCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

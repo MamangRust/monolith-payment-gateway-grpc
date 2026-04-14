@@ -18,8 +18,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -125,7 +123,7 @@ func (h *transactionCommandHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransaction(res)
@@ -184,7 +182,7 @@ func (h *transactionCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransaction(res)
@@ -222,7 +220,7 @@ func (h *transactionCommandHandleApi) TrashedTransaction(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransactionDeleteAt(res)
@@ -259,7 +257,7 @@ func (h *transactionCommandHandleApi) RestoreTransaction(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransactionDeleteAt(res)
@@ -296,7 +294,7 @@ func (h *transactionCommandHandleApi) DeletePermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteTransaction")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransactionDelete(res)
@@ -323,7 +321,7 @@ func (h *transactionCommandHandleApi) RestoreAllTransaction(c echo.Context) erro
 
 	if err != nil {
 		h.logger.Error("Failed to restore all transaction", zap.Error(err))
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all transaction")
@@ -351,7 +349,7 @@ func (h *transactionCommandHandleApi) DeleteAllTransactionPermanent(c echo.Conte
 	if err != nil {
 		h.logger.Error("Failed to permanently delete all transaction", zap.Error(err))
 
-		return h.handleGrpcError(err, "DeleteAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all transaction permanently")
@@ -359,42 +357,6 @@ func (h *transactionCommandHandleApi) DeleteAllTransactionPermanent(c echo.Conte
 	so := h.mapper.ToApiResponseTransactionAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *transactionCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Transaction").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Transaction already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Transaction service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *transactionCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

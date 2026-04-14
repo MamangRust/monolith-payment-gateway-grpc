@@ -30,7 +30,7 @@ func (r *transactionCommandRepository) CreateTransaction(ctx context.Context, re
 	res, err := r.db.CreateTransaction(ctx, req)
 
 	if err != nil {
-		return nil, transaction_errors.ErrCreateTransactionFailed
+		return nil, transaction_errors.ErrCreateTransactionFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -49,7 +49,7 @@ func (r *transactionCommandRepository) UpdateTransaction(ctx context.Context, re
 	res, err := r.db.UpdateTransaction(ctx, req)
 
 	if err != nil {
-		return nil, transaction_errors.ErrUpdateTransactionFailed
+		return nil, transaction_errors.ErrUpdateTransactionFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -64,7 +64,7 @@ func (r *transactionCommandRepository) UpdateTransactionStatus(ctx context.Conte
 	res, err := r.db.UpdateTransactionStatus(ctx, req)
 
 	if err != nil {
-		return nil, transaction_errors.ErrUpdateTransactionStatusFailed
+		return nil, transaction_errors.ErrUpdateTransactionStatusFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -73,7 +73,7 @@ func (r *transactionCommandRepository) UpdateTransactionStatus(ctx context.Conte
 func (r *transactionCommandRepository) TrashedTransaction(ctx context.Context, transaction_id int) (*db.Transaction, error) {
 	res, err := r.db.TrashTransaction(ctx, int32(transaction_id))
 	if err != nil {
-		return nil, transaction_errors.ErrTrashedTransactionFailed
+		return nil, transaction_errors.ErrTrashedTransactionFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -81,7 +81,7 @@ func (r *transactionCommandRepository) TrashedTransaction(ctx context.Context, t
 func (r *transactionCommandRepository) RestoreTransaction(ctx context.Context, transaction_id int) (*db.Transaction, error) {
 	res, err := r.db.RestoreTransaction(ctx, int32(transaction_id))
 	if err != nil {
-		return nil, transaction_errors.ErrRestoreTransactionFailed
+		return nil, transaction_errors.ErrRestoreTransactionFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -90,7 +90,7 @@ func (r *transactionCommandRepository) DeleteTransactionPermanent(ctx context.Co
 	err := r.db.DeleteTransactionPermanently(ctx, int32(transaction_id))
 	if err != nil {
 
-		return false, transaction_errors.ErrDeleteTransactionPermanentFailed
+		return false, transaction_errors.ErrDeleteTransactionPermanentFailed.WithInternal(err)
 	}
 	return true, nil
 }
@@ -99,7 +99,7 @@ func (r *transactionCommandRepository) RestoreAllTransaction(ctx context.Context
 	err := r.db.RestoreAllTransactions(ctx)
 
 	if err != nil {
-		return false, transaction_errors.ErrRestoreAllTransactionsFailed
+		return false, transaction_errors.ErrRestoreAllTransactionsFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -109,7 +109,7 @@ func (r *transactionCommandRepository) DeleteAllTransactionPermanent(ctx context
 	err := r.db.DeleteAllPermanentTransactions(ctx)
 
 	if err != nil {
-		return false, transaction_errors.ErrDeleteAllTransactionsPermanentFailed
+		return false, transaction_errors.ErrDeleteAllTransactionsPermanentFailed.WithInternal(err)
 	}
 	return true, nil
 }

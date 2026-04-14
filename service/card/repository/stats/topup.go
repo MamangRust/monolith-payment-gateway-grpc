@@ -24,17 +24,17 @@ func (r *cardStatsTopupRepository) GetMonthlyTopupAmount(ctx context.Context, ye
 	res, err := r.db.GetMonthlyTopupAmount(ctx, yearStart)
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyTopupAmountFailed
+		return nil, card_errors.ErrGetMonthlyTopupAmountFailed.WithInternal(err)
 	}
 
 	return res, nil
 }
 
 func (r *cardStatsTopupRepository) GetYearlyTopupAmount(ctx context.Context, year int) ([]*db.GetYearlyTopupAmountRow, error) {
-	res, err := r.db.GetYearlyTopupAmount(ctx, int32(year))
+	res, err := r.db.GetYearlyTopupAmount(ctx, year)
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyTopupAmountFailed
+		return nil, card_errors.ErrGetYearlyTopupAmountFailed.WithInternal(err)
 	}
 
 	return res, nil

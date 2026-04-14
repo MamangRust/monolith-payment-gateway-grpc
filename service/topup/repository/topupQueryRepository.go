@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	topup_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/topup_errors/repository"
 )
 
@@ -30,7 +33,7 @@ func (r *topupQueryRepository) FindAllTopups(ctx context.Context, req *requests.
 	res, err := r.db.GetTopups(ctx, reqDb)
 
 	if err != nil {
-		return nil, topup_errors.ErrFindAllTopupsFailed
+		return nil, topup_errors.ErrFindAllTopupsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -48,7 +51,7 @@ func (r *topupQueryRepository) FindByActive(ctx context.Context, req *requests.F
 	res, err := r.db.GetActiveTopups(ctx, reqDb)
 
 	if err != nil {
-		return nil, topup_errors.ErrFindTopupsByActiveFailed
+		return nil, topup_errors.ErrFindTopupsByActiveFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -66,7 +69,7 @@ func (r *topupQueryRepository) FindByTrashed(ctx context.Context, req *requests.
 	res, err := r.db.GetTrashedTopups(ctx, reqDb)
 
 	if err != nil {
-		return nil, topup_errors.ErrFindTopupsByTrashedFailed
+		return nil, topup_errors.ErrFindTopupsByTrashedFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -85,7 +88,7 @@ func (r *topupQueryRepository) FindAllTopupByCardNumber(ctx context.Context, req
 	res, err := r.db.GetTopupsByCardNumber(ctx, reqDb)
 
 	if err != nil {
-		return nil, topup_errors.ErrFindTopupsByCardNumberFailed
+		return nil, topup_errors.ErrFindTopupsByCardNumberFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -94,7 +97,10 @@ func (r *topupQueryRepository) FindAllTopupByCardNumber(ctx context.Context, req
 func (r *topupQueryRepository) FindById(ctx context.Context, topup_id int) (*db.GetTopupByIDRow, error) {
 	res, err := r.db.GetTopupByID(ctx, int32(topup_id))
 	if err != nil {
-		return nil, topup_errors.ErrFindTopupByIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, topup_errors.ErrFindTopupByIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }

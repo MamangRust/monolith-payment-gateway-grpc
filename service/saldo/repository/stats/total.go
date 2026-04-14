@@ -37,7 +37,7 @@ func (r *saldoStatsTotalBalanceRepository) GetMonthlyTotalSaldoBalance(ctx conte
 	})
 
 	if err != nil {
-		return nil, saldo_errors.ErrGetMonthlyTotalSaldoBalanceFailed
+		return nil, saldo_errors.ErrGetMonthlyTotalSaldoBalanceFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -47,7 +47,7 @@ func (r *saldoStatsTotalBalanceRepository) GetYearTotalSaldoBalance(ctx context.
 	res, err := r.db.GetYearlyTotalSaldoBalances(ctx, int32(year))
 
 	if err != nil {
-		return nil, saldo_errors.ErrGetYearTotalSaldoBalanceFailed
+		return nil, saldo_errors.ErrGetYearTotalSaldoBalanceFailed.WithInternal(err)
 	}
 
 	return res, nil

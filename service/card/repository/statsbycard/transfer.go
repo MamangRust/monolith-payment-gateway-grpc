@@ -56,7 +56,7 @@ func (r *cardStatsTransferByCardRepository) GetMonthlyTransferAmountByReceiver(c
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyTransferAmountByReceiverFailed
+		return nil, card_errors.ErrGetMonthlyTransferAmountByReceiverFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -69,7 +69,7 @@ func (r *cardStatsTransferByCardRepository) GetYearlyTransferAmountByReceiver(ct
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyTransferAmountByReceiverFailed
+		return nil, card_errors.ErrGetYearlyTransferAmountByReceiverFailed.WithInternal(err)
 	}
 
 	return res, nil

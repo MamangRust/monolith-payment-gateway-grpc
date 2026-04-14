@@ -28,7 +28,7 @@ func (r *cardStatsWithdrawByCardRepository) GetMonthlyWithdrawAmountByCardNumber
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyWithdrawAmountByCardFailed
+		return nil, card_errors.ErrGetMonthlyWithdrawAmountByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -41,7 +41,7 @@ func (r *cardStatsWithdrawByCardRepository) GetYearlyWithdrawAmountByCardNumber(
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyWithdrawAmountByCardFailed
+		return nil, card_errors.ErrGetYearlyWithdrawAmountByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

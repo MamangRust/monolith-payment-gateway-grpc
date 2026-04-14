@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	transaction_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/transaction_errors/repository"
 )
 
@@ -30,7 +33,7 @@ func (r *transactionQueryRepository) FindAllTransactions(ctx context.Context, re
 	transactions, err := r.db.GetTransactions(ctx, reqDb)
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindAllTransactionsFailed
+		return nil, transaction_errors.ErrFindAllTransactionsFailed.WithInternal(err)
 	}
 
 	return transactions, nil
@@ -49,7 +52,7 @@ func (r *transactionQueryRepository) FindAllTransactionByCardNumber(ctx context.
 	transactions, err := r.db.GetTransactionsByCardNumber(ctx, reqDb)
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindTransactionsByCardNumberFailed
+		return nil, transaction_errors.ErrFindTransactionsByCardNumberFailed.WithInternal(err)
 	}
 
 	return transactions, nil
@@ -67,7 +70,7 @@ func (r *transactionQueryRepository) FindByActive(ctx context.Context, req *requ
 	res, err := r.db.GetActiveTransactions(ctx, reqDb)
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindActiveTransactionsFailed
+		return nil, transaction_errors.ErrFindActiveTransactionsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -85,7 +88,7 @@ func (r *transactionQueryRepository) FindByTrashed(ctx context.Context, req *req
 	res, err := r.db.GetTrashedTransactions(ctx, reqDb)
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindTrashedTransactionsFailed
+		return nil, transaction_errors.ErrFindTrashedTransactionsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -95,7 +98,10 @@ func (r *transactionQueryRepository) FindById(ctx context.Context, transaction_i
 	res, err := r.db.GetTransactionByID(ctx, int32(transaction_id))
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindTransactionByIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, transaction_errors.ErrFindTransactionByIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil
@@ -105,7 +111,10 @@ func (r *transactionQueryRepository) FindTransactionByMerchantId(ctx context.Con
 	res, err := r.db.GetTransactionsByMerchantID(ctx, int32(merchant_id))
 
 	if err != nil {
-		return nil, transaction_errors.ErrFindTransactionByMerchantIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, transaction_errors.ErrFindTransactionByMerchantIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil

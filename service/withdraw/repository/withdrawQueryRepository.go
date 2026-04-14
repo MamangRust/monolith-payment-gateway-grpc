@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	withdraw_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/withdraw_errors/repository"
 )
 
@@ -30,7 +33,7 @@ func (r *withdrawQueryRepository) FindAll(ctx context.Context, req *requests.Fin
 	withdraw, err := r.db.GetWithdraws(ctx, reqDb)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrFindAllWithdrawsFailed
+		return nil, withdraw_errors.ErrFindAllWithdrawsFailed.WithInternal(err)
 	}
 
 	return withdraw, nil
@@ -49,7 +52,7 @@ func (r *withdrawQueryRepository) FindByActive(ctx context.Context, req *request
 	res, err := r.db.GetActiveWithdraws(ctx, reqDb)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrFindActiveWithdrawsFailed
+		return nil, withdraw_errors.ErrFindActiveWithdrawsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -67,7 +70,7 @@ func (r *withdrawQueryRepository) FindByTrashed(ctx context.Context, req *reques
 	res, err := r.db.GetTrashedWithdraws(ctx, reqDb)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrFindTrashedWithdrawsFailed
+		return nil, withdraw_errors.ErrFindTrashedWithdrawsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -86,7 +89,7 @@ func (r *withdrawQueryRepository) FindAllByCardNumber(ctx context.Context, req *
 	withdraw, err := r.db.GetWithdrawsByCardNumber(ctx, reqDb)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrFindWithdrawsByCardNumberFailed
+		return nil, withdraw_errors.ErrFindWithdrawsByCardNumberFailed.WithInternal(err)
 	}
 
 	return withdraw, nil
@@ -97,7 +100,10 @@ func (r *withdrawQueryRepository) FindById(ctx context.Context, id int) (*db.Get
 	withdraw, err := r.db.GetWithdrawByID(ctx, int32(id))
 
 	if err != nil {
-		return nil, withdraw_errors.ErrFindWithdrawByIdFailed
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, withdraw_errors.ErrFindWithdrawByIdFailed.WithInternal(err)
+		}
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return withdraw, nil

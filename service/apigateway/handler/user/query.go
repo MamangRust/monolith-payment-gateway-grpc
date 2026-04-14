@@ -11,8 +11,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/user"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type userQueryHandleApi struct {
@@ -107,7 +105,7 @@ func (h *userQueryHandleApi) FindAllUser(c echo.Context) error {
 
 	res, err := h.client.FindAll(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindAllUser")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationUser(res)
@@ -147,7 +145,7 @@ func (h *userQueryHandleApi) FindById(c echo.Context) error {
 
 	user, err := h.client.FindById(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindById")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseUser(user)
@@ -203,7 +201,7 @@ func (h *userQueryHandleApi) FindByActive(c echo.Context) error {
 
 	res, err := h.client.FindByActive(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByActive")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
@@ -260,7 +258,7 @@ func (h *userQueryHandleApi) FindByTrashed(c echo.Context) error {
 
 	res, err := h.client.FindByTrashed(ctx, grpcReq)
 	if err != nil {
-		return h.handleGrpcError(err, "FindByTrashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationUserDeleteAt(res)
@@ -268,40 +266,4 @@ func (h *userQueryHandleApi) FindByTrashed(c echo.Context) error {
 	h.cache.SetCachedUserTrashedCache(ctx, req, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *userQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("User").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("User already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("User service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

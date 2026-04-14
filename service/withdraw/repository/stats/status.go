@@ -37,7 +37,7 @@ func (r *withdrawStatsStatusRepository) GetMonthWithdrawStatusSuccess(ctx contex
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetMonthWithdrawStatusSuccessFailed
+		return nil, withdraw_errors.ErrGetMonthWithdrawStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -47,7 +47,7 @@ func (r *withdrawStatsStatusRepository) GetYearlyWithdrawStatusSuccess(ctx conte
 	res, err := r.db.GetYearlyWithdrawStatusSuccess(ctx, int32(year))
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusSuccessFailed
+		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -68,7 +68,7 @@ func (r *withdrawStatsStatusRepository) GetMonthWithdrawStatusFailed(ctx context
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetMonthWithdrawStatusFailedFailed
+		return nil, withdraw_errors.ErrGetMonthWithdrawStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -78,7 +78,7 @@ func (r *withdrawStatsStatusRepository) GetYearlyWithdrawStatusFailed(ctx contex
 	res, err := r.db.GetYearlyWithdrawStatusFailed(ctx, int32(year))
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusFailedFailed
+		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil

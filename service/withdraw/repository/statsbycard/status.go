@@ -35,7 +35,7 @@ func (r *withdrawStatsByCardStatusRepository) GetMonthWithdrawStatusSuccessByCar
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetMonthWithdrawStatusSuccessByCardFailed
+		return nil, withdraw_errors.ErrGetMonthWithdrawStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -48,7 +48,7 @@ func (r *withdrawStatsByCardStatusRepository) GetYearlyWithdrawStatusSuccessByCa
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusSuccessByCardFailed
+		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -70,7 +70,7 @@ func (r *withdrawStatsByCardStatusRepository) GetMonthWithdrawStatusFailedByCard
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetMonthWithdrawStatusFailedByCardFailed
+		return nil, withdraw_errors.ErrGetMonthWithdrawStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -83,7 +83,7 @@ func (r *withdrawStatsByCardStatusRepository) GetYearlyWithdrawStatusFailedByCar
 	})
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusFailedByCardFailed
+		return nil, withdraw_errors.ErrGetYearlyWithdrawStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

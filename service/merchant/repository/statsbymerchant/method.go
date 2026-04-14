@@ -28,7 +28,7 @@ func (r *merchantStatsMethodByMerchantRepository) GetMonthlyPaymentMethodByMerch
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyPaymentMethodByMerchantsFailed
+		return nil, merchant_errors.ErrGetMonthlyPaymentMethodByMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -41,7 +41,7 @@ func (r *merchantStatsMethodByMerchantRepository) GetYearlyPaymentMethodByMercha
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyPaymentMethodByMerchantsFailed
+		return nil, merchant_errors.ErrGetYearlyPaymentMethodByMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil

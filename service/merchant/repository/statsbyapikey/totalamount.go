@@ -27,7 +27,7 @@ func (r *merchantStatsTotalAmountByApiKeyRepository) GetMonthlyTotalAmountByApik
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyTotalAmountByApikeyFailed
+		return nil, merchant_errors.ErrGetMonthlyTotalAmountByApikeyFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -40,7 +40,7 @@ func (r *merchantStatsTotalAmountByApiKeyRepository) GetYearlyTotalAmountByApike
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyTotalAmountByApikeyFailed
+		return nil, merchant_errors.ErrGetYearlyTotalAmountByApikeyFailed.WithInternal(err)
 	}
 
 	return res, nil

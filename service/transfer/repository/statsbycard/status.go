@@ -35,7 +35,7 @@ func (r *transferStatsStatusByCardRepository) GetMonthTransferStatusSuccessByCar
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetMonthTransferStatusSuccessByCardFailed
+		return nil, transfer_errors.ErrGetMonthTransferStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -48,7 +48,7 @@ func (r *transferStatsStatusByCardRepository) GetYearlyTransferStatusSuccessByCa
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetYearlyTransferStatusSuccessByCardFailed
+		return nil, transfer_errors.ErrGetYearlyTransferStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -70,7 +70,7 @@ func (r *transferStatsStatusByCardRepository) GetMonthTransferStatusFailedByCard
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetMonthTransferStatusFailedByCardFailed
+		return nil, transfer_errors.ErrGetMonthTransferStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -83,7 +83,7 @@ func (r *transferStatsStatusByCardRepository) GetYearlyTransferStatusFailedByCar
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetYearlyTransferStatusFailedByCardFailed
+		return nil, transfer_errors.ErrGetYearlyTransferStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

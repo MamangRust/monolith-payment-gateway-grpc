@@ -14,8 +14,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -100,7 +98,7 @@ func (h *saldoCommandHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseSaldo(res)
@@ -150,7 +148,7 @@ func (h *saldoCommandHandleApi) Update(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to update saldo", zap.Error(err))
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseSaldo(res)
@@ -191,7 +189,7 @@ func (h *saldoCommandHandleApi) TrashSaldo(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to trashed saldo", zap.Error(err))
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseSaldoDeleteAt(res)
@@ -230,7 +228,7 @@ func (h *saldoCommandHandleApi) RestoreSaldo(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to restore saldo", zap.Error(err))
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseSaldoDeleteAt(res)
@@ -269,7 +267,7 @@ func (h *saldoCommandHandleApi) Delete(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to delete saldo", zap.Error(err))
-		return h.handleGrpcError(err, "DeleteSaldo")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseSaldoDelete(res)
@@ -296,7 +294,7 @@ func (h *saldoCommandHandleApi) RestoreAllSaldo(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Error("Failed to restore all saldo", zap.Error(err))
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all saldo")
@@ -323,7 +321,7 @@ func (h *saldoCommandHandleApi) DeleteAllSaldoPermanent(c echo.Context) error {
 	if err != nil {
 		h.logger.Error("Failed to permanently delete all saldo", zap.Error(err))
 
-		return h.handleGrpcError(err, "DeleteAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all saldo permanently")
@@ -331,42 +329,6 @@ func (h *saldoCommandHandleApi) DeleteAllSaldoPermanent(c echo.Context) error {
 	so := h.mapper.ToApiResponseSaldoAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *saldoCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Saldo").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Saldo already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Saldo service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *saldoCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

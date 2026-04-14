@@ -24,17 +24,17 @@ func (r *cardStatsBalanceRepository) GetMonthlyBalance(ctx context.Context, year
 	res, err := r.db.GetMonthlyBalances(ctx, yearStart)
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyBalanceFailed
+		return nil, card_errors.ErrGetMonthlyBalanceFailed.WithInternal(err)
 	}
 
 	return res, nil
 }
 
 func (r *cardStatsBalanceRepository) GetYearlyBalance(ctx context.Context, year int) ([]*db.GetYearlyBalancesRow, error) {
-	res, err := r.db.GetYearlyBalances(ctx, int32(year))
+	res, err := r.db.GetYearlyBalances(ctx, year)
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyBalanceFailed
+		return nil, card_errors.ErrGetYearlyBalanceFailed.WithInternal(err)
 	}
 
 	return res, nil

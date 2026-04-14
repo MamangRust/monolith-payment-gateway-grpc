@@ -9,8 +9,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -79,7 +77,7 @@ func (h *cardDashboardHandleApi) DashboardCard(c echo.Context) error {
 
 	res, err := h.card.DashboardCard(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "DashboardCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseDashboardCard(res)
@@ -118,47 +116,11 @@ func (h *cardDashboardHandleApi) DashboardCardCardNumber(c echo.Context) error {
 
 	res, err := h.card.DashboardCardNumber(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "DashboardCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseDashboardCardCardNumber(res)
 	h.cache.SetDashboardCardCardNumberCache(ctx, cardNumber, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *cardDashboardHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Card").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Card already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

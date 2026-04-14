@@ -21,7 +21,7 @@ func (r *cardDashboardWithdrawRepository) GetTotalWithdrawAmount(ctx context.Con
 	res, err := r.db.GetTotalWithdrawAmount(ctx)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalWithdrawAmountFailed
+		return nil, card_errors.ErrGetTotalWithdrawsFailed.WithInternal(err)
 	}
 
 	return &res, nil
@@ -31,7 +31,7 @@ func (r *cardDashboardWithdrawRepository) GetTotalWithdrawAmountByCardNumber(ctx
 	res, err := r.db.GetTotalWithdrawAmountByCardNumber(ctx, cardNumber)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalWithdrawAmountByCardFailed
+		return nil, card_errors.ErrGetTotalWithdrawAmountByCardFailed.WithInternal(err)
 	}
 
 	return &res, nil

@@ -24,7 +24,7 @@ func (r *withdrawStatsAmountRepository) GetMonthlyWithdraws(ctx context.Context,
 	res, err := r.db.GetMonthlyWithdraws(ctx, yearStart)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetMonthlyWithdrawsFailed
+		return nil, withdraw_errors.ErrGetMonthlyWithdrawsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -35,7 +35,7 @@ func (r *withdrawStatsAmountRepository) GetYearlyWithdraws(ctx context.Context, 
 	res, err := r.db.GetYearlyWithdraws(ctx, year)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrGetYearlyWithdrawsFailed
+		return nil, withdraw_errors.ErrGetYearlyWithdrawsFailed.WithInternal(err)
 	}
 
 	return res, nil

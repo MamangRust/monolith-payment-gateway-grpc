@@ -12,8 +12,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transaction"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type transactionQueryHandleApi struct {
@@ -111,7 +109,7 @@ func (h *transactionQueryHandleApi) FindAll(c echo.Context) error {
 	res, err := h.client.FindAllTransaction(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransaction(res)
@@ -175,7 +173,7 @@ func (h *transactionQueryHandleApi) FindAllTransactionByCardNumber(c echo.Contex
 	res, err := h.client.FindAllTransactionByCardNumber(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindAllTransactionByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransaction(res)
@@ -215,7 +213,7 @@ func (h *transactionQueryHandleApi) FindById(c echo.Context) error {
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindById")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransaction(res)
@@ -256,7 +254,7 @@ func (h *transactionQueryHandleApi) FindByTransactionMerchantId(c echo.Context) 
 	res, err := h.client.FindTransactionByMerchantId(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTransactionMerchantId")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransactions(res)
@@ -312,7 +310,7 @@ func (h *transactionQueryHandleApi) FindByActiveTransaction(c echo.Context) erro
 	res, err := h.client.FindByActiveTransaction(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByActiveTransaction")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
@@ -368,47 +366,11 @@ func (h *transactionQueryHandleApi) FindByTrashedTransaction(c echo.Context) err
 	res, err := h.client.FindByTrashedTransaction(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transaction data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTrashedTransaction")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransactionDeleteAt(res)
 	h.cache.SetCachedTransactionTrashedCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *transactionQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Transaction").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Transaction already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Transaction service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

@@ -11,8 +11,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
 	"github.com/go-playground/validator/v10"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
@@ -101,7 +99,7 @@ func (h *topupCommandHandleApi) Create(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTopup(res)
@@ -149,7 +147,7 @@ func (h *topupCommandHandleApi) Update(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTopup(res)
@@ -184,7 +182,7 @@ func (h *topupCommandHandleApi) TrashTopup(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTopupDeleteAt(res)
@@ -219,7 +217,7 @@ func (h *topupCommandHandleApi) RestoreTopup(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTopupDeleteAt(res)
@@ -254,7 +252,7 @@ func (h *topupCommandHandleApi) DeleteTopupPermanent(c echo.Context) error {
 	})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteTopup")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTopupDelete(res)
@@ -277,7 +275,7 @@ func (h *topupCommandHandleApi) RestoreAllTopup(c echo.Context) error {
 	res, err := h.client.RestoreAllTopup(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all topup")
@@ -302,7 +300,7 @@ func (h *topupCommandHandleApi) DeleteAllTopupPermanent(c echo.Context) error {
 	res, err := h.client.DeleteAllTopupPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all topup permanently")
@@ -310,42 +308,6 @@ func (h *topupCommandHandleApi) DeleteAllTopupPermanent(c echo.Context) error {
 	so := h.mapper.ToApiResponseTopupAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *topupCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Topup").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Topup already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *topupCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

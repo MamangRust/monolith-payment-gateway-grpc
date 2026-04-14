@@ -27,7 +27,7 @@ func (r *merchantStatsMethodByApiKeyRepository) GetMonthlyPaymentMethodByApikey(
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyPaymentMethodByApikeyFailed
+		return nil, merchant_errors.ErrGetMonthlyPaymentMethodByApikeyFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -40,7 +40,7 @@ func (r *merchantStatsMethodByApiKeyRepository) GetYearlyPaymentMethodByApikey(c
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyPaymentMethodByApikeyFailed
+		return nil, merchant_errors.ErrGetYearlyPaymentMethodByApikeyFailed.WithInternal(err)
 	}
 
 	return res, nil

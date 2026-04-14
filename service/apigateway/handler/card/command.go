@@ -14,8 +14,6 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/card"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -103,7 +101,7 @@ func (h *cardCommandHandleApi) CreateCard(c echo.Context) error {
 	res, err := h.card.CreateCard(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCard(res)
@@ -157,7 +155,7 @@ func (h *cardCommandHandleApi) UpdateCard(c echo.Context) error {
 	res, err := h.card.UpdateCard(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCard(res)
@@ -194,7 +192,7 @@ func (h *cardCommandHandleApi) TrashedCard(c echo.Context) error {
 	res, err := h.card.TrashedCard(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCardDeleteAt(res)
@@ -231,7 +229,7 @@ func (h *cardCommandHandleApi) RestoreCard(c echo.Context) error {
 	res, err := h.card.RestoreCard(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCardDeleteAt(res)
@@ -268,7 +266,7 @@ func (h *cardCommandHandleApi) DeleteCardPermanent(c echo.Context) error {
 	res, err := h.card.DeleteCardPermanent(ctx, req)
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteCard")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseCardDelete(res)
@@ -290,7 +288,7 @@ func (h *cardCommandHandleApi) RestoreAllCard(c echo.Context) error {
 
 	res, err := h.card.RestoreAllCard(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all cards")
@@ -315,7 +313,7 @@ func (h *cardCommandHandleApi) DeleteAllCardPermanent(c echo.Context) error {
 	res, err := h.card.DeleteAllCardPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all cards permanently")
@@ -323,42 +321,6 @@ func (h *cardCommandHandleApi) DeleteAllCardPermanent(c echo.Context) error {
 	so := h.mapper.ToApiResponseCardAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *cardCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Card").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Card already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Card service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *cardCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

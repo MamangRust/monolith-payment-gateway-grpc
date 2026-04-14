@@ -18,8 +18,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -163,7 +161,7 @@ func (h *roleCommandHandleApi) Create(c echo.Context) error {
 
 	res, err := h.role.CreateRole(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "Create")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRole(res)
@@ -210,7 +208,7 @@ func (h *roleCommandHandleApi) Update(c echo.Context) error {
 
 	res, err := h.role.UpdateRole(ctx, reqPb)
 	if err != nil {
-		return h.handleGrpcError(err, "Update")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRole(res)
@@ -244,7 +242,7 @@ func (h *roleCommandHandleApi) Trashed(c echo.Context) error {
 
 	res, err := h.role.TrashedRole(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "Trashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRoleDeleteAt(res)
@@ -278,7 +276,7 @@ func (h *roleCommandHandleApi) Restore(c echo.Context) error {
 
 	res, err := h.role.RestoreRole(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "Restore")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRoleDeleteAt(res)
@@ -312,7 +310,7 @@ func (h *roleCommandHandleApi) DeletePermanent(c echo.Context) error {
 
 	res, err := h.role.DeleteRolePermanent(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteRole")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRoleDelete(res)
@@ -335,7 +333,7 @@ func (h *roleCommandHandleApi) RestoreAll(c echo.Context) error {
 
 	res, err := h.role.RestoreAllRole(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "RestoreAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRoleAll(res)
@@ -358,48 +356,12 @@ func (h *roleCommandHandleApi) DeleteAllPermanent(c echo.Context) error {
 
 	res, err := h.role.DeleteAllRolePermanent(ctx, &emptypb.Empty{})
 	if err != nil {
-		return h.handleGrpcError(err, "DeleteAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseRoleAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *roleCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Role").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Role already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Role service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *roleCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

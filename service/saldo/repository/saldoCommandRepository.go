@@ -27,7 +27,7 @@ func (r *saldoCommandRepository) CreateSaldo(ctx context.Context, request *reque
 	res, err := r.db.CreateSaldo(ctx, req)
 
 	if err != nil {
-		return nil, saldo_errors.ErrCreateSaldoFailed
+		return nil, saldo_errors.ErrCreateSaldoFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -43,7 +43,7 @@ func (r *saldoCommandRepository) UpdateSaldo(ctx context.Context, request *reque
 	res, err := r.db.UpdateSaldo(ctx, req)
 
 	if err != nil {
-		return nil, saldo_errors.ErrUpdateSaldoFailed
+		return nil, saldo_errors.ErrUpdateSaldoFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -58,7 +58,7 @@ func (r *saldoCommandRepository) UpdateSaldoBalance(ctx context.Context, request
 	res, err := r.db.UpdateSaldoBalance(ctx, req)
 
 	if err != nil {
-		return nil, saldo_errors.ErrUpdateSaldoBalanceFailed
+		return nil, saldo_errors.ErrUpdateSaldoBalanceFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -89,7 +89,7 @@ func (r *saldoCommandRepository) UpdateSaldoWithdraw(ctx context.Context, reques
 
 	res, err := r.db.UpdateSaldoWithdraw(ctx, req)
 	if err != nil {
-		return nil, saldo_errors.ErrUpdateSaldoWithdrawFailed
+		return nil, saldo_errors.ErrUpdateSaldoWithdrawFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -98,7 +98,7 @@ func (r *saldoCommandRepository) UpdateSaldoWithdraw(ctx context.Context, reques
 func (r *saldoCommandRepository) TrashedSaldo(ctx context.Context, saldo_id int) (*db.Saldo, error) {
 	res, err := r.db.TrashSaldo(ctx, int32(saldo_id))
 	if err != nil {
-		return nil, saldo_errors.ErrTrashSaldoFailed
+		return nil, saldo_errors.ErrTrashSaldoFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -106,7 +106,7 @@ func (r *saldoCommandRepository) TrashedSaldo(ctx context.Context, saldo_id int)
 func (r *saldoCommandRepository) RestoreSaldo(ctx context.Context, saldo_id int) (*db.Saldo, error) {
 	res, err := r.db.RestoreSaldo(ctx, int32(saldo_id))
 	if err != nil {
-		return nil, saldo_errors.ErrRestoreSaldoFailed
+		return nil, saldo_errors.ErrRestoreSaldoFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -114,7 +114,7 @@ func (r *saldoCommandRepository) RestoreSaldo(ctx context.Context, saldo_id int)
 func (r *saldoCommandRepository) DeleteSaldoPermanent(ctx context.Context, saldo_id int) (bool, error) {
 	err := r.db.DeleteSaldoPermanently(ctx, int32(saldo_id))
 	if err != nil {
-		return false, saldo_errors.ErrDeleteSaldoPermanentFailed
+		return false, saldo_errors.ErrDeleteSaldoPermanentFailed.WithInternal(err)
 	}
 	return true, nil
 }
@@ -123,7 +123,7 @@ func (r *saldoCommandRepository) RestoreAllSaldo(ctx context.Context) (bool, err
 	err := r.db.RestoreAllSaldos(ctx)
 
 	if err != nil {
-		return false, saldo_errors.ErrRestoreAllSaldosFailed
+		return false, saldo_errors.ErrRestoreAllSaldosFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -133,7 +133,7 @@ func (r *saldoCommandRepository) DeleteAllSaldoPermanent(ctx context.Context) (b
 	err := r.db.DeleteAllPermanentSaldos(ctx)
 
 	if err != nil {
-		return false, saldo_errors.ErrDeleteAllSaldosPermanentFailed
+		return false, saldo_errors.ErrDeleteAllSaldosPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

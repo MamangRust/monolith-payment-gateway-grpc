@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	user_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/user_errors/repository"
 )
 
@@ -33,10 +34,10 @@ func (r *userRepository) FindById(ctx context.Context, user_id int) (*db.GetUser
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
+			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	return res, nil

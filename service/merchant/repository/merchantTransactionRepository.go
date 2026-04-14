@@ -30,7 +30,7 @@ func (r *merchantTransactionRepository) FindAllTransactions(ctx context.Context,
 	merchant, err := r.db.FindAllTransactions(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindAllTransactionsFailed
+		return nil, merchant_errors.ErrFindAllTransactionsFailed.WithInternal(err)
 	}
 
 	return merchant, nil
@@ -49,7 +49,7 @@ func (r *merchantTransactionRepository) FindAllTransactionsByMerchant(ctx contex
 	merchant, err := r.db.FindAllTransactionsByMerchant(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindAllTransactionsByMerchantFailed
+		return nil, merchant_errors.ErrFindAllTransactionsByMerchantFailed.WithInternal(err)
 	}
 
 	return merchant, nil
@@ -68,7 +68,7 @@ func (r *merchantTransactionRepository) FindAllTransactionsByApikey(ctx context.
 	merchant, err := r.db.FindAllTransactionsByApikey(ctx, reqDb)
 
 	if err != nil {
-		return nil, merchant_errors.ErrFindAllTransactionsByApiKeyFailed
+		return nil, merchant_errors.ErrFindAllTransactionsByApiKeyFailed.WithInternal(err)
 	}
 
 	return merchant, nil

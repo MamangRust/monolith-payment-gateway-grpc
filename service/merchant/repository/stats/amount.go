@@ -24,7 +24,7 @@ func (r *merchantStatsAmountRepository) GetMonthlyAmountMerchant(ctx context.Con
 	res, err := r.db.GetMonthlyAmountMerchant(ctx, yearStart)
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyAmountMerchantFailed
+		return nil, merchant_errors.ErrGetMonthlyAmountMerchantFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *merchantStatsAmountRepository) GetYearlyAmountMerchant(ctx context.Cont
 	res, err := r.db.GetYearlyAmountMerchant(ctx, year)
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyAmountMerchantFailed
+		return nil, merchant_errors.ErrGetYearlyAmountMerchantFailed.WithInternal(err)
 	}
 
 	return res, nil

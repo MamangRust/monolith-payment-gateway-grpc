@@ -6,7 +6,7 @@ require (
 	github.com/IBM/sarama v1.46.3
 	github.com/MamangRust/monolith-payment-gateway-pb v1.0.10
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
-	github.com/MamangRust/monolith-payment-gateway-shared v1.0.24
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.28
 	github.com/spf13/viper v1.21.0
 	go.opentelemetry.io/otel v1.40.0
 	go.uber.org/zap v1.27.1

@@ -28,7 +28,7 @@ func (r *withdrawCommandRepository) CreateWithdraw(ctx context.Context, request 
 	res, err := r.db.CreateWithdraw(ctx, req)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrCreateWithdrawFailed
+		return nil, withdraw_errors.ErrCreateWithdrawFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -45,7 +45,7 @@ func (r *withdrawCommandRepository) UpdateWithdraw(ctx context.Context, request 
 	res, err := r.db.UpdateWithdraw(ctx, req)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrUpdateWithdrawFailed
+		return nil, withdraw_errors.ErrUpdateWithdrawFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -60,7 +60,7 @@ func (r *withdrawCommandRepository) UpdateWithdrawStatus(ctx context.Context, re
 	res, err := r.db.UpdateWithdrawStatus(ctx, req)
 
 	if err != nil {
-		return nil, withdraw_errors.ErrUpdateWithdrawStatusFailed
+		return nil, withdraw_errors.ErrUpdateWithdrawStatusFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -70,7 +70,7 @@ func (r *withdrawCommandRepository) TrashedWithdraw(ctx context.Context, withdra
 	res, err := r.db.TrashWithdraw(ctx, int32(withdraw_id))
 
 	if err != nil {
-		return nil, withdraw_errors.ErrTrashedWithdrawFailed
+		return nil, withdraw_errors.ErrTrashedWithdrawFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -80,7 +80,7 @@ func (r *withdrawCommandRepository) RestoreWithdraw(ctx context.Context, withdra
 	res, err := r.db.RestoreWithdraw(ctx, int32(withdraw_id))
 
 	if err != nil {
-		return nil, withdraw_errors.ErrRestoreWithdrawFailed
+		return nil, withdraw_errors.ErrRestoreWithdrawFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -90,7 +90,7 @@ func (r *withdrawCommandRepository) DeleteWithdrawPermanent(ctx context.Context,
 	err := r.db.DeleteWithdrawPermanently(ctx, int32(withdraw_id))
 
 	if err != nil {
-		return false, withdraw_errors.ErrDeleteWithdrawPermanentFailed
+		return false, withdraw_errors.ErrDeleteWithdrawPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -100,7 +100,7 @@ func (r *withdrawCommandRepository) RestoreAllWithdraw(ctx context.Context) (boo
 	err := r.db.RestoreAllWithdraws(ctx)
 
 	if err != nil {
-		return false, withdraw_errors.ErrRestoreAllWithdrawsFailed
+		return false, withdraw_errors.ErrRestoreAllWithdrawsFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -110,7 +110,7 @@ func (r *withdrawCommandRepository) DeleteAllWithdrawPermanent(ctx context.Conte
 	err := r.db.DeleteAllPermanentWithdraws(ctx)
 
 	if err != nil {
-		return false, withdraw_errors.ErrDeleteAllWithdrawsPermanentFailed
+		return false, withdraw_errors.ErrDeleteAllWithdrawsPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

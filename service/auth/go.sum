@@ -4,8 +4,8 @@ github.com/MamangRust/monolith-payment-gateway-pb v1.0.10 h1:N16RhpwBJ2Kun/EEsUg
 github.com/MamangRust/monolith-payment-gateway-pb v1.0.10/go.mod h1:e3HtpLpr880TnZkkB6+/wC4ny5J9R0hprWxdSPnS9DE=
 github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28 h1:s45SzYQOFGPnqMfmPwbStFwZYwEg500T+2fh5qpVbP4=
 github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28/go.mod h1:LUzh1HqtwysmcCq8htFaSrydcTGNqmHZrGTPPO+fiN4=
-github.com/MamangRust/monolith-payment-gateway-shared v1.0.26 h1:uZEBHux/9rfJBgP6X7ytOaaANO9m0Bpi0kiPtuv+ABo=
-github.com/MamangRust/monolith-payment-gateway-shared v1.0.26/go.mod h1:5MDs++6GP8FGMDDthzfsNeMMaHzS2Ne41d5THtWS3UY=
+github.com/MamangRust/monolith-payment-gateway-shared v1.0.29 h1:zIU6Yd99G5lI0eCSgdC4wPJPjkbJqNDsVm0RozqV/eU=
+github.com/MamangRust/monolith-payment-gateway-shared v1.0.29/go.mod h1:5MDs++6GP8FGMDDthzfsNeMMaHzS2Ne41d5THtWS3UY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

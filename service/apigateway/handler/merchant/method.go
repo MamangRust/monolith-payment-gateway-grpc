@@ -12,8 +12,6 @@ import (
 	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/merchant"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type merchantStatsMethodHandleApi struct {
@@ -96,7 +94,7 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodsMerchant(c echo.
 
 	res, err := h.client.FindMonthlyPaymentMethodsMerchant(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyPaymentMethodsMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
@@ -137,7 +135,7 @@ func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodMerchant(c echo.Co
 
 	res, err := h.client.FindYearlyPaymentMethodMerchant(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyPaymentMethodMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
@@ -192,7 +190,7 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByMerchants(c ech
 
 	res, err := h.client.FindMonthlyPaymentMethodByMerchants(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyPaymentMethodByMerchants")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
@@ -247,7 +245,7 @@ func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodByMerchants(c echo
 
 	res, err := h.client.FindYearlyPaymentMethodByMerchants(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyPaymentMethodByMerchants")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
@@ -301,7 +299,7 @@ func (h *merchantStatsMethodHandleApi) FindMonthlyPaymentMethodByApikeys(c echo.
 
 	res, err := h.client.FindMonthlyPaymentMethodByApikey(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyPaymentMethodByApikey")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyPaymentMethods(res)
@@ -355,47 +353,11 @@ func (h *merchantStatsMethodHandleApi) FindYearlyPaymentMethodByApikeys(c echo.C
 
 	res, err := h.client.FindYearlyPaymentMethodByApikey(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyPaymentMethodByApikey")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyPaymentMethods(res)
 	h.cache.SetYearlyPaymentMethodByApikeysCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *merchantStatsMethodHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

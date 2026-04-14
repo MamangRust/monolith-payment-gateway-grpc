@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transfer"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type transferHandleApi struct {
@@ -113,7 +111,7 @@ func (h *transferHandleApi) FindAll(c echo.Context) error {
 	res, err := h.client.FindAllTransfer(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransfer(res)
@@ -153,7 +151,7 @@ func (h *transferHandleApi) FindById(c echo.Context) error {
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindById")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransfer(res)
@@ -190,7 +188,7 @@ func (h *transferHandleApi) FindByTransferByTransferFrom(c echo.Context) error {
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTransferByTransferFrom")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransfers(res)
@@ -227,7 +225,7 @@ func (h *transferHandleApi) FindByTransferByTransferTo(c echo.Context) error {
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTransferByTransferTo")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransfers(res)
@@ -283,7 +281,7 @@ func (h *transferHandleApi) FindByActiveTransfer(c echo.Context) error {
 	res, err := h.client.FindByActiveTransfer(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByActiveTransfer")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
@@ -339,47 +337,11 @@ func (h *transferHandleApi) FindByTrashedTransfer(c echo.Context) error {
 	res, err := h.client.FindByTrashedTransfer(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve transfer data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTrashedTransfer")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationTransferDeleteAt(res)
 	h.cache.SetCachedTransferTrashedCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *transferHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Transfer").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Transfer already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

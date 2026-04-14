@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/repository"
 )
 
@@ -34,7 +34,7 @@ func (r *roleQueryRepository) FindAllRoles(ctx context.Context, req *requests.Fi
 	res, err := r.db.GetRoles(ctx, reqDb)
 
 	if err != nil {
-		return nil, role_errors.ErrFindAllRoles
+		return nil, role_errors.ErrFindAllRoles.WithInternal(err)
 	}
 
 	return res, nil
@@ -44,9 +44,9 @@ func (r *roleQueryRepository) FindById(ctx context.Context, id int) (*db.Role, e
 	res, err := r.db.GetRole(ctx, int32(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("role not found with ID: %d", id)
+			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
-		return nil, fmt.Errorf("failed to find role by ID %d: %w", id, err)
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }
@@ -55,10 +55,10 @@ func (r *roleQueryRepository) FindByName(ctx context.Context, name string) (*db.
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, role_errors.ErrRoleNotFound
+			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 
-		return nil, role_errors.ErrRoleNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }
@@ -67,10 +67,10 @@ func (r *roleQueryRepository) FindByUserId(ctx context.Context, user_id int) ([]
 	res, err := r.db.GetUserRoles(ctx, int32(user_id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, role_errors.ErrRoleNotFound
+			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 
-		return nil, role_errors.ErrRoleNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }
@@ -87,7 +87,7 @@ func (r *roleQueryRepository) FindByActiveRole(ctx context.Context, req *request
 	res, err := r.db.GetActiveRoles(ctx, reqDb)
 
 	if err != nil {
-		return nil, role_errors.ErrFindActiveRoles
+		return nil, role_errors.ErrFindActiveRoles.WithInternal(err)
 	}
 
 	return res, nil
@@ -105,7 +105,7 @@ func (r *roleQueryRepository) FindByTrashedRole(ctx context.Context, req *reques
 	res, err := r.db.GetTrashedRoles(ctx, reqDb)
 
 	if err != nil {
-		return nil, role_errors.ErrFindTrashedRoles
+		return nil, role_errors.ErrFindTrashedRoles.WithInternal(err)
 	}
 
 	return res, nil

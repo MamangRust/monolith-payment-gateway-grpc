@@ -21,7 +21,7 @@ func (r *cardDashboardTransferRepository) GetTotalTransferAmount(ctx context.Con
 	res, err := r.db.GetTotalTransferAmount(ctx)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTransferAmountFailed
+		return nil, card_errors.ErrGetTotalTransfersFailed.WithInternal(err)
 	}
 
 	return &res, nil
@@ -31,7 +31,7 @@ func (r *cardDashboardTransferRepository) GetTotalTransferAmountBySender(ctx con
 	res, err := r.db.GetTotalTransferAmountBySender(ctx, senderCardNumber)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTransferAmountBySenderFailed
+		return nil, card_errors.ErrGetTotalTransferSenderByCardFailed.WithInternal(err)
 	}
 
 	return &res, nil
@@ -41,7 +41,7 @@ func (r *cardDashboardTransferRepository) GetTotalTransferAmountByReceiver(ctx c
 	res, err := r.db.GetTotalTransferAmountByReceiver(ctx, receiverCardNumber)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTransferAmountByReceiverFailed
+		return nil, card_errors.ErrGetTotalTransferSenderByCardFailed.WithInternal(err)
 	}
 
 	return &res, nil

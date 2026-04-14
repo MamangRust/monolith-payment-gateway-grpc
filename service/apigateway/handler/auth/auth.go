@@ -108,7 +108,7 @@ func (h *authHandleApi) Register(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Error("Registration failed", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	return c.JSON(http.StatusCreated, h.mapping.ToResponseRegister(res))
@@ -154,10 +154,10 @@ func (h *authHandleApi) Login(c echo.Context) error {
 		h.logger.Error("Login failed", zap.Error(err))
 
 		if status.Code(err) == codes.Internal && strings.Contains(err.Error(), "empty token") {
-			return err
+			return errors.ParseGrpcError(err)
 		}
 
-		return h.handleGrpcError(err, "Login")
+		return errors.ParseGrpcError(err)
 	}
 
 	mappedResponse := h.mapping.ToResponseLogin(res)
@@ -170,7 +170,6 @@ func (h *authHandleApi) Login(c echo.Context) error {
 // RefreshToken godoc
 // @Summary Refresh access token
 // @Tags Auth
-// @Security Bearer
 // @Description Refreshes the access token using a valid refresh token.
 // @Accept json
 // @Produce json
@@ -201,7 +200,7 @@ func (h *authHandleApi) RefreshToken(c echo.Context) error {
 		RefreshToken: body.RefreshToken,
 	})
 	if err != nil {
-		return h.handleGrpcError(err, "RefreshToken")
+		return errors.ParseGrpcError(err)
 	}
 
 	mappedResponse := h.mapping.ToResponseRefreshToken(res)
@@ -245,49 +244,13 @@ func (h *authHandleApi) GetMe(c echo.Context) error {
 		},
 	)
 	if err != nil {
-		return h.handleGrpcError(err, "GetMe")
+		return errors.ParseGrpcError(err)
 	}
 
 	response := h.mapping.ToResponseGetMe(res)
 	h.cache.SetCachedUserInfo(c.Request().Context(), userId, response)
 
 	return c.JSON(http.StatusOK, response)
-}
-
-func (h *authHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("User").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("User already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Shipping Address service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *authHandleApi) parseValidationErrors(err error) []errors.ValidationError {

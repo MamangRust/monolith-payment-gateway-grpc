@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/transfer"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type transferStatsAmountHandleApi struct {
@@ -96,7 +94,7 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmounts(c echo.Context
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly transfer amounts", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTransferAmounts")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
@@ -136,7 +134,7 @@ func (h *transferStatsAmountHandleApi) FindYearlyTransferAmounts(c echo.Context)
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly transfer amounts", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTransferAmounts")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
@@ -189,7 +187,7 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsBySenderCardNum
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly transfer amounts by sender card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTransferAmountsBySenderCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
@@ -242,7 +240,7 @@ func (h *transferStatsAmountHandleApi) FindMonthlyTransferAmountsByReceiverCardN
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly transfer amounts by receiver card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTransferAmountsByReceiverCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferMonthAmount(res)
@@ -295,7 +293,7 @@ func (h *transferStatsAmountHandleApi) FindYearlyTransferAmountsBySenderCardNumb
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly transfer amounts by sender card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTransferAmountsBySenderCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
@@ -348,47 +346,11 @@ func (h *transferStatsAmountHandleApi) FindYearlyTransferAmountsByReceiverCardNu
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly transfer amounts by receiver card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTransferAmountsByReceiverCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTransferYearAmount(res)
 	h.cache.SetYearlyTransferAmountsByReceiverCard(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *transferStatsAmountHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Transfer").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Transfer already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

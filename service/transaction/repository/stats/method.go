@@ -24,7 +24,7 @@ func (r *transactionStatsMethodRepository) GetMonthlyPaymentMethods(ctx context.
 	res, err := r.db.GetMonthlyPaymentMethods(ctx, yearStart)
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsFailed
+		return nil, transaction_errors.ErrGetMonthlyPaymentMethodsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *transactionStatsMethodRepository) GetYearlyPaymentMethods(ctx context.C
 	res, err := r.db.GetYearlyPaymentMethods(ctx, year)
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyPaymentMethodsFailed
+		return nil, transaction_errors.ErrGetYearlyPaymentMethodsFailed.WithInternal(err)
 	}
 
 	return res, nil

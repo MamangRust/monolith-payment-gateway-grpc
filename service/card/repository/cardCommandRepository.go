@@ -2,11 +2,11 @@ package repository
 
 import (
 	"context"
-	"fmt"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/randomvcc"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	card_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/card_errors/repository"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -24,7 +24,7 @@ func NewCardCommandRepository(db *db.Queries) CardCommandRepository {
 func (r *cardCommandRepository) CreateCard(ctx context.Context, request *requests.CreateCardRequest) (*db.CreateCardRow, error) {
 	number, err := randomvcc.RandomCardNumber()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate card number: %w", err)
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	expireDate := pgtype.Date{
@@ -43,7 +43,7 @@ func (r *cardCommandRepository) CreateCard(ctx context.Context, request *request
 
 	res, err := r.db.CreateCard(ctx, req)
 	if err != nil {
-		return nil, card_errors.ErrCreateCardFailed
+		return nil, card_errors.ErrCreateCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -65,7 +65,7 @@ func (r *cardCommandRepository) UpdateCard(ctx context.Context, request *request
 
 	res, err := r.db.UpdateCard(ctx, req)
 	if err != nil {
-		return nil, card_errors.ErrUpdateCardFailed
+		return nil, card_errors.ErrUpdateCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -75,7 +75,7 @@ func (r *cardCommandRepository) TrashedCard(ctx context.Context, card_id int) (*
 	res, err := r.db.TrashCard(ctx, int32(card_id))
 
 	if err != nil {
-		return nil, card_errors.ErrTrashCardFailed
+		return nil, card_errors.ErrTrashCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -85,7 +85,7 @@ func (r *cardCommandRepository) RestoreCard(ctx context.Context, card_id int) (*
 	res, err := r.db.RestoreCard(ctx, int32(card_id))
 
 	if err != nil {
-		return nil, card_errors.ErrRestoreCardFailed
+		return nil, card_errors.ErrRestoreCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -95,7 +95,7 @@ func (r *cardCommandRepository) DeleteCardPermanent(ctx context.Context, card_id
 	err := r.db.DeleteCardPermanently(ctx, int32(card_id))
 
 	if err != nil {
-		return false, card_errors.ErrDeleteCardPermanentFailed
+		return false, card_errors.ErrDeleteCardPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -105,7 +105,7 @@ func (r *cardCommandRepository) RestoreAllCard(ctx context.Context) (bool, error
 	err := r.db.RestoreAllCards(ctx)
 
 	if err != nil {
-		return false, card_errors.ErrRestoreAllCardsFailed
+		return false, card_errors.ErrRestoreAllCardsFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -115,7 +115,7 @@ func (r *cardCommandRepository) DeleteAllCardPermanent(ctx context.Context) (boo
 	err := r.db.DeleteAllPermanentCards(ctx)
 
 	if err != nil {
-		return false, card_errors.ErrDeleteAllCardsPermanentFailed
+		return false, card_errors.ErrDeleteAllCardsPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

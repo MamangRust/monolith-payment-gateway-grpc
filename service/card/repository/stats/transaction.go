@@ -24,17 +24,17 @@ func (r *cardStatsTransactionRepository) GetMonthlyTransactionAmount(ctx context
 	res, err := r.db.GetMonthlyTransactionAmount(ctx, yearStart)
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyTransactionAmountFailed
+		return nil, card_errors.ErrGetMonthlyTransactionAmountFailed.WithInternal(err)
 	}
 
 	return res, nil
 }
 
 func (r *cardStatsTransactionRepository) GetYearlyTransactionAmount(ctx context.Context, year int) ([]*db.GetYearlyTransactionAmountRow, error) {
-	res, err := r.db.GetYearlyTransactionAmount(ctx, int32(year))
+	res, err := r.db.GetYearlyTransactionAmount(ctx, year)
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyTransactionAmountFailed
+		return nil, card_errors.ErrGetYearlyTransactionAmountFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -28,7 +28,7 @@ func (r *cardStatsTopupByCardRepository) GetMonthlyTopupAmountByCardNumber(ctx c
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyTopupAmountByCardFailed
+		return nil, card_errors.ErrGetMonthlyTopupAmountByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -41,7 +41,7 @@ func (r *cardStatsTopupByCardRepository) GetYearlyTopupAmountByCardNumber(ctx co
 	})
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyTopupAmountByCardFailed
+		return nil, card_errors.ErrGetYearlyTopupAmountByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -46,7 +46,7 @@ func (r *cardStaticsTransferRepository) GetMonthlyTransferAmountReceiver(ctx con
 	res, err := r.db.GetMonthlyTransferAmountReceiver(ctx, yearStart)
 
 	if err != nil {
-		return nil, card_errors.ErrGetMonthlyTransferAmountReceiverFailed
+		return nil, card_errors.ErrGetMonthlyTransferAmountReceiverFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -56,7 +56,7 @@ func (r *cardStaticsTransferRepository) GetYearlyTransferAmountReceiver(ctx cont
 	res, err := r.db.GetYearlyTransferAmountReceiver(ctx, int32(year))
 
 	if err != nil {
-		return nil, card_errors.ErrGetYearlyTransferAmountReceiverFailed
+		return nil, card_errors.ErrGetYearlyTransferAmountReceiverFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -24,7 +24,7 @@ func (r *transactionStatsAmountRepository) GetMonthlyAmounts(ctx context.Context
 	res, err := r.db.GetMonthlyAmounts(ctx, yearStart)
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthlyAmountsFailed
+		return nil, transaction_errors.ErrGetMonthlyAmountsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -34,7 +34,7 @@ func (r *transactionStatsAmountRepository) GetYearlyAmounts(ctx context.Context,
 	res, err := r.db.GetYearlyAmounts(ctx, year)
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyAmountsFailed
+		return nil, transaction_errors.ErrGetYearlyAmountsFailed.WithInternal(err)
 	}
 
 	return res, nil

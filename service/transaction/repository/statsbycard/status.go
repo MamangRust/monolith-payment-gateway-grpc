@@ -35,7 +35,7 @@ func (r *transactionStatsByCardStatusRepository) GetMonthTransactionStatusSucces
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthTransactionStatusSuccessByCardFailed
+		return nil, transaction_errors.ErrGetMonthTransactionStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -48,7 +48,7 @@ func (r *transactionStatsByCardStatusRepository) GetYearlyTransactionStatusSucce
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyTransactionStatusSuccessByCardFailed
+		return nil, transaction_errors.ErrGetYearlyTransactionStatusSuccessByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -70,7 +70,7 @@ func (r *transactionStatsByCardStatusRepository) GetMonthTransactionStatusFailed
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthTransactionStatusFailedByCardFailed
+		return nil, transaction_errors.ErrGetMonthTransactionStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -83,7 +83,7 @@ func (r *transactionStatsByCardStatusRepository) GetYearlyTransactionStatusFaile
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyTransactionStatusFailedByCardFailed
+		return nil, transaction_errors.ErrGetYearlyTransactionStatusFailedByCardFailed.WithInternal(err)
 	}
 
 	return res, nil

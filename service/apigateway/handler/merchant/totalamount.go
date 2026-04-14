@@ -6,8 +6,6 @@ import (
 
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	merchant_cache "github.com/MamangRust/monolith-payment-gateway-apigateway/redis/api/merchant"
 	pbmerchant "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
@@ -99,7 +97,7 @@ func (h *merchantStatsTotalAmountHandleApi) FindMonthlyTotalAmountMerchant(c ech
 
 	res, err := h.client.FindMonthlyTotalAmountMerchant(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTotalAmountMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyTotalAmounts(res)
@@ -140,7 +138,7 @@ func (h *merchantStatsTotalAmountHandleApi) FindYearlyTotalAmountMerchant(c echo
 
 	res, err := h.client.FindYearlyTotalAmountMerchant(ctx, req)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTotalAmountMerchant")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyTotalAmounts(res)
@@ -195,7 +193,7 @@ func (h *merchantStatsTotalAmountHandleApi) FindMonthlyTotalAmountByMerchants(c 
 
 	res, err := h.client.FindMonthlyTotalAmountByMerchants(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTotalAmountByMerchants")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyTotalAmounts(res)
@@ -250,7 +248,7 @@ func (h *merchantStatsTotalAmountHandleApi) FindYearlyTotalAmountByMerchants(c e
 
 	res, err := h.client.FindYearlyTotalAmountByMerchants(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTotalAmountByMerchants")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyTotalAmounts(res)
@@ -304,7 +302,7 @@ func (h *merchantStatsTotalAmountHandleApi) FindMonthlyTotalAmountByApikeys(c ec
 
 	res, err := h.client.FindMonthlyTotalAmountByApikey(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindMonthlyTotalAmountByApikey")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseMonthlyTotalAmounts(res)
@@ -358,47 +356,11 @@ func (h *merchantStatsTotalAmountHandleApi) FindYearlyTotalAmountByApikeys(c ech
 
 	res, err := h.client.FindYearlyTotalAmountByApikey(ctx, reqGrpc)
 	if err != nil {
-		return h.handleGrpcError(err, "FindYearlyTotalAmountByApikey")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseYearlyTotalAmounts(res)
 	h.cache.SetYearlyTotalAmountByApikeysCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *merchantStatsTotalAmountHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Merchant").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Merchant already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Merchant service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

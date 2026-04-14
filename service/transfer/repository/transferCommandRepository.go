@@ -28,7 +28,7 @@ func (r *transferCommandRepository) CreateTransfer(ctx context.Context, request 
 	res, err := r.db.CreateTransfer(ctx, req)
 
 	if err != nil {
-		return nil, transfer_errors.ErrCreateTransferFailed
+		return nil, transfer_errors.ErrCreateTransferFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -45,7 +45,7 @@ func (r *transferCommandRepository) UpdateTransfer(ctx context.Context, request 
 	res, err := r.db.UpdateTransfer(ctx, req)
 
 	if err != nil {
-		return nil, transfer_errors.ErrUpdateTransferFailed
+		return nil, transfer_errors.ErrUpdateTransferFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -61,7 +61,7 @@ func (r *transferCommandRepository) UpdateTransferAmount(ctx context.Context, re
 	res, err := r.db.UpdateTransferAmount(ctx, req)
 
 	if err != nil {
-		return nil, transfer_errors.ErrUpdateTransferAmountFailed
+		return nil, transfer_errors.ErrUpdateTransferAmountFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -76,7 +76,7 @@ func (r *transferCommandRepository) UpdateTransferStatus(ctx context.Context, re
 	res, err := r.db.UpdateTransferStatus(ctx, req)
 
 	if err != nil {
-		return nil, transfer_errors.ErrUpdateTransferStatusFailed
+		return nil, transfer_errors.ErrUpdateTransferStatusFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -86,7 +86,7 @@ func (r *transferCommandRepository) TrashedTransfer(ctx context.Context, transfe
 	res, err := r.db.TrashTransfer(ctx, int32(transfer_id))
 
 	if err != nil {
-		return nil, transfer_errors.ErrTrashedTransferFailed
+		return nil, transfer_errors.ErrTrashedTransferFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -94,7 +94,7 @@ func (r *transferCommandRepository) TrashedTransfer(ctx context.Context, transfe
 func (r *transferCommandRepository) RestoreTransfer(ctx context.Context, transfer_id int) (*db.Transfer, error) {
 	res, err := r.db.RestoreTransfer(ctx, int32(transfer_id))
 	if err != nil {
-		return nil, transfer_errors.ErrRestoreTransferFailed
+		return nil, transfer_errors.ErrRestoreTransferFailed.WithInternal(err)
 	}
 	return res, nil
 }
@@ -102,7 +102,7 @@ func (r *transferCommandRepository) RestoreTransfer(ctx context.Context, transfe
 func (r *transferCommandRepository) DeleteTransferPermanent(ctx context.Context, transfer_id int) (bool, error) {
 	err := r.db.DeleteTransferPermanently(ctx, int32(transfer_id))
 	if err != nil {
-		return false, transfer_errors.ErrDeleteTransferPermanentFailed
+		return false, transfer_errors.ErrDeleteTransferPermanentFailed.WithInternal(err)
 	}
 	return true, nil
 }
@@ -111,7 +111,7 @@ func (r *transferCommandRepository) RestoreAllTransfer(ctx context.Context) (boo
 	err := r.db.RestoreAllTransfers(ctx)
 
 	if err != nil {
-		return false, transfer_errors.ErrRestoreAllTransfersFailed
+		return false, transfer_errors.ErrRestoreAllTransfersFailed.WithInternal(err)
 	}
 
 	return true, nil
@@ -121,7 +121,7 @@ func (r *transferCommandRepository) DeleteAllTransferPermanent(ctx context.Conte
 	err := r.db.DeleteAllPermanentTransfers(ctx)
 
 	if err != nil {
-		return false, transfer_errors.ErrDeleteAllTransfersPermanentFailed
+		return false, transfer_errors.ErrDeleteAllTransfersPermanentFailed.WithInternal(err)
 	}
 
 	return true, nil

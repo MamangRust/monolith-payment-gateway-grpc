@@ -34,7 +34,7 @@ func (r *transactionStatsStatusRepository) GetMonthTransactionStatusSuccess(ctx 
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthTransactionStatusSuccessFailed
+		return nil, transaction_errors.ErrGetMonthTransactionStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -44,7 +44,7 @@ func (r *transactionStatsStatusRepository) GetYearlyTransactionStatusSuccess(ctx
 	res, err := r.db.GetYearlyTransactionStatusSuccess(ctx, int32(year))
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyTransactionStatusSuccessFailed
+		return nil, transaction_errors.ErrGetYearlyTransactionStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -65,7 +65,7 @@ func (r *transactionStatsStatusRepository) GetMonthTransactionStatusFailed(ctx c
 	})
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetMonthTransactionStatusFailedFailed
+		return nil, transaction_errors.ErrGetMonthTransactionStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -75,7 +75,7 @@ func (r *transactionStatsStatusRepository) GetYearlyTransactionStatusFailed(ctx 
 	res, err := r.db.GetYearlyTransactionStatusFailed(ctx, int32(year))
 
 	if err != nil {
-		return nil, transaction_errors.ErrGetYearlyTransactionStatusFailedFailed
+		return nil, transaction_errors.ErrGetYearlyTransactionStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil

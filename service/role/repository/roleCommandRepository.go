@@ -33,7 +33,7 @@ func (r *roleCommandRepository) CreateRole(ctx context.Context, req *requests.Cr
 	res, err := r.db.CreateRole(ctx, req.Name)
 
 	if err != nil {
-		return nil, role_errors.ErrCreateRole
+		return nil, role_errors.ErrCreateRole.WithInternal(err)
 	}
 
 	return res, nil
@@ -46,7 +46,7 @@ func (r *roleCommandRepository) UpdateRole(ctx context.Context, req *requests.Up
 	})
 
 	if err != nil {
-		return nil, role_errors.ErrUpdateRole
+		return nil, role_errors.ErrUpdateRole.WithInternal(err)
 	}
 
 	return res, nil
@@ -55,7 +55,7 @@ func (r *roleCommandRepository) UpdateRole(ctx context.Context, req *requests.Up
 func (r *roleCommandRepository) TrashedRole(ctx context.Context, id int) (*db.Role, error) {
 	res, err := r.db.TrashRole(ctx, int32(id))
 	if err != nil {
-		return nil, role_errors.ErrTrashedRole
+		return nil, role_errors.ErrTrashedRole.WithInternal(err)
 	}
 	return res, nil
 }
@@ -63,7 +63,7 @@ func (r *roleCommandRepository) TrashedRole(ctx context.Context, id int) (*db.Ro
 func (r *roleCommandRepository) RestoreRole(ctx context.Context, id int) (*db.Role, error) {
 	res, err := r.db.RestoreRole(ctx, int32(id))
 	if err != nil {
-		return nil, role_errors.ErrRestoreRole
+		return nil, role_errors.ErrRestoreRole.WithInternal(err)
 	}
 	return res, nil
 }
@@ -71,7 +71,7 @@ func (r *roleCommandRepository) RestoreRole(ctx context.Context, id int) (*db.Ro
 func (r *roleCommandRepository) DeleteRolePermanent(ctx context.Context, role_id int) (bool, error) {
 	err := r.db.DeletePermanentRole(ctx, int32(role_id))
 	if err != nil {
-		return false, role_errors.ErrDeleteRolePermanent
+		return false, role_errors.ErrDeleteRolePermanent.WithInternal(err)
 	}
 	return true, nil
 }
@@ -80,7 +80,7 @@ func (r *roleCommandRepository) RestoreAllRole(ctx context.Context) (bool, error
 	err := r.db.RestoreAllRoles(ctx)
 
 	if err != nil {
-		return false, role_errors.ErrRestoreAllRoles
+		return false, role_errors.ErrRestoreAllRoles.WithInternal(err)
 	}
 
 	return true, nil
@@ -90,7 +90,7 @@ func (r *roleCommandRepository) DeleteAllRolePermanent(ctx context.Context) (boo
 	err := r.db.DeleteAllPermanentRoles(ctx)
 
 	if err != nil {
-		return false, role_errors.ErrDeleteAllRoles
+		return false, role_errors.ErrDeleteAllRoles.WithInternal(err)
 	}
 
 	return true, nil

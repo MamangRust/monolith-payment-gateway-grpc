@@ -11,7 +11,7 @@ require (
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
 	github.com/MamangRust/monolith-payment-gateway-role v1.0.0
 	github.com/MamangRust/monolith-payment-gateway-saldo v1.0.0
-	github.com/MamangRust/monolith-payment-gateway-shared v1.0.26
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.28
 	github.com/MamangRust/monolith-payment-gateway-topup v1.0.0
 	github.com/MamangRust/monolith-payment-gateway-transaction v1.0.0
 	github.com/MamangRust/monolith-payment-gateway-transfer v1.0.0
@@ -150,3 +150,6 @@ replace (
 	github.com/MamangRust/monolith-payment-gateway-user => ../service/user
 	github.com/MamangRust/monolith-payment-gateway-withdraw => ../service/withdraw
 )
+replace github.com/MamangRust/monolith-payment-gateway-pb => pb
+replace github.com/MamangRust/monolith-payment-gateway-pkg => pkg
+replace github.com/MamangRust/monolith-payment-gateway-shared => shared

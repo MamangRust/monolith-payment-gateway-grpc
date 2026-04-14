@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	sharedErrors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	role_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors/role_errors/repository"
 )
 
@@ -26,9 +26,9 @@ func (r *roleRepository) FindById(ctx context.Context, id int) (*db.Role, error)
 	res, err := r.db.GetRole(ctx, int32(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("role not found with ID: %d", id)
+			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
-		return nil, fmt.Errorf("failed to find role by ID %d: %w", id, err)
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }
@@ -37,10 +37,10 @@ func (r *roleRepository) FindByName(ctx context.Context, name string) (*db.Role,
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, role_errors.ErrRoleNotFound
+			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 
-		return nil, role_errors.ErrRoleNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return res, nil
 }

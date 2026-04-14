@@ -27,7 +27,7 @@ func (r *merchantStatsTotalAmountByMerchantRepository) GetMonthlyTotalAmountByMe
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetMonthlyTotalAmountByMerchantsFailed
+		return nil, merchant_errors.ErrGetMonthlyTotalAmountByMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -40,7 +40,7 @@ func (r *merchantStatsTotalAmountByMerchantRepository) GetYearlyTotalAmountByMer
 	})
 
 	if err != nil {
-		return nil, merchant_errors.ErrGetYearlyTotalAmountByMerchantsFailed
+		return nil, merchant_errors.ErrGetYearlyTotalAmountByMerchantsFailed.WithInternal(err)
 	}
 
 	return res, nil

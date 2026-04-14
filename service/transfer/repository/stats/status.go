@@ -34,7 +34,7 @@ func (r *transferStatsStatusRepository) GetMonthTransferStatusSuccess(ctx contex
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetMonthTransferStatusSuccessFailed
+		return nil, transfer_errors.ErrGetMonthTransferStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -44,7 +44,7 @@ func (r *transferStatsStatusRepository) GetYearlyTransferStatusSuccess(ctx conte
 	res, err := r.db.GetYearlyTransferStatusSuccess(ctx, int32(year))
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetYearlyTransferStatusSuccessFailed
+		return nil, transfer_errors.ErrGetYearlyTransferStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -65,7 +65,7 @@ func (r *transferStatsStatusRepository) GetMonthTransferStatusFailed(ctx context
 	})
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetMonthTransferStatusFailedFailed
+		return nil, transfer_errors.ErrGetMonthTransferStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -75,7 +75,7 @@ func (r *transferStatsStatusRepository) GetYearlyTransferStatusFailed(ctx contex
 	res, err := r.db.GetYearlyTransferStatusFailed(ctx, int32(year))
 
 	if err != nil {
-		return nil, transfer_errors.ErrGetYearlyTransferStatusFailedFailed
+		return nil, transfer_errors.ErrGetYearlyTransferStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil

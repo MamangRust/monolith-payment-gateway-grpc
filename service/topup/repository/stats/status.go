@@ -34,7 +34,7 @@ func (r *topupStatsStatusRepository) GetMonthTopupStatusSuccess(ctx context.Cont
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthTopupStatusSuccessFailed
+		return nil, topup_errors.ErrGetMonthTopupStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -44,7 +44,7 @@ func (r *topupStatsStatusRepository) GetYearlyTopupStatusSuccess(ctx context.Con
 	res, err := r.db.GetYearlyTopupStatusSuccess(ctx, int32(year))
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessFailed
+		return nil, topup_errors.ErrGetYearlyTopupStatusSuccessFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -65,7 +65,7 @@ func (r *topupStatsStatusRepository) GetMonthTopupStatusFailed(ctx context.Conte
 	})
 
 	if err != nil {
-		return nil, topup_errors.ErrGetMonthTopupStatusFailedFailed
+		return nil, topup_errors.ErrGetMonthTopupStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil
@@ -75,7 +75,7 @@ func (r *topupStatsStatusRepository) GetYearlyTopupStatusFailed(ctx context.Cont
 	res, err := r.db.GetYearlyTopupStatusFailed(ctx, int32(year))
 
 	if err != nil {
-		return nil, topup_errors.ErrGetYearlyTopupStatusFailedFailed
+		return nil, topup_errors.ErrGetYearlyTopupStatusFailedFailed.WithInternal(err)
 	}
 
 	return res, nil

@@ -14,8 +14,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -85,14 +83,13 @@ func (h *transferCommandHandleApi) CreateTransfer(c echo.Context) error {
 
 	if err := c.Bind(&body); err != nil {
 		h.logger.Debug("Invalid request body: ", zap.Error(err))
-
-		return err
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
 	if err := body.Validate(); err != nil {
 		h.logger.Debug("Validation Error: ", zap.Error(err))
-
-		return err
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
 	ctx := c.Request().Context()
@@ -105,8 +102,7 @@ func (h *transferCommandHandleApi) CreateTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to create transfer: ", zap.Error(err))
-
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransfer(res)
@@ -135,23 +131,22 @@ func (h *transferCommandHandleApi) UpdateTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
-		return err
+		return errors.NewBadRequestError("id is required")
 	}
 
 	var body requests.UpdateTransferRequest
 
 	if err := c.Bind(&body); err != nil {
 		h.logger.Debug("Invalid request body: ", zap.Error(err))
-
-		return err
+		return errors.NewBadRequestError("Invalid request format").WithInternal(err)
 	}
 
 	body.TransferID = &idInt
 
 	if err := body.Validate(); err != nil {
 		h.logger.Debug("Validation Error: ", zap.Error(err))
-
-		return err
+		validations := h.parseValidationErrors(err)
+		return errors.NewValidationError(validations)
 	}
 
 	ctx := c.Request().Context()
@@ -165,8 +160,7 @@ func (h *transferCommandHandleApi) UpdateTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to update transfer: ", zap.Error(err))
-
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransfer(res)
@@ -195,8 +189,7 @@ func (h *transferCommandHandleApi) TrashTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
-
-		return err
+		return errors.NewBadRequestError("id is required")
 	}
 
 	ctx := c.Request().Context()
@@ -207,8 +200,7 @@ func (h *transferCommandHandleApi) TrashTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to trash transfer: ", zap.Error(err))
-
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransferDeleteAt(res)
@@ -236,8 +228,7 @@ func (h *transferCommandHandleApi) RestoreTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
-
-		return err
+		return errors.NewBadRequestError("id is required")
 	}
 
 	ctx := c.Request().Context()
@@ -248,8 +239,7 @@ func (h *transferCommandHandleApi) RestoreTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Debug("Failed to restore transfer: ", zap.Error(err))
-
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransferDeleteAt(res)
@@ -277,8 +267,7 @@ func (h *transferCommandHandleApi) DeleteTransferPermanent(c echo.Context) error
 
 	if err != nil {
 		h.logger.Debug("Bad Request: Invalid ID", zap.Error(err))
-
-		return err
+		return errors.NewBadRequestError("id is required")
 	}
 
 	ctx := c.Request().Context()
@@ -288,7 +277,7 @@ func (h *transferCommandHandleApi) DeleteTransferPermanent(c echo.Context) error
 	})
 
 	if err != nil {
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapper.ToApiResponseTransferDelete(res)
@@ -315,7 +304,7 @@ func (h *transferCommandHandleApi) RestoreAllTransfer(c echo.Context) error {
 
 	if err != nil {
 		h.logger.Error("Failed to restore all transfer", zap.Error(err))
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully restored all transfer")
@@ -343,8 +332,7 @@ func (h *transferCommandHandleApi) DeleteAllTransferPermanent(c echo.Context) er
 
 	if err != nil {
 		h.logger.Error("Failed to permanently delete all transfer", zap.Error(err))
-
-		return err
+		return errors.ParseGrpcError(err)
 	}
 
 	h.logger.Debug("Successfully deleted all transfer permanently")
@@ -352,42 +340,6 @@ func (h *transferCommandHandleApi) DeleteAllTransferPermanent(c echo.Context) er
 	so := h.mapper.ToApiResponseTransferAll(res)
 
 	return c.JSON(http.StatusOK, so)
-}
-
-func (h *transferCommandHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Transfer").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Transfer already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Transfer service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
 
 func (h *transferCommandHandleApi) parseValidationErrors(err error) []errors.ValidationError {

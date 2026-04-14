@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/saldo"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type saldoQueryHandleApi struct {
@@ -111,7 +109,7 @@ func (h *saldoQueryHandleApi) FindAll(c echo.Context) error {
 	res, err := h.saldo.FindAllSaldo(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
-		return h.handleGrpcError(err, "FindAll")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationSaldo(res)
@@ -153,7 +151,7 @@ func (h *saldoQueryHandleApi) FindById(c echo.Context) error {
 	res, err := h.saldo.FindByIdSaldo(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
-		return h.handleGrpcError(err, "FindById")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseSaldo(res)
@@ -192,7 +190,7 @@ func (h *saldoQueryHandleApi) FindByCardNumber(c echo.Context) error {
 	res, err := h.saldo.FindByCardNumber(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseSaldo(res)
@@ -248,7 +246,7 @@ func (h *saldoQueryHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.saldo.FindByActive(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByActive")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
@@ -304,47 +302,11 @@ func (h *saldoQueryHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.saldo.FindByTrashed(ctx, reqGrpc)
 	if err != nil {
 		h.logger.Debug("Failed to retrieve saldo data", zap.Error(err))
-		return h.handleGrpcError(err, "FindByTrashed")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponsePaginationSaldoDeleteAt(res)
 	h.cache.SetCachedSaldoByTrashed(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *saldoQueryHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Saldo").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Saldo already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Saldo service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }

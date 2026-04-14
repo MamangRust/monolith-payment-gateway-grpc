@@ -5,7 +5,7 @@ go 1.25.1
 require (
 	github.com/MamangRust/monolith-payment-gateway-pb v1.0.10
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
-	github.com/MamangRust/monolith-payment-gateway-shared v1.0.26
+	github.com/MamangRust/monolith-payment-gateway-shared v1.0.29
 	github.com/spf13/viper v1.21.0
 	go.opentelemetry.io/otel v1.40.0
 	go.uber.org/mock v0.6.0

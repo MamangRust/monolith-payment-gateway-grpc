@@ -21,7 +21,7 @@ func (r *cardDashboardTransactionRepository) GetTotalTransactionAmount(ctx conte
 	res, err := r.db.GetTotalTransactionAmount(ctx)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTransactionAmountFailed
+		return nil, card_errors.ErrGetTotalTransactionsFailed.WithInternal(err)
 	}
 
 	return &res, nil
@@ -31,7 +31,7 @@ func (r *cardDashboardTransactionRepository) GetTotalTransactionAmountByCardNumb
 	res, err := r.db.GetTotalTransactionAmountByCardNumber(ctx, cardNumber)
 
 	if err != nil {
-		return nil, card_errors.ErrGetTotalTransactionAmountByCardFailed
+		return nil, card_errors.ErrGetTotalTransactionAmountByCardFailed.WithInternal(err)
 	}
 
 	return &res, nil

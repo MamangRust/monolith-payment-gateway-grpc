@@ -13,8 +13,6 @@ import (
 	apimapper "github.com/MamangRust/monolith-payment-gateway-shared/mapper/topup"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type topupStatsMethodHandleApi struct {
@@ -94,7 +92,7 @@ func (h *topupStatsMethodHandleApi) FindMonthlyTopupMethods(c echo.Context) erro
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup methods", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupMethods")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthMethod(res)
@@ -134,7 +132,7 @@ func (h *topupStatsMethodHandleApi) FindYearlyTopupMethods(c echo.Context) error
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup methods", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupMethods")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearMethod(res)
@@ -186,7 +184,7 @@ func (h *topupStatsMethodHandleApi) FindMonthlyTopupMethodsByCardNumber(c echo.C
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve monthly topup methods by card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindMonthlyTopupMethodsByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupMonthMethod(res)
@@ -238,47 +236,11 @@ func (h *topupStatsMethodHandleApi) FindYearlyTopupMethodsByCardNumber(c echo.Co
 	})
 	if err != nil {
 		h.logger.Debug("Failed to retrieve yearly topup methods by card number", zap.Error(err))
-		return h.handleGrpcError(err, "FindYearlyTopupMethodsByCardNumber")
+		return errors.ParseGrpcError(err)
 	}
 
 	apiResponse := h.mapper.ToApiResponseTopupYearMethod(res)
 	h.cache.SetYearlyTopupMethodsByCardNumberCache(ctx, reqCache, apiResponse)
 
 	return c.JSON(http.StatusOK, apiResponse)
-}
-
-func (h *topupStatsMethodHandleApi) handleGrpcError(err error, operation string) *errors.AppError {
-	st, ok := status.FromError(err)
-	if !ok {
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
-
-	switch st.Code() {
-	case codes.NotFound:
-		return errors.NewNotFoundError("Topup").WithInternal(err)
-
-	case codes.AlreadyExists:
-		return errors.NewConflictError("Topup already exists").WithInternal(err)
-
-	case codes.InvalidArgument:
-		return errors.NewBadRequestError(st.Message()).WithInternal(err)
-
-	case codes.PermissionDenied:
-		return errors.ErrForbidden.WithInternal(err)
-
-	case codes.Unauthenticated:
-		return errors.ErrUnauthorized.WithInternal(err)
-
-	case codes.ResourceExhausted:
-		return errors.ErrTooManyRequests.WithInternal(err)
-
-	case codes.Unavailable:
-		return errors.NewServiceUnavailableError("Topup service").WithInternal(err)
-
-	case codes.DeadlineExceeded:
-		return errors.ErrTimeout.WithInternal(err)
-
-	default:
-		return errors.NewInternalError(err).WithMessage("Failed to " + operation)
-	}
 }
