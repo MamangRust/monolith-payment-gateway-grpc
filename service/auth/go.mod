@@ -89,8 +89,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/MamangRust/monolith-payment-gateway-pb => ../../pb
-
-replace github.com/MamangRust/monolith-payment-gateway-pkg => ../../pkg
-
-replace github.com/MamangRust/monolith-payment-gateway-shared => ../../shared
