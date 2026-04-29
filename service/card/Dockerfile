@@ -2,16 +2,15 @@ FROM golang:1.25.7-bookworm AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests first (cache friendly)
-COPY shared/go.mod shared/go.sum ./shared/
-COPY pkg/go.mod pkg/go.sum ./pkg/
-COPY pb/go.mod pb/go.sum ./pb/
-# Copy all service go.mod files because they are inter-dependent
-COPY service/ ./service/
-RUN find service -type f ! -name "go.mod" ! -name "go.sum" -delete
+# Copy workspace and dependency manifests
+COPY go.work go.work.sum* ./
+COPY pb/go.mod pb/go.sum* ./pb/
+COPY pkg/go.mod pkg/go.sum* ./pkg/
+COPY shared/go.mod shared/go.sum* ./shared/
 
-# Copy workspace configuration
-COPY go.work ./
+# Copy all service go.mod files
+COPY service service
+RUN find service -type f ! -name "go.mod" ! -name "go.sum" -delete
 
 WORKDIR /app/service/card
 
@@ -21,11 +20,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 WORKDIR /app
 
-# Copy source
-COPY shared/ ./shared/
-COPY pkg/ ./pkg/
-COPY pb/ ./pb/
-COPY service/ ./service/
+# Copy source code
+COPY pb pb
+COPY pkg pkg
+COPY shared shared
+COPY service/card service/card
 
 WORKDIR /app/service/card
 

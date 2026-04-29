@@ -74,7 +74,7 @@ build_service_image() {
         --progress=plain \
         -f "$dockerfile" \
         -t "$image" \
-        "$service_dir"; then
+        .; then
 
         print_status "Successfully built ${image}"
         return 0
