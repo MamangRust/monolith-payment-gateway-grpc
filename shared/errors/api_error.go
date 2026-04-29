@@ -108,7 +108,11 @@ func HandleApiError(c echo.Context, err error, traceID string) error {
 			Retryable:   apiErr.Retryable,
 			Validations: apiErr.Validations,
 		}
-		return c.JSON(apiErr.Code, response)
+		code := apiErr.Code
+		if code < 100 || code > 599 {
+			code = http.StatusInternalServerError
+		}
+		return c.JSON(code, response)
 	}
 
 	response := ErrorResponse{

@@ -18,6 +18,7 @@ type SaldoQueryService interface {
 type SaldoCommandService interface {
 	CreateSaldo(ctx context.Context, request *requests.CreateSaldoRequest) (*db.CreateSaldoRow, error)
 	UpdateSaldo(ctx context.Context, request *requests.UpdateSaldoRequest) (*db.UpdateSaldoRow, error)
+	UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*db.UpdateSaldoBalanceRow, error)
 	UpdateSaldoWithdraw(ctx context.Context, request *requests.UpdateSaldoWithdraw) (*db.UpdateSaldoWithdrawRow, error)
 	TrashSaldo(ctx context.Context, saldo_id int) (*db.Saldo, error)
 	RestoreSaldo(ctx context.Context, saldo_id int) (*db.Saldo, error)

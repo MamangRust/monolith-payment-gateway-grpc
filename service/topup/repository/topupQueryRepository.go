@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -97,7 +97,7 @@ func (r *topupQueryRepository) FindAllTopupByCardNumber(ctx context.Context, req
 func (r *topupQueryRepository) FindById(ctx context.Context, topup_id int) (*db.GetTopupByIDRow, error) {
 	res, err := r.db.GetTopupByID(ctx, int32(topup_id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, topup_errors.ErrFindTopupByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

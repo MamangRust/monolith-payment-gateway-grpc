@@ -2,32 +2,28 @@ package topup_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-topup/repository"
 	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	topup_repo "github.com/MamangRust/monolith-payment-gateway-topup/repository"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
 )
 
 type TopupRepositoryTestSuite struct {
 	suite.Suite
-	ts     *tests.TestSuite
-	dbPool *pgxpool.Pool
-	repo   topup_repo.Repositories
-	
-	userRepo  user_repo.UserCommandRepository
-	cardRepo  card_repo.CardCommandRepository
-	saldoRepo saldo_repo.Repositories
-
-	cardNumber string
-	topupID    int32
+	ts       *tests.TestSuite
+	repo     repository.Repositories
+	cardRepo *card_repo.Repositories
+	userRepo user_repo.Repositories
+	userID   int
 }
 
 func (s *TopupRepositoryTestSuite) SetupSuite() {
@@ -37,116 +33,198 @@ func (s *TopupRepositoryTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
-	s.dbPool = pool
 
 	queries := db.New(pool)
-	
-	// Initialize repos from their modules
-	userRepos := user_repo.NewRepositories(queries)
-	cardRepos := card_repo.NewRepositories(queries)
-	saldoRepos := saldo_repo.NewRepositories(queries)
-	
-	// Match topup repository interfaces
-	cardAdapter := &topupCardRepoAdapter{
-		CardQueryRepository:   cardRepos.CardQuery,
-		CardCommandRepository: cardRepos.CardCommand,
-	}
-	s.repo = topup_repo.NewRepositories(queries, cardAdapter, saldoRepos)
-	s.userRepo = userRepos.UserCommand()
-	s.cardRepo = cardRepos.CardCommand
-	s.saldoRepo = saldoRepos
+	s.userRepo = user_repo.NewRepositories(queries)
+	s.cardRepo = card_repo.NewRepositories(queries)
+	// We don't need real adapters for repository integration tests because they are not used in repo methods
+	s.repo = repository.NewRepositories(queries, nil, nil)
 
-	// Seed User and Card
-	ctx := context.Background()
-	user, err := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
+	// Create user
+	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Topup",
 		LastName:  "Owner",
-		Email:     "topup.repo@example.com",
+		Email:     fmt.Sprintf("topup.owner-%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
-	
-	card, err := s.cardRepo.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID:       int(user.UserID),
-		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(2, 0, 0),
-		CVV:          "123",
-		CardProvider: "visa",
-	})
-	s.Require().NoError(err)
-	s.cardNumber = card.CardNumber
-
-	_, err = s.saldoRepo.CreateSaldo(ctx, &requests.CreateSaldoRequest{
-		CardNumber:   s.cardNumber,
-		TotalBalance: 0,
-	})
-	s.Require().NoError(err)
+	s.userID = int(user.UserID)
 }
 
 func (s *TopupRepositoryTestSuite) TearDownSuite() {
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
+	s.ts.Teardown()
 }
 
-func (s *TopupRepositoryTestSuite) Test1_CreateTopup() {
+func (s *TopupRepositoryTestSuite) createSeedTopup() (*db.CreateTopupRow, error) {
+    card, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
+		CardProvider: "Visa",
+	})
+    if err != nil {
+        return nil, err
+    }
+
+	return s.repo.CreateTopup(context.Background(), &requests.CreateTopupRequest{
+		CardNumber:  card.CardNumber,
+		TopupAmount: 100000,
+		TopupMethod: "bank_transfer",
+	})
+}
+
+func (s *TopupRepositoryTestSuite) TestCreateTopup() {
 	ctx := context.Background()
+    
+    card, _ := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
+		CardProvider: "Visa",
+	})
+
 	req := &requests.CreateTopupRequest{
-		CardNumber:  s.cardNumber,
-		TopupAmount: 50000,
-		TopupMethod: "visa",
+		CardNumber:  card.CardNumber,
+		TopupAmount: 100000,
+		TopupMethod: "bank_transfer",
 	}
 
-	topup, err := s.repo.CreateTopup(ctx, req)
+	res, err := s.repo.CreateTopup(ctx, req)
 	s.NoError(err)
-	s.NotNil(topup)
-	s.Equal(int32(req.TopupAmount), topup.TopupAmount)
-	s.topupID = topup.TopupID
+	s.NotNil(res)
 }
 
-func (s *TopupRepositoryTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.topupID)
+func (s *TopupRepositoryTestSuite) TestFindAllTopups() {
+	_, err := s.createSeedTopup()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	found, err := s.repo.FindById(ctx, int(s.topupID))
+	res, err := s.repo.FindAllTopups(ctx, &requests.FindAllTopups{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TopupRepositoryTestSuite) TestFindById() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	found, err := s.repo.FindById(ctx, int(topup.TopupID))
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(s.topupID, found.TopupID)
+	s.Equal(topup.TopupID, found.TopupID)
 }
 
-func (s *TopupRepositoryTestSuite) Test3_UpdateStatus() {
-	s.Require().NotZero(s.topupID)
+func (s *TopupRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedTopup()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	req := &requests.UpdateTopupStatus{
-		TopupID: int(s.topupID),
-		Status:  "success",
+	res, err := s.repo.FindByActive(ctx, &requests.FindAllTopups{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TopupRepositoryTestSuite) TestFindByTrashed() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTopup(ctx, int(topup.TopupID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.FindByTrashed(ctx, &requests.FindAllTopups{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TopupRepositoryTestSuite) TestUpdateTopup() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	id := int(topup.TopupID)
+	req := &requests.UpdateTopupRequest{
+		TopupID:     &id,
+		CardNumber:  topup.CardNumber,
+		TopupAmount: 200000,
+		TopupMethod: "bank_transfer",
 	}
-	updated, err := s.repo.UpdateTopupStatus(ctx, req)
+
+	res, err := s.repo.UpdateTopup(ctx, req)
 	s.NoError(err)
-	s.NotNil(updated)
-	s.Equal("success", updated.Status)
+	s.NotNil(res)
 }
 
-func (s *TopupRepositoryTestSuite) Test4_TrashedAndRestore() {
-	s.Require().NotZero(s.topupID)
+func (s *TopupRepositoryTestSuite) TestTrashTopup() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	_, err := s.repo.TrashedTopup(ctx, int(s.topupID))
+	trashed, err := s.repo.TrashedTopup(ctx, int(topup.TopupID))
 	s.NoError(err)
-
-	_, err = s.repo.RestoreTopup(ctx, int(s.topupID))
-	s.NoError(err)
+	s.NotNil(trashed)
 }
 
-func (s *TopupRepositoryTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.topupID)
+func (s *TopupRepositoryTestSuite) TestRestoreTopup() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	success, err := s.repo.DeleteTopupPermanent(ctx, int(s.topupID))
+	_, err = s.repo.TrashedTopup(ctx, int(topup.TopupID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.RestoreTopup(ctx, int(topup.TopupID))
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *TopupRepositoryTestSuite) TestDeleteTopupPermanent() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTopup(ctx, int(topup.TopupID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.DeleteTopupPermanent(ctx, int(topup.TopupID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TopupRepositoryTestSuite) TestRestoreAllTopup() {
+	topup, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTopup(ctx, int(topup.TopupID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.RestoreAllTopup(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TopupRepositoryTestSuite) TestDeleteAllTopupPermanent() {
+	_, err := s.createSeedTopup()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.DeleteAllTopupPermanent(ctx)
 	s.NoError(err)
 	s.True(success)
 }

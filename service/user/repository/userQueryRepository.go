@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -45,7 +45,7 @@ func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*db.Ge
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
@@ -95,7 +95,7 @@ func (r *userQueryRepository) FindByEmail(ctx context.Context, email string) (*d
 	res, err := r.db.GetUserByEmail(ctx, email)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 

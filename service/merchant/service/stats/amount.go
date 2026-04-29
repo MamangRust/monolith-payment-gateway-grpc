@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type merchantStatsAmountDeps struct {
+type MerchantStatsAmountDeps struct {
 	Cache mencache.MerchantStatsAmountCache
 
 	Repository repository.MerchantStatsAmountRepository
@@ -34,7 +34,7 @@ type merchantStatsAmountService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewMerchantStatsAmountService(params *merchantStatsAmountDeps) MerchantStatsAmountService {
+func NewMerchantStatsAmountService(params *MerchantStatsAmountDeps) MerchantStatsAmountService {
 	return &merchantStatsAmountService{
 		cache:         params.Cache,
 		repository:    params.Repository,
@@ -42,6 +42,7 @@ func NewMerchantStatsAmountService(params *merchantStatsAmountDeps) MerchantStat
 		observability: params.Observability,
 	}
 }
+
 
 func (s *merchantStatsAmountService) FindMonthlyAmountMerchant(ctx context.Context, year int) ([]*db.GetMonthlyAmountMerchantRow, error) {
 	const method = "FindMonthlyAmountMerchant"

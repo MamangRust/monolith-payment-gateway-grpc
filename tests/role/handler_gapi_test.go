@@ -2,7 +2,6 @@ package role_test
 
 import (
 	"context"
-	"net"
 	"testing"
 
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/role"
@@ -14,23 +13,19 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type RoleGapiTestSuite struct {
 	suite.Suite
-	ts            *tests.TestSuite
-	grpcServer    *grpc.Server
-	commandClient pb.RoleCommandServiceClient
-	queryClient   pb.RoleServiceClient
-	conn          *grpc.ClientConn
-	roleID        int
+	ts          *tests.TestSuite
+	handler     *handler.Handler
+	dbPool      *pgxpool.Pool
+	roleID      int32
 }
 
 func (s *RoleGapiTestSuite) SetupSuite() {
@@ -40,6 +35,7 @@ func (s *RoleGapiTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
+	s.dbPool = pool
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
@@ -54,108 +50,112 @@ func (s *RoleGapiTestSuite) SetupSuite() {
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
 	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	roleService := service.NewService(&service.Deps{
+	svc := service.NewService(&service.Deps{
 		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
 	})
 
-	roleHandler := handler.NewHandler(roleService)
-	server := grpc.NewServer()
-	pb.RegisterRoleCommandServiceServer(server, roleHandler.RoleCommand)
-	pb.RegisterRoleServiceServer(server, roleHandler.RoleQuery)
-	s.grpcServer = server
-
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
-
-	go func() {
-		_ = server.Serve(lis)
-	}()
-
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	s.Require().NoError(err)
-	s.conn = conn
-	s.commandClient = pb.NewRoleCommandServiceClient(conn)
-	s.queryClient = pb.NewRoleServiceClient(conn)
+	s.handler = handler.NewHandler(svc)
 }
 
 func (s *RoleGapiTestSuite) TearDownSuite() {
-	s.conn.Close()
-	s.grpcServer.Stop()
-	s.ts.Teardown()
+	if s.dbPool != nil {
+		s.dbPool.Close()
+	}
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
 }
 
-func (s *RoleGapiTestSuite) Test1_CreateRole() {
+func (s *RoleGapiTestSuite) Test1_RoleLifecycle() {
 	ctx := context.Background()
+
+	// Create
 	req := &pb.CreateRoleRequest{
-		Name: "Gapi Role",
+		Name: "Test Gapi Role",
 	}
-
-	res, err := s.commandClient.CreateRole(ctx, req)
+	res, err := s.handler.RoleCommand.CreateRole(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
+	s.roleID = res.Data.Id
 	s.Equal(req.Name, res.Data.Name)
-	s.roleID = int(res.Data.Id)
-}
 
-func (s *RoleGapiTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.roleID)
-	ctx := context.Background()
-
-	req := &pb.FindByIdRoleRequest{
-		RoleId: int32(s.roleID),
-	}
-
-	res, err := s.queryClient.FindByIdRole(ctx, req)
+	// FindById
+	found, err := s.handler.RoleQuery.FindByIdRole(ctx, &pb.FindByIdRoleRequest{RoleId: s.roleID})
 	s.NoError(err)
-	s.NotNil(res)
-	s.Equal(int32(s.roleID), res.Data.Id)
-}
+	s.NotNil(found)
+	s.Equal(s.roleID, found.Data.Id)
 
-func (s *RoleGapiTestSuite) Test3_UpdateRole() {
-	s.Require().NotZero(s.roleID)
-	ctx := context.Background()
-
-	req := &pb.UpdateRoleRequest{
-		Id:   int32(s.roleID),
+	// Update
+	updateReq := &pb.UpdateRoleRequest{
+		Id:   s.roleID,
 		Name: "Updated Gapi Role",
 	}
-
-	res, err := s.commandClient.UpdateRole(ctx, req)
+	updated, err := s.handler.RoleCommand.UpdateRole(ctx, updateReq)
 	s.NoError(err)
-	s.NotNil(res)
-	s.Equal("Updated Gapi Role", res.Data.Name)
+	s.NotNil(updated)
+	s.Equal(updateReq.Name, updated.Data.Name)
 }
 
-func (s *RoleGapiTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.roleID)
+func (s *RoleGapiTestSuite) Test2_QueryOperations() {
 	ctx := context.Background()
 
-	req := &pb.FindByIdRoleRequest{
-		RoleId: int32(s.roleID),
-	}
-
-	_, err := s.commandClient.TrashedRole(ctx, req)
+	// FindAll
+	all, err := s.handler.RoleQuery.FindAllRole(ctx, &pb.FindAllRoleRequest{
+		Page:     1,
+		PageSize: 10,
+	})
 	s.NoError(err)
+	s.NotNil(all)
+	s.GreaterOrEqual(all.PaginationMeta.TotalRecords, int32(1))
 
-	_, err = s.commandClient.RestoreRole(ctx, req)
+	// FindByActive
+	active, err := s.handler.RoleQuery.FindByActive(ctx, &pb.FindAllRoleRequest{
+		Page:     1,
+		PageSize: 10,
+	})
 	s.NoError(err)
+	s.NotNil(active)
+	s.GreaterOrEqual(active.PaginationMeta.TotalRecords, int32(1))
 }
 
-func (s *RoleGapiTestSuite) Test5_DeleteRolePermanent() {
+func (s *RoleGapiTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
 	s.Require().NotZero(s.roleID)
+
+	// Trash
+	trashed, err := s.handler.RoleCommand.TrashedRole(ctx, &pb.FindByIdRoleRequest{RoleId: s.roleID})
+	s.NoError(err)
+	s.NotNil(trashed)
+
+	// FindByTrashed
+	trashedList, err := s.handler.RoleQuery.FindByTrashed(ctx, &pb.FindAllRoleRequest{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(trashedList)
+	s.GreaterOrEqual(trashedList.PaginationMeta.TotalRecords, int32(1))
+
+	// Restore
+	restored, err := s.handler.RoleCommand.RestoreRole(ctx, &pb.FindByIdRoleRequest{RoleId: s.roleID})
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *RoleGapiTestSuite) Test4_BulkOperations() {
 	ctx := context.Background()
 
-	req := &pb.FindByIdRoleRequest{
-		RoleId: int32(s.roleID),
-	}
-
-	_, err := s.commandClient.TrashedRole(ctx, req)
+	// Restore All
+	ok, err := s.handler.RoleCommand.RestoreAllRole(ctx, &emptypb.Empty{})
 	s.NoError(err)
+	s.NotNil(ok)
 
-	_, err = s.commandClient.DeleteRolePermanent(ctx, req)
+	// Delete All Permanent
+	ok, err = s.handler.RoleCommand.DeleteAllRolePermanent(ctx, &emptypb.Empty{})
 	s.NoError(err)
+	s.NotNil(ok)
 }
 
 func TestRoleGapiSuite(t *testing.T) {

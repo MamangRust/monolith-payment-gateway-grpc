@@ -711,36 +711,40 @@ func (q *Queries) GetTrashedSaldos(ctx context.Context, arg GetTrashedSaldosPara
 
 const getYearlySaldoBalances = `-- name: GetYearlySaldoBalances :many
 WITH
-    last_five_years AS (
+    years AS (
+        SELECT generate_series($1::int - 4, $1::int) AS year
+    ),
+    yearly_data AS (
         SELECT EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) AS year, SUM(s.total_balance) AS total_balance
+            )::int AS year, SUM(s.total_balance) AS total_balance
         FROM saldos s
         WHERE
             s.deleted_at IS NULL
             AND EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) >= $1 - 4
+            ) >= $1::int - 4
             AND EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) <= $1
+            ) <= $1::int
         GROUP BY
             EXTRACT(
                 YEAR
                 FROM s.created_at
             )
     )
-SELECT year, total_balance
-FROM last_five_years
-ORDER BY year
+SELECT y.year::text, COALESCE(yd.total_balance, 0)::bigint AS total_balance
+FROM years y
+    LEFT JOIN yearly_data yd ON y.year = yd.year
+ORDER BY y.year
 `
 
 type GetYearlySaldoBalancesRow struct {
-	Year         pgtype.Numeric `json:"year"`
-	TotalBalance int64          `json:"total_balance"`
+	YYear        string `json:"y_year"`
+	TotalBalance int64  `json:"total_balance"`
 }
 
 // GetYearlySaldoBalances: Retrieves yearly balance totals for a 5-year period
@@ -760,7 +764,7 @@ type GetYearlySaldoBalancesRow struct {
 //   - Groups by calendar year
 //   - Results ordered chronologically
 //   - Useful for identifying year-over-year trends and growth patterns
-func (q *Queries) GetYearlySaldoBalances(ctx context.Context, dollar_1 interface{}) ([]*GetYearlySaldoBalancesRow, error) {
+func (q *Queries) GetYearlySaldoBalances(ctx context.Context, dollar_1 int32) ([]*GetYearlySaldoBalancesRow, error) {
 	rows, err := q.db.Query(ctx, getYearlySaldoBalances, dollar_1)
 	if err != nil {
 		return nil, err
@@ -769,7 +773,7 @@ func (q *Queries) GetYearlySaldoBalances(ctx context.Context, dollar_1 interface
 	var items []*GetYearlySaldoBalancesRow
 	for rows.Next() {
 		var i GetYearlySaldoBalancesRow
-		if err := rows.Scan(&i.Year, &i.TotalBalance); err != nil {
+		if err := rows.Scan(&i.YYear, &i.TotalBalance); err != nil {
 			return nil, err
 		}
 		items = append(items, &i)

@@ -17,7 +17,8 @@ type repositories struct {
 func NewWithdrawStatsByCardRepository(db *db.Queries) WithdrawStatsByCardRepository {
 
 	return &repositories{
-		WithdrawStatsByCardAmountRepository: NewWithdrawStatsAmountRepository(db),
-		WithdrawStatsByCardStatusRepository: NewWithdrawStatsStatusRepository(db),
+		WithdrawStatsByCardAmountRepository: NewWithdrawStatsByCardAmountRepository(db),
+		WithdrawStatsByCardStatusRepository: NewWithdrawStatsByCardStatusRepository(db),
 	}
 }
+

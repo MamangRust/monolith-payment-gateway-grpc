@@ -28,19 +28,19 @@ type DepsStats struct {
 
 func NewMerchantStatsService(deps *DepsStats) MerchantStatsService {
 	return &merchantStatsService{
-		NewMerchantStatsAmountService(&merchantStatsAmountDeps{
+		MerchantStatsAmountService: NewMerchantStatsAmountService(&MerchantStatsAmountDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		NewMerchantStatsTotalAmountService(&merchantStatsTotalAmountDeps{
+		MerchantStatsTotalAmountService: NewMerchantStatsTotalAmountService(&MerchantStatsTotalAmountDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		NewMerchantStatsMethodService(&merchantStatsMethodDeps{
+		MerchantStatsMethodService: NewMerchantStatsMethodService(&MerchantStatsMethodDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
@@ -48,3 +48,4 @@ func NewMerchantStatsService(deps *DepsStats) MerchantStatsService {
 		}),
 	}
 }
+

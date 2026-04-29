@@ -359,31 +359,35 @@ ORDER BY m.month;
 --   - Useful for identifying year-over-year trends and growth patterns
 -- name: GetYearlySaldoBalances :many
 WITH
-    last_five_years AS (
+    years AS (
+        SELECT generate_series($1::int - 4, $1::int) AS year
+    ),
+    yearly_data AS (
         SELECT EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) AS year, SUM(s.total_balance) AS total_balance
+            )::int AS year, SUM(s.total_balance) AS total_balance
         FROM saldos s
         WHERE
             s.deleted_at IS NULL
             AND EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) >= $1 - 4
+            ) >= $1::int - 4
             AND EXTRACT(
                 YEAR
                 FROM s.created_at
-            ) <= $1
+            ) <= $1::int
         GROUP BY
             EXTRACT(
                 YEAR
                 FROM s.created_at
             )
     )
-SELECT year, total_balance
-FROM last_five_years
-ORDER BY year;
+SELECT y.year::text, COALESCE(yd.total_balance, 0)::bigint AS total_balance
+FROM years y
+    LEFT JOIN yearly_data yd ON y.year = yd.year
+ORDER BY y.year;
 
 -- GetSaldoByCardNumber: Retrieves saldo information for a specific card
 -- Purpose: Get the current balance and details for a particular card

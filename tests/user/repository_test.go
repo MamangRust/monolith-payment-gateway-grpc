@@ -1,12 +1,15 @@
 package user_test
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
 	"github.com/MamangRust/monolith-payment-gateway-user/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-test"
-	"context"
-	"testing"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
@@ -14,10 +17,8 @@ import (
 
 type UserRepositoryTestSuite struct {
 	suite.Suite
-	ts     *tests.TestSuite
-	dbPool *pgxpool.Pool
-	repo   repository.UserCommandRepository
-	userID int
+	ts   *tests.TestSuite
+	repo repository.Repositories
 }
 
 func (s *UserRepositoryTestSuite) SetupSuite() {
@@ -27,46 +28,173 @@ func (s *UserRepositoryTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
-	s.dbPool = pool
 
 	queries := db.New(pool)
-	s.repo = repository.NewUserCommandRepository(queries)
+	s.repo = repository.NewRepositories(queries)
 }
 
 func (s *UserRepositoryTestSuite) TearDownSuite() {
-	s.dbPool.Close()
 	s.ts.Teardown()
 }
 
-func (s *UserRepositoryTestSuite) Test1_CreateUser() {
-	req := &requests.CreateUserRequest{
-		FirstName: "John",
-		LastName:  "Doe",
-		Email:     "john.doe@example.com",
-		Password:  "password123",
-	}
-
-	user, err := s.repo.CreateUser(context.Background(), req)
-	s.NoError(err)
-	s.NotNil(user)
-	s.Equal(req.FirstName, user.Firstname)
-	s.Equal(req.Email, user.Email)
-	s.userID = int(user.UserID)
+func (s *UserRepositoryTestSuite) createSeedUser() (*db.CreateUserRow, error) {
+	return s.repo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
+		FirstName:       "User",
+		LastName:        "Tester",
+		Email:           fmt.Sprintf("user.tester-%d@example.com", time.Now().UnixNano()),
+		Password:        "password123",
+		ConfirmPassword: "password123",
+	})
 }
 
-func (s *UserRepositoryTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.userID)
+func (s *UserRepositoryTestSuite) TestCreateUser() {
+	ctx := context.Background()
+	req := &requests.CreateUserRequest{
+		FirstName:       "User",
+		LastName:        "Tester",
+		Email:           fmt.Sprintf("user.tester.%d@example.com", time.Now().UnixNano()),
+		Password:        "password123",
+		ConfirmPassword: "password123",
+	}
+
+	res, err := s.repo.UserCommand().CreateUser(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+}
+
+func (s *UserRepositoryTestSuite) TestFindAllUsers() {
+	_, err := s.createSeedUser()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	pool, _ := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
-	defer pool.Close()
-	queries := db.New(pool)
-	queryRepo := repository.NewUserQueryRepository(queries)
+	res, err := s.repo.UserQuery().FindAllUsers(ctx, &requests.FindAllUsers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
 
-	found, err := queryRepo.FindById(ctx, s.userID)
+func (s *UserRepositoryTestSuite) TestFindById() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	found, err := s.repo.UserQuery().FindById(ctx, int(user.UserID))
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(s.userID, int(found.UserID))
+	s.Equal(user.UserID, found.UserID)
+}
+
+func (s *UserRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	res, err := s.repo.UserQuery().FindByActive(ctx, &requests.FindAllUsers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *UserRepositoryTestSuite) TestFindByTrashed() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.UserCommand().TrashedUser(ctx, int(user.UserID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.UserQuery().FindByTrashed(ctx, &requests.FindAllUsers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *UserRepositoryTestSuite) TestUpdateUser() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	id := int(user.UserID)
+	req := &requests.UpdateUserRequest{
+		UserID:          &id,
+		FirstName:       "Updated",
+		LastName:        "User",
+		Email:           user.Email,
+		Password:        "newpassword123",
+		ConfirmPassword: "newpassword123",
+	}
+
+	res, err := s.repo.UserCommand().UpdateUser(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+}
+
+func (s *UserRepositoryTestSuite) TestTrashUser() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	trashed, err := s.repo.UserCommand().TrashedUser(ctx, int(user.UserID))
+	s.NoError(err)
+	s.NotNil(trashed)
+}
+
+func (s *UserRepositoryTestSuite) TestRestoreUser() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.UserCommand().TrashedUser(ctx, int(user.UserID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.UserCommand().RestoreUser(ctx, int(user.UserID))
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *UserRepositoryTestSuite) TestDeleteUserPermanent() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.UserCommand().TrashedUser(ctx, int(user.UserID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.UserCommand().DeleteUserPermanent(ctx, int(user.UserID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *UserRepositoryTestSuite) TestRestoreAllUser() {
+	user, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.UserCommand().TrashedUser(ctx, int(user.UserID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.UserCommand().RestoreAllUser(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *UserRepositoryTestSuite) TestDeleteAllUserPermanent() {
+	_, err := s.createSeedUser()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.UserCommand().DeleteAllUserPermanent(ctx)
+	s.NoError(err)
+	s.True(success)
 }
 
 func TestUserRepositorySuite(t *testing.T) {

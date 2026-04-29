@@ -2,19 +2,19 @@ package card_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/MamangRust/monolith-payment-gateway-card/repository"
 	"github.com/MamangRust/monolith-payment-gateway-card/service"
 	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
@@ -24,11 +24,10 @@ import (
 type CardServiceTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
-	service     service.Service
-	userRepo    user_repo.Repositories
-	redisClient *redis.Client
-	userID      int
+	cardService service.Service
+	dbPool      *pgxpool.Pool
 	cardID      int
+	userID      int
 }
 
 func (s *CardServiceTestSuite) SetupSuite() {
@@ -38,33 +37,34 @@ func (s *CardServiceTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
+	s.dbPool = pool
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
-	s.userRepo = user_repo.NewRepositories(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	s.service = service.NewService(&service.Deps{
+	s.cardService = service.NewService(&service.Deps{
 		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
 		Kafka:        nil,
 	})
 
-	// Create a user for card ownership
-	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
+	// Seed User
+	userRepo := user_repo.NewUserCommandRepository(queries)
+	user, err := userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Card",
-		LastName:  "Service",
-		Email:     "card.service@example.com",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("card.tester.%d.%d@example.com", time.Now().UnixNano(), time.Now().UnixNano()%10000),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
@@ -72,7 +72,7 @@ func (s *CardServiceTestSuite) SetupSuite() {
 }
 
 func (s *CardServiceTestSuite) TearDownSuite() {
-	s.redisClient.Close()
+	s.dbPool.Close()
 	s.ts.Teardown()
 }
 
@@ -81,15 +81,15 @@ func (s *CardServiceTestSuite) Test1_CreateCard() {
 	req := &requests.CreateCardRequest{
 		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		ExpireDate:   time.Now().AddDate(2, 0, 0),
 		CVV:          "123",
-		CardProvider: "Visa",
+		CardProvider: "VISA",
 	}
 
-	res, err := s.service.CreateCard(ctx, req)
+	res, err := s.cardService.CreateCard(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
-	s.NotEmpty(res.CardNumber)
+	s.Equal(int32(s.userID), res.UserID)
 	s.cardID = int(res.CardID)
 }
 
@@ -97,54 +97,115 @@ func (s *CardServiceTestSuite) Test2_FindById() {
 	s.Require().NotZero(s.cardID)
 	ctx := context.Background()
 
-	found, err := s.service.FindById(ctx, s.cardID)
+	res, err := s.cardService.FindById(ctx, s.cardID)
 	s.NoError(err)
-	s.NotNil(found)
-	s.Equal(int32(s.cardID), found.CardID)
+	s.NotNil(res)
+	s.Equal(int32(s.cardID), res.CardID)
 }
 
-func (s *CardServiceTestSuite) Test3_UpdateCard() {
+func (s *CardServiceTestSuite) Test3_FindAll() {
+	ctx := context.Background()
+	req := &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	}
+
+	res, total, err := s.cardService.FindAll(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+	s.NotZero(*total)
+}
+
+func (s *CardServiceTestSuite) Test4_FindByActive() {
+	ctx := context.Background()
+	req := &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	}
+
+	res, total, err := s.cardService.FindByActive(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+	s.NotZero(*total)
+}
+
+func (s *CardServiceTestSuite) Test5_UpdateCard() {
 	s.Require().NotZero(s.cardID)
 	ctx := context.Background()
-
 	req := &requests.UpdateCardRequest{
 		CardID:       s.cardID,
 		UserID:       s.userID,
 		CardType:     "credit",
-		ExpireDate:   time.Now().AddDate(6, 0, 0),
+		ExpireDate:   time.Now().AddDate(3, 0, 0),
 		CVV:          "456",
-		CardProvider: "MasterCard",
+		CardProvider: "MASTERCARD",
 	}
 
-	res, err := s.service.UpdateCard(ctx, req)
+	res, err := s.cardService.UpdateCard(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
 	s.Equal("credit", res.CardType)
 }
 
-func (s *CardServiceTestSuite) Test4_TrashAndRestore() {
+func (s *CardServiceTestSuite) Test6_TrashAndRestore() {
 	s.Require().NotZero(s.cardID)
 	ctx := context.Background()
 
-	trashed, err := s.service.TrashedCard(ctx, s.cardID)
+	// Trash
+	res, err := s.cardService.TrashedCard(ctx, s.cardID)
+	s.NoError(err)
+	s.NotNil(res)
+
+	// Verify in trashed
+	req := &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+	}
+	trashed, total, err := s.cardService.FindByTrashed(ctx, req)
 	s.NoError(err)
 	s.NotNil(trashed)
+	s.NotZero(*total)
 
-	restored, err := s.service.RestoreCard(ctx, s.cardID)
+	// Restore
+	res, err = s.cardService.RestoreCard(ctx, s.cardID)
 	s.NoError(err)
-	s.NotNil(restored)
+	s.NotNil(res)
 }
 
-func (s *CardServiceTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.cardID)
+func (s *CardServiceTestSuite) Test7_BulkOperations() {
 	ctx := context.Background()
 
-	trashed, _ := s.service.TrashedCard(ctx, s.cardID)
-	s.NotNil(trashed)
-
-	success, err := s.service.DeleteCardPermanent(ctx, s.cardID)
+	// Restore All
+	ok, err := s.cardService.RestoreAllCard(ctx)
 	s.NoError(err)
-	s.True(success)
+	s.True(ok)
+
+	// Delete All Permanent
+	ok, err = s.cardService.DeleteAllCardPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
+}
+
+func (s *CardServiceTestSuite) Test8_DeletePermanent() {
+	ctx := context.Background()
+	
+	// Create another one to delete
+	req := &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(1, 0, 0),
+		CVV:          "999",
+		CardProvider: "BCA",
+	}
+	res, err := s.cardService.CreateCard(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+
+	ok, err := s.cardService.DeleteCardPermanent(ctx, int(res.CardID))
+	s.NoError(err)
+	s.True(ok)
 }
 
 func TestCardServiceSuite(t *testing.T) {

@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -25,7 +25,7 @@ func NewRoleRepository(db *db.Queries) RoleRepository {
 func (r *roleRepository) FindById(ctx context.Context, id int) (*db.Role, error) {
 	res, err := r.db.GetRole(ctx, int32(id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -36,7 +36,7 @@ func (r *roleRepository) FindById(ctx context.Context, id int) (*db.Role, error)
 func (r *roleRepository) FindByName(ctx context.Context, name string) (*db.Role, error) {
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 

@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type merchantStatsTotalAmountByApiKeyDeps struct {
+type MerchantStatsTotalAmountByApiKeyDeps struct {
 	Cache mencache.MerchantStatsTotalAmountByApiKeyCache
 
 	Repository repository.MerchantStatsTotalAmountByApiKeyRepository
@@ -24,6 +24,7 @@ type merchantStatsTotalAmountByApiKeyDeps struct {
 
 	Observability observability.TraceLoggerObservability
 }
+
 
 type merchantStatsTotalAmountByApiKeyService struct {
 	cache mencache.MerchantStatsTotalAmountByApiKeyCache
@@ -35,7 +36,7 @@ type merchantStatsTotalAmountByApiKeyService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewMerchantStatsTotalAmountByApiKeyService(params *merchantStatsTotalAmountByApiKeyDeps) MerchantStatsByApiKeyTotalAmountService {
+func NewMerchantStatsTotalAmountByApiKeyService(params *MerchantStatsTotalAmountByApiKeyDeps) MerchantStatsByApiKeyTotalAmountService {
 	return &merchantStatsTotalAmountByApiKeyService{
 		cache:         params.Cache,
 		repository:    params.Repository,
@@ -43,6 +44,7 @@ func NewMerchantStatsTotalAmountByApiKeyService(params *merchantStatsTotalAmount
 		observability: params.Observability,
 	}
 }
+
 
 func (s *merchantStatsTotalAmountByApiKeyService) FindMonthlyTotalAmountByApikey(ctx context.Context, req *requests.MonthYearTotalAmountApiKey) ([]*db.GetMonthlyTotalAmountByApikeyRow, error) {
 	const method = "FindMonthlyTotalAmountByApikeys"

@@ -35,7 +35,7 @@ func (a *SaldoAdapter) FindByCardNumber(ctx context.Context, card_number string)
 }
 
 func (a *SaldoAdapter) UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*db.UpdateSaldoBalanceRow, error) {
-	resp, err := a.CommandClient.UpdateSaldo(ctx, &pbsaldo.UpdateSaldoRequest{
+	resp, err := a.CommandClient.UpdateSaldoBalance(ctx, &pbsaldo.UpdateSaldoBalanceRequest{
 		CardNumber:   request.CardNumber,
 		TotalBalance: int32(request.TotalBalance),
 	})

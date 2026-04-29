@@ -43,6 +43,14 @@ func (e *AppError) Unwrap() error {
 	return e.Internal
 }
 
+func (e *AppError) Is(target error) bool {
+	t, ok := target.(*AppError)
+	if !ok {
+		return false
+	}
+	return e.Type == t.Type && e.Message == t.Message
+}
+
 func (e *AppError) WithInternal(err error) *AppError {
 	copy := *e
 	copy.Internal = err

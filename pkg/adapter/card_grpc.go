@@ -43,7 +43,7 @@ func (a *CardAdapter) FindCardByUserId(ctx context.Context, user_id int) (*db.Ge
 }
 
 func (a *CardAdapter) FindUserCardByCardNumber(ctx context.Context, card_number string) (*db.GetUserEmailByCardNumberRow, error) {
-	resp, err := a.QueryClient.FindByCardNumber(ctx, &pbcard.FindByCardNumberRequest{
+	resp, err := a.QueryClient.FindUserCardByCardNumber(ctx, &pbcard.FindByCardNumberRequest{
 		CardNumber: card_number,
 	})
 	if err != nil {
@@ -51,8 +51,14 @@ func (a *CardAdapter) FindUserCardByCardNumber(ctx context.Context, card_number 
 	}
 
 	return &db.GetUserEmailByCardNumberRow{
-		CardNumber: resp.Data.CardNumber,
-		Email:      "mapped@example.com",
+		CardID:       resp.Id,
+		UserID:       resp.UserId,
+		CardNumber:   resp.CardNumber,
+		CardType:     resp.CardType,
+		ExpireDate:   parseDate(resp.ExpireDate),
+		Cvv:          resp.Cvv,
+		CardProvider: resp.CardProvider,
+		Email:        resp.Email,
 	}, nil
 }
 

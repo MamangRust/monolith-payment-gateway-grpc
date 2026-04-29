@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -98,7 +98,7 @@ func (r *transactionQueryRepository) FindById(ctx context.Context, transaction_i
 	res, err := r.db.GetTransactionByID(ctx, int32(transaction_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, transaction_errors.ErrFindTransactionByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -111,7 +111,7 @@ func (r *transactionQueryRepository) FindTransactionByMerchantId(ctx context.Con
 	res, err := r.db.GetTransactionsByMerchantID(ctx, int32(merchant_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, transaction_errors.ErrFindTransactionByMerchantIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

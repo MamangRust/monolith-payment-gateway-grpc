@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -43,7 +43,7 @@ func (r *roleQueryRepository) FindAllRoles(ctx context.Context, req *requests.Fi
 func (r *roleQueryRepository) FindById(ctx context.Context, id int) (*db.Role, error) {
 	res, err := r.db.GetRole(ctx, int32(id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -54,7 +54,7 @@ func (r *roleQueryRepository) FindById(ctx context.Context, id int) (*db.Role, e
 func (r *roleQueryRepository) FindByName(ctx context.Context, name string) (*db.Role, error) {
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 
@@ -66,7 +66,7 @@ func (r *roleQueryRepository) FindByName(ctx context.Context, name string) (*db.
 func (r *roleQueryRepository) FindByUserId(ctx context.Context, user_id int) ([]*db.Role, error) {
 	res, err := r.db.GetUserRoles(ctx, int32(user_id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, role_errors.ErrRoleNotFound.WithInternal(err)
 		}
 

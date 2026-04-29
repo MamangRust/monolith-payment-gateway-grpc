@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -28,7 +28,7 @@ func (r *userRepository) FindById(ctx context.Context, user_id int) (*db.GetUser
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
@@ -43,7 +43,7 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*db.Get
 	res, err := r.db.GetUserByEmail(ctx, email)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
@@ -58,7 +58,7 @@ func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string)
 	res, err := r.db.GetUserByEmailAndVerified(ctx, email)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound.WithInternal(err)
 		}
 
@@ -73,7 +73,7 @@ func (r *userRepository) FindByVerificationCode(ctx context.Context, verificatio
 	res, err := r.db.GetUserByVerificationCode(ctx, verification_code)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 

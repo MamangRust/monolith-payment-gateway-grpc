@@ -1272,20 +1272,20 @@ type Querier interface {
 	//   - Uses UNION ALL to combine real data with "missing month" placeholders
 	//   - Results are sorted by year and month (most recent first)
 	GetMonthlyTotalAmountByMerchant(ctx context.Context, arg GetMonthlyTotalAmountByMerchantParams) ([]*GetMonthlyTotalAmountByMerchantRow, error)
-	// GetMonthlyTotalAmountMerchant: Retrieves total transaction amounts for the current and previous month
+	// GetMonthlyTotalAmountMerchant: Retrieves total transaction amounts for all 12 months of a given year
 	// Purpose: Provide monthly transaction summary including zero values if no transactions exist
 	// Parameters:
-	//   $1: reference_date - Any date within the target (current) month
+	//   $1: reference_date - Any date within the target year
 	// Returns:
 	//   - Year (as text)
 	//   - Month (abbreviated name, e.g., Jan, Feb)
 	//   - Total transaction amount for each month
 	// Business Logic:
-	//   - Aggregates total transaction amounts for the target month and the month before
+	//   - Aggregates total transaction amounts for all 12 months of the year
 	//   - Filters only active (non-deleted) transactions and merchants
-	//   - Includes 0 as total_amount if there's no transaction data for either month
+	//   - Includes 0 as total_amount if there's no transaction data for a month
 	//   - Uses UNION ALL to combine real data with "missing month" placeholders
-	//   - Results are sorted by year and month (most recent first)
+	//   - Results are sorted by year and month
 	GetMonthlyTotalAmountMerchant(ctx context.Context, dollar_1 time.Time) ([]*GetMonthlyTotalAmountMerchantRow, error)
 	// GetMonthlyTotalSaldoBalance: Retrieves monthly balance totals for comparison periods
 	// Purpose: Compare monthly balance trends between two time periods
@@ -2332,7 +2332,7 @@ type Querier interface {
 	//   - Groups by calendar year
 	//   - Results ordered chronologically
 	//   - Useful for identifying year-over-year trends and growth patterns
-	GetYearlySaldoBalances(ctx context.Context, dollar_1 interface{}) ([]*GetYearlySaldoBalancesRow, error)
+	GetYearlySaldoBalances(ctx context.Context, dollar_1 int32) ([]*GetYearlySaldoBalancesRow, error)
 	// GetYearlyTopupAmount: Retrieves yearly top-up totals for last 5 years
 	// Purpose: Analyze long-term top-up trends and growth
 	// Parameters:

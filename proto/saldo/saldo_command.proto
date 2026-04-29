@@ -35,9 +35,15 @@ message UpdateSaldoWithdrawRequest {
   int32 withdraw_amount = 4;
 }
 
+message UpdateSaldoBalanceRequest {
+  string card_number = 1;
+  int32 total_balance = 2;
+}
+
 service SaldoCommandService {
   rpc CreateSaldo(CreateSaldoRequest) returns (ApiResponseSaldo) {}
   rpc UpdateSaldo(UpdateSaldoRequest) returns (ApiResponseSaldo) {}
+  rpc UpdateSaldoBalance(UpdateSaldoBalanceRequest) returns (ApiResponseSaldo) {}
   rpc UpdateSaldoWithdraw(UpdateSaldoWithdrawRequest)
       returns (ApiResponseSaldo) {}
   rpc TrashedSaldo(FindByIdSaldoRequest) returns (ApiResponseSaldoDeleteAt) {}

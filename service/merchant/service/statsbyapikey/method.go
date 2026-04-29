@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type merchantStatsMethodByApiKeyDeps struct {
+type MerchantStatsMethodByApiKeyDeps struct {
 	Cache mencache.MerchantStatsMethodByApiKeyCache
 
 	Repository repository.MerchantStatsMethodByApiKeyRepository
@@ -24,6 +24,7 @@ type merchantStatsMethodByApiKeyDeps struct {
 
 	Observability observability.TraceLoggerObservability
 }
+
 
 type merchantStatsMethodByApiKeyService struct {
 	cache mencache.MerchantStatsMethodByApiKeyCache
@@ -35,7 +36,7 @@ type merchantStatsMethodByApiKeyService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewMerchantStatsMethodByApiKeyService(params *merchantStatsMethodByApiKeyDeps) MerchantStatsByApiKeyMethodService {
+func NewMerchantStatsMethodByApiKeyService(params *MerchantStatsMethodByApiKeyDeps) MerchantStatsByApiKeyMethodService {
 	return &merchantStatsMethodByApiKeyService{
 		cache:         params.Cache,
 		repository:    params.Repository,
@@ -43,6 +44,7 @@ func NewMerchantStatsMethodByApiKeyService(params *merchantStatsMethodByApiKeyDe
 		observability: params.Observability,
 	}
 }
+
 
 func (s *merchantStatsMethodByApiKeyService) FindMonthlyPaymentMethodByApikey(ctx context.Context, req *requests.MonthYearPaymentMethodApiKey) ([]*db.GetMonthlyPaymentMethodByApikeyRow, error) {
 	const method = "FindMonthlyPaymentMethodByApikeys"

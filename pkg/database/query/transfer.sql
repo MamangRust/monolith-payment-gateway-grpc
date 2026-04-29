@@ -711,9 +711,9 @@ WITH
         SELECT
             EXTRACT(
                 YEAR
-                FROM $1::timestamp
+                FROM $2::timestamp
             )::text AS year,
-            TO_CHAR($1::timestamp, 'Mon') AS month,
+            TO_CHAR($2::timestamp, 'Mon') AS month,
             0 AS total_success,
             0 AS total_amount
         WHERE
@@ -723,20 +723,20 @@ WITH
                 WHERE
                     year = EXTRACT(
                         YEAR
-                        FROM $1::timestamp
+                        FROM $2::timestamp
                     )::integer
                     AND month = EXTRACT(
                         MONTH
-                        FROM $1::timestamp
+                        FROM $2::timestamp
                     )::integer
             )
         UNION ALL
         SELECT
             EXTRACT(
                 YEAR
-                FROM $3::timestamp
+                FROM $4::timestamp
             )::text AS year,
-            TO_CHAR($3::timestamp, 'Mon') AS month,
+            TO_CHAR($4::timestamp, 'Mon') AS month,
             0 AS total_success,
             0 AS total_amount
         WHERE
@@ -746,11 +746,11 @@ WITH
                 WHERE
                     year = EXTRACT(
                         YEAR
-                        FROM $3::timestamp
+                        FROM $4::timestamp
                     )::integer
                     AND month = EXTRACT(
                         MONTH
-                        FROM $3::timestamp
+                        FROM $4::timestamp
                     )::integer
             )
     )
@@ -816,7 +816,7 @@ WITH
         FROM yearly_data
         UNION ALL
         SELECT
-            $1::text AS year,
+            $2::text AS year,
             0::integer AS total_success,
             0::integer AS total_amount
         WHERE
@@ -824,10 +824,10 @@ WITH
                 SELECT 1
                 FROM yearly_data
                 WHERE
-                    year = $1::integer
+                    year = $2::integer
             )
         UNION ALL
-        SELECT ($1::integer - 1)::text AS year,
+        SELECT ($2::integer - 1)::text AS year,
             0::integer AS total_success,
             0::integer AS total_amount
         WHERE
@@ -835,7 +835,7 @@ WITH
                 SELECT 1
                 FROM yearly_data
                 WHERE
-                    year = $1::integer - 1
+                    year = $2::integer - 1
             )
     )
 SELECT *
@@ -918,9 +918,9 @@ WITH
         SELECT
             EXTRACT(
                 YEAR
-                FROM $1::timestamp
+                FROM $2::timestamp
             )::text AS year,
-            TO_CHAR($1::timestamp, 'Mon') AS month,
+            TO_CHAR($2::timestamp, 'Mon') AS month,
             0 AS total_failed,
             0 AS total_amount
         WHERE
@@ -930,20 +930,20 @@ WITH
                 WHERE
                     year = EXTRACT(
                         YEAR
-                        FROM $1::timestamp
+                        FROM $2::timestamp
                     )::integer
                     AND month = EXTRACT(
                         MONTH
-                        FROM $1::timestamp
+                        FROM $2::timestamp
                     )::integer
             )
         UNION ALL
         SELECT
             EXTRACT(
                 YEAR
-                FROM $3::timestamp
+                FROM $4::timestamp
             )::text AS year,
-            TO_CHAR($3::timestamp, 'Mon') AS month,
+            TO_CHAR($4::timestamp, 'Mon') AS month,
             0 AS total_failed,
             0 AS total_amount
         WHERE
@@ -953,11 +953,11 @@ WITH
                 WHERE
                     year = EXTRACT(
                         YEAR
-                        FROM $3::timestamp
+                        FROM $4::timestamp
                     )::integer
                     AND month = EXTRACT(
                         MONTH
-                        FROM $3::timestamp
+                        FROM $4::timestamp
                     )::integer
             )
     )
@@ -1023,7 +1023,7 @@ WITH
         FROM yearly_data
         UNION ALL
         SELECT
-            $1::text AS year,
+            $2::text AS year,
             0::integer AS total_failed,
             0::integer AS total_amount
         WHERE
@@ -1031,10 +1031,10 @@ WITH
                 SELECT 1
                 FROM yearly_data
                 WHERE
-                    year = $1::integer
+                    year = $2::integer
             )
         UNION ALL
-        SELECT ($1::integer - 1)::text AS year,
+        SELECT ($2::integer - 1)::text AS year,
             0::integer AS total_failed,
             0::integer AS total_amount
         WHERE
@@ -1042,7 +1042,7 @@ WITH
                 SELECT 1
                 FROM yearly_data
                 WHERE
-                    year = $1::integer - 1
+                    year = $2::integer - 1
             )
     )
 SELECT *

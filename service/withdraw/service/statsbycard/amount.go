@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type withdrawStatsByCardAmountDeps struct {
+type WithdrawStatsByCardAmountDeps struct {
 	Cache mencache.WithdrawStatsByCardAmountCache
 
 	Repository repository.WithdrawStatsByCardAmountRepository
@@ -35,7 +35,7 @@ type withdrawStatsByCardAmountService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewWithdrawStatsByCardAmountService(deps *withdrawStatsByCardAmountDeps) WithdrawStatsByCardAmountService {
+func NewWithdrawStatsByCardAmountService(deps *WithdrawStatsByCardAmountDeps) WithdrawStatsByCardAmountService {
 
 	return &withdrawStatsByCardAmountService{
 		cache:         deps.Cache,
@@ -44,6 +44,7 @@ func NewWithdrawStatsByCardAmountService(deps *withdrawStatsByCardAmountDeps) Wi
 		observability: deps.Observability,
 	}
 }
+
 
 func (s *withdrawStatsByCardAmountService) FindMonthlyWithdrawsByCardNumber(ctx context.Context, req *requests.YearMonthCardNumber) ([]*db.GetMonthlyWithdrawsByCardNumberRow, error) {
 	const method = "FindMonthlyWithdrawsByCardNumber"

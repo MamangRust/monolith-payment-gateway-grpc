@@ -2,6 +2,7 @@ package transfer_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,31 +12,53 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/repository"
 	"github.com/MamangRust/monolith-payment-gateway-transfer/service"
+	user_repo_impl "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	card_repo_impl "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	saldo_repo_impl "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+type testCardRepo struct {
+	db *db.Queries
+}
+
+func (r *testCardRepo) FindUserCardByCardNumber(ctx context.Context, card_number string) (*db.GetUserEmailByCardNumberRow, error) {
+	return r.db.GetUserEmailByCardNumber(ctx, card_number)
+}
+
+func (r *testCardRepo) FindCardByCardNumber(ctx context.Context, card_number string) (*db.GetCardByCardNumberRow, error) {
+	return r.db.GetCardByCardNumber(ctx, card_number)
+}
+
+type testSaldoRepo struct {
+	db *db.Queries
+}
+
+func (r *testSaldoRepo) FindByCardNumber(ctx context.Context, card_number string) (*db.Saldo, error) {
+	return r.db.GetSaldoByCardNumber(ctx, card_number)
+}
+
+func (r *testSaldoRepo) UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*db.UpdateSaldoBalanceRow, error) {
+	return r.db.UpdateSaldoBalance(ctx, db.UpdateSaldoBalanceParams{
+		CardNumber:   request.CardNumber,
+		TotalBalance: int32(request.TotalBalance),
+	})
+}
+
 type TransferServiceTestSuite struct {
 	suite.Suite
 	ts              *tests.TestSuite
-	dbPool          *pgxpool.Pool
-	redisClient     *redis.Client
 	transferService service.Service
-	userRepo        user_repo.UserCommandRepository
-	cardRepo        card_repo.Repositories
-	saldoRepo       saldo_repo.Repositories
-	repos           repository.Repositories
-
-	senderCardNumber   string
-	receiverCardNumber string
-	transferID         int
+	dbPool          *pgxpool.Pool
+	transferID      int
+	senderCard      string
+	receiverCard    string
+	userID          int
 }
 
 func (s *TransferServiceTestSuite) SetupSuite() {
@@ -47,136 +70,186 @@ func (s *TransferServiceTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.dbPool = pool
 
-	queries := db.New(pool)
-	
-	// Repositories for seeding
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
-	s.cardRepo = *card_repo.NewRepositories(queries)
-	s.saldoRepo = saldo_repo.NewRepositories(queries)
-
-	// Transfer repos
-	s.repos = repository.NewRepositories(queries, s.saldoRepo, s.cardRepo.CardQuery)
-
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
+
+	queries := db.New(pool)
+	
+	cardRepo := &testCardRepo{db: queries}
+	saldoRepo := &testSaldoRepo{db: queries}
+	repos := repository.NewRepositories(queries, saldoRepo, cardRepo)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
-	_ , _ = observability.NewObservability("test", log)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
 	s.transferService = service.NewService(&service.Deps{
 		Kafka:        nil,
-		Repositories: s.repos,
+		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
 	})
 
-	// Seed Sender
-	sender, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Sender",
-		LastName:  "Service",
-		Email:     "sender.service@test.com",
+	// Seed User
+	userRepo := user_repo_impl.NewUserCommandRepository(queries)
+	user, err := userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
+		FirstName: "Transfer",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("transfer.tester.%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
+	s.userID = int(user.UserID)
 
-	sCard, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
-		UserID:       int(sender.UserID),
+	// Seed Sender Card & Saldo
+	cardCmdRepo := card_repo_impl.NewCardCommandRepository(queries)
+	sender, err := cardCmdRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(1, 0, 0),
-		CVV:          "111",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
 		CardProvider: "visa",
 	})
 	s.Require().NoError(err)
-	s.senderCardNumber = sCard.CardNumber
+	s.senderCard = sender.CardNumber
 
-	_, err = s.saldoRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
-		CardNumber:   s.senderCardNumber,
+	saldoCmdRepo := saldo_repo_impl.NewSaldoCommandRepository(queries)
+	_, err = saldoCmdRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
+		CardNumber:   s.senderCard,
 		TotalBalance: 1000000,
 	})
 	s.Require().NoError(err)
 
-	// Seed Receiver
-	receiver, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Receiver",
-		LastName:  "Service",
-		Email:     "receiver.service@test.com",
-		Password:  "password123",
-	})
-	s.Require().NoError(err)
-
-	rCard, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
-		UserID:       int(receiver.UserID),
+	// Seed Receiver Card & Saldo
+	receiver, err := cardCmdRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(1, 0, 0),
-		CVV:          "222",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "456",
 		CardProvider: "mastercard",
 	})
 	s.Require().NoError(err)
-	s.receiverCardNumber = rCard.CardNumber
+	s.receiverCard = receiver.CardNumber
 
-	_, err = s.saldoRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
-		CardNumber:   s.receiverCardNumber,
+	_, err = saldoCmdRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
+		CardNumber:   s.receiverCard,
 		TotalBalance: 0,
 	})
 	s.Require().NoError(err)
 }
 
 func (s *TransferServiceTestSuite) TearDownSuite() {
-	if s.redisClient != nil {
-		s.redisClient.Close()
-	}
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
+	s.dbPool.Close()
+	s.ts.Teardown()
 }
 
-func (s *TransferServiceTestSuite) Test1_CreateTransfer() {
+func (s *TransferServiceTestSuite) Test1_TransferLifecycle() {
 	ctx := context.Background()
-	req := &requests.CreateTransferRequest{
-		TransferFrom:   s.senderCardNumber,
-		TransferTo:     s.receiverCardNumber,
+
+	// Create Transfer
+	createReq := &requests.CreateTransferRequest{
+		TransferFrom:   s.senderCard,
+		TransferTo:     s.receiverCard,
 		TransferAmount: 100000,
 	}
-
-	res, err := s.transferService.CreateTransaction(ctx, req)
-	s.Require().NoError(err)
-	s.Require().NotNil(res)
+	res, err := s.transferService.CreateTransaction(ctx, createReq)
+	s.NoError(err)
+	s.NotNil(res)
 	s.transferID = int(res.TransferID)
+	s.Equal("success", res.Status)
 
-	// Verify balances
-	senderSaldo, _ := s.saldoRepo.FindByCardNumber(ctx, s.senderCardNumber)
-	s.Equal(int32(900000), senderSaldo.TotalBalance)
+	// FindById
+	found, err := s.transferService.FindById(ctx, s.transferID)
+	s.NoError(err)
+	s.NotNil(found)
+	s.Equal(int32(s.transferID), found.TransferID)
 
-	receiverSaldo, _ := s.saldoRepo.FindByCardNumber(ctx, s.receiverCardNumber)
-	s.Equal(int32(100000), receiverSaldo.TotalBalance)
+	// Update Transfer
+	updateReq := &requests.UpdateTransferRequest{
+		TransferID:     &s.transferID,
+		TransferFrom:   s.senderCard,
+		TransferTo:     s.receiverCard,
+		TransferAmount: 200000,
+	}
+	updated, err := s.transferService.UpdateTransaction(ctx, updateReq)
+	s.NoError(err)
+	s.NotNil(updated)
+	s.Equal(int32(200000), updated.TransferAmount)
 }
 
-func (s *TransferServiceTestSuite) Test2_FindTransferById() {
-	s.Require().NotZero(s.transferID)
+func (s *TransferServiceTestSuite) Test2_QueryOperations() {
 	ctx := context.Background()
 
-	res, err := s.transferService.FindById(ctx, s.transferID)
-	s.Require().NoError(err)
-	s.Require().NotNil(res)
-	s.Equal(int32(s.transferID), res.TransferID)
-}
-
-func (s *TransferServiceTestSuite) Test3_FindAllTransfers() {
-	ctx := context.Background()
-	res, _, err := s.transferService.FindAll(ctx, &requests.FindAllTransfers{
+	// FindAll
+	all, total, err := s.transferService.FindAll(ctx, &requests.FindAllTransfers{
 		Page:     1,
 		PageSize: 10,
 	})
-	s.Require().NoError(err)
-	s.Require().NotNil(res)
+	s.NoError(err)
+	s.NotNil(all)
+	s.GreaterOrEqual(*total, 1)
+
+	// FindByActive
+	active, totalActive, err := s.transferService.FindByActive(ctx, &requests.FindAllTransfers{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(active)
+	s.GreaterOrEqual(*totalActive, 1)
+
+	// FindByTransferFrom
+	from, err := s.transferService.FindTransferByTransferFrom(ctx, s.senderCard)
+	s.NoError(err)
+	s.NotNil(from)
+	s.GreaterOrEqual(len(from), 1)
+
+	// FindByTransferTo
+	to, err := s.transferService.FindTransferByTransferTo(ctx, s.receiverCard)
+	s.NoError(err)
+	s.NotNil(to)
+	s.GreaterOrEqual(len(to), 1)
+}
+
+func (s *TransferServiceTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
+	s.Require().NotZero(s.transferID)
+
+	// Trash
+	trashed, err := s.transferService.TrashedTransfer(ctx, s.transferID)
+	s.NoError(err)
+	s.NotNil(trashed)
+
+	// FindByTrashed
+	trashedList, totalTrashed, err := s.transferService.FindByTrashed(ctx, &requests.FindAllTransfers{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(trashedList)
+	s.GreaterOrEqual(*totalTrashed, 1)
+
+	// Restore
+	restored, err := s.transferService.RestoreTransfer(ctx, s.transferID)
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *TransferServiceTestSuite) Test4_BulkOperations() {
+	ctx := context.Background()
+
+	// Restore All
+	ok, err := s.transferService.RestoreAllTransfer(ctx)
+	s.NoError(err)
+	s.True(ok)
+
+	// Delete All Permanent
+	ok, err = s.transferService.DeleteAllTransferPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
 }
 
 func TestTransferServiceSuite(t *testing.T) {

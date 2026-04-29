@@ -29,13 +29,13 @@ type DepsStatsByCard struct {
 
 func NewWithdrawStatsByCardService(deps *DepsStatsByCard) WithdrawStatsByCardService {
 	return &withdrawStatsByCardStatsByCardService{
-		WithdrawStatsByCardAmountService: NewWithdrawStatsByCardAmountService(&withdrawStatsByCardAmountDeps{
+		WithdrawStatsByCardAmountService: NewWithdrawStatsByCardAmountService(&WithdrawStatsByCardAmountDeps{
 			Repository:    deps.Repository,
 			Cache:         deps.Cache,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		WithdrawStatsByCardStatusService: NewWithdrawStatsByCardStatusService(&withdrawStatsByCardStatusDeps{
+		WithdrawStatsByCardStatusService: NewWithdrawStatsByCardStatusService(&WithdrawStatsByCardStatusDeps{
 			Cache:         deps.Cache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
@@ -43,3 +43,4 @@ func NewWithdrawStatsByCardService(deps *DepsStatsByCard) WithdrawStatsByCardSer
 		}),
 	}
 }
+

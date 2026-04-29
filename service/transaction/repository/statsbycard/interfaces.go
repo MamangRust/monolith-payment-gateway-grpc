@@ -7,7 +7,7 @@ import (
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 )
 
-type TransactonStatsByCardStatusRepository interface {
+type TransactionStatsByCardStatusRepository interface {
 	GetMonthTransactionStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthStatusTransactionCardNumber) ([]*db.GetMonthTransactionStatusSuccessCardNumberRow, error)
 	GetYearlyTransactionStatusSuccessByCardNumber(ctx context.Context, req *requests.YearStatusTransactionCardNumber) ([]*db.GetYearlyTransactionStatusSuccessCardNumberRow, error)
 	GetMonthTransactionStatusFailedByCardNumber(ctx context.Context, req *requests.MonthStatusTransactionCardNumber) ([]*db.GetMonthTransactionStatusFailedCardNumberRow, error)
@@ -19,7 +19,7 @@ type TransactionStatsByCardMethodRepository interface {
 	GetYearlyPaymentMethodsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetYearlyPaymentMethodsByCardNumberRow, error)
 }
 
-type TransactonStatsByCardAmountRepository interface {
+type TransactionStatsByCardAmountRepository interface {
 	GetMonthlyAmountsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetMonthlyAmountsByCardNumberRow, error)
 	GetYearlyAmountsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetYearlyAmountsByCardNumberRow, error)
 }

@@ -1,61 +1,67 @@
 package topup_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	api "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/topup"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	topup_handler "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/topup"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/adapter"
+	pbcard "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pbsaldo "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
+	pbuser "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+	card_handler "github.com/MamangRust/monolith-payment-gateway-card/handler"
+	card_repository "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	card_service "github.com/MamangRust/monolith-payment-gateway-card/service"
+	saldo_handler "github.com/MamangRust/monolith-payment-gateway-saldo/handler"
+	saldo_repository "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+	saldo_service "github.com/MamangRust/monolith-payment-gateway-saldo/service"
+	"github.com/MamangRust/monolith-payment-gateway-topup/handler"
+	"github.com/MamangRust/monolith-payment-gateway-topup/repository"
+	"github.com/MamangRust/monolith-payment-gateway-topup/service"
+	user_handler "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	user_repository "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	user_service "github.com/MamangRust/monolith-payment-gateway-user/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	app_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	gapi "github.com/MamangRust/monolith-payment-gateway-topup/handler"
-	topup_repo "github.com/MamangRust/monolith-payment-gateway-topup/repository"
-	"github.com/MamangRust/monolith-payment-gateway-topup/service"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type TopupHandlerTestSuite struct {
+type TopupApiTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
 	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
+	echo        *echo.Echo
+	userID      int32
+	cardID      int32
+	cardNumber  string
+	topupID     int
 	grpcServer  *grpc.Server
-	commandClient pb.TopupCommandServiceClient
-	queryClient   pb.TopupQueryServiceClient
+	lis         *bufconn.Listener
 	conn        *grpc.ClientConn
-	router      *echo.Echo
-	
-	userRepo  user_repo.UserCommandRepository
-	cardRepo  card_repo.CardCommandRepository
-	saldoRepo saldo_repo.Repositories
-	topupRepo topup_repo.Repositories
-
-	cardNumber string
-	topupID    int
 }
 
-func (s *TopupHandlerTestSuite) SetupSuite() {
+func (s *TopupApiTestSuite) SetupSuite() {
 	ts, err := tests.SetupTestSuite()
 	s.Require().NoError(err)
 	s.ts = ts
@@ -66,103 +72,130 @@ func (s *TopupHandlerTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	
-	userRepos := user_repo.NewRepositories(queries)
-	cardRepos := card_repo.NewRepositories(queries)
-	saldoRepos := saldo_repo.NewRepositories(queries)
-	
-	cardAdapter := &topupCardRepoAdapter{
-		CardQueryRepository:   cardRepos.CardQuery,
-		CardCommandRepository: cardRepos.CardCommand,
-	}
-	s.topupRepo = topup_repo.NewRepositories(queries, cardAdapter, saldoRepos)
-	s.userRepo = userRepos.UserCommand()
-	s.cardRepo = cardRepos.CardCommand
-	s.saldoRepo = saldoRepos
-
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
-	obs, _ := observability.NewObservability("test", log)
+	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	topupService := service.NewService(&service.Deps{
-		Kafka:        nil,
+	// Dependency services handlers
+	cardSvc := card_service.NewService(&card_service.Deps{
 		Cache:        cacheStore,
-		Repositories: s.topupRepo,
+		Repositories: card_repository.NewRepositories(queries),
+		Logger:       log,
+		Kafka:        nil,
+	})
+	cardH := card_handler.NewHandler(cardSvc)
+
+	saldoSvc := saldo_service.NewService(&saldo_service.Deps{
+		Cache:        cacheStore,
+		Repositories: saldo_repository.NewRepositories(queries),
 		Logger:       log,
 	})
+	saldoH := saldo_handler.NewHandler(saldoSvc)
 
-	// Seed User and Card
-	user, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Topup",
-		LastName:  "Owner",
-		Email:     "topup.handler@example.com",
-		Password:  "password123",
+	userSvc := user_service.NewService(&user_service.Deps{
+		Cache:        cacheStore,
+		Repositories: user_repository.NewRepositories(queries),
+		Hash:         hasher,
+		Logger:       log,
 	})
+	userH := user_handler.NewHandler(userSvc)
+
+	// Setup gRPC server for adapters and Topup GAPI
+	s.lis = bufconn.Listen(1024 * 1024)
+	s.grpcServer = grpc.NewServer()
+	
+	// Register dependencies
+	pbcard.RegisterCardQueryServiceServer(s.grpcServer, cardH)
+	pbcard.RegisterCardCommandServiceServer(s.grpcServer, cardH)
+	pbsaldo.RegisterSaldoQueryServiceServer(s.grpcServer, saldoH)
+	pbsaldo.RegisterSaldoCommandServiceServer(s.grpcServer, saldoH)
+
+	// Dial to ourselves
+	s.conn, err = grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return s.lis.Dial()
+		}),
+		grpc.WithInsecure())
 	s.Require().NoError(err)
 
-	card, err := s.cardRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
-		UserID:       int(user.UserID),
+	cardAdapter := adapter.NewCardAdapter(pbcard.NewCardQueryServiceClient(s.conn), pbcard.NewCardCommandServiceClient(s.conn))
+	saldoAdapter := adapter.NewSaldoAdapter(pbsaldo.NewSaldoQueryServiceClient(s.conn), pbsaldo.NewSaldoCommandServiceClient(s.conn))
+
+	// Topup Service
+	repos := repository.NewRepositories(queries, cardAdapter, saldoAdapter)
+	topupSvc := service.NewService(&service.Deps{
+		Kafka:        nil,
+		Cache:        cacheStore,
+		Repositories: repos,
+		Logger:       log,
+	})
+	topupH := handler.NewHandler(topupSvc)
+
+	// Register Topup GAPI on the same server
+	pb.RegisterTopupQueryServiceServer(s.grpcServer, topupH)
+	pb.RegisterTopupCommandServiceServer(s.grpcServer, topupH)
+
+	go func() {
+		if err := s.grpcServer.Serve(s.lis); err != nil {
+		}
+	}()
+
+	s.echo = echo.New()
+	obs, _ := observability.NewObservability("test", log)
+	apiHandler := errors.NewApiHandler(obs, log)
+
+	// Register Topup API Handler (from apigateway)
+	topup_handler.RegisterTopupHandler(&topup_handler.DepsTopup{
+		Client:     s.conn,
+		E:          s.echo,
+		Logger:     log,
+		Cache:      cacheStore,
+		ApiHandler: apiHandler,
+	})
+
+	// Create test environment
+	ctx := context.Background()
+	userRes, err := userH.Create(ctx, &pbuser.CreateUserRequest{
+		Firstname:       "Topup",
+		Lastname:        "Api",
+		Email:           fmt.Sprintf("topup.api.%d@example.com", time.Now().UnixNano()),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
+	})
+	s.Require().NoError(err)
+	s.userID = userRes.Data.Id
+
+	cardRes, err := cardH.CreateCard(ctx, &pbcard.CreateCardRequest{
+		UserId:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(1, 0, 0),
-		CVV:          "123",
+		ExpireDate:   timestamppb.New(time.Now().AddDate(5, 0, 0)),
+		Cvv:          "123",
 		CardProvider: "visa",
 	})
 	s.Require().NoError(err)
-	s.cardNumber = card.CardNumber
+	s.cardID = cardRes.Data.Id
+	s.cardNumber = cardRes.Data.CardNumber
 
-	// Seed Saldo
-	_, err = s.saldoRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
+	_, err = saldoH.CreateSaldo(ctx, &pbsaldo.CreateSaldoRequest{
 		CardNumber:   s.cardNumber,
-		TotalBalance: 1000000,
+		TotalBalance: 100000,
 	})
 	s.Require().NoError(err)
-
-	// Start gRPC Server
-	topupGapiHandler := gapi.NewHandler(topupService)
-	server := grpc.NewServer()
-	pb.RegisterTopupCommandServiceServer(server, topupGapiHandler)
-	pb.RegisterTopupQueryServiceServer(server, topupGapiHandler)
-	s.grpcServer = server
-
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
-	go func() { _ = server.Serve(lis) }()
-
-	// Create gRPC Client
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	s.Require().NoError(err)
-	s.conn = conn
-	s.commandClient = pb.NewTopupCommandServiceClient(conn)
-	s.queryClient = pb.NewTopupQueryServiceClient(conn)
-
-	// Setup Echo
-	s.router = echo.New()
-	apiErrorHandler := app_errors.NewApiHandler(obs, log)
-
-	api.RegisterTopupHandler(&api.DepsTopup{
-		Client:     s.conn,
-		E:          s.router,
-		Logger:     log,
-		Cache:      cacheStore,
-		ApiHandler: apiErrorHandler,
-	})
 }
 
-func (s *TopupHandlerTestSuite) TearDownSuite() {
+func (s *TopupApiTestSuite) TearDownSuite() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
 	if s.grpcServer != nil {
 		s.grpcServer.Stop()
-	}
-	if s.redisClient != nil {
-		s.redisClient.Close()
 	}
 	if s.dbPool != nil {
 		s.dbPool.Close()
@@ -172,62 +205,75 @@ func (s *TopupHandlerTestSuite) TearDownSuite() {
 	}
 }
 
-func (s *TopupHandlerTestSuite) Test1_CreateTopup() {
-	req := requests.CreateTopupRequest{
-		CardNumber:  s.cardNumber,
-		TopupAmount: 100000,
-		TopupMethod: "visa",
+func (s *TopupApiTestSuite) Test1_CreateTopup() {
+	body := map[string]interface{}{
+		"card_number":  s.cardNumber,
+		"topup_amount": 50000,
+		"topup_method": "bca",
 	}
-	body, _ := json.Marshal(req)
-
-	request := httptest.NewRequest(http.MethodPost, "/api/topup-command/create", bytes.NewBuffer(body))
-	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/topup-command/create", strings.NewReader(string(jsonBody)))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 
-	s.router.ServeHTTP(rec, request)
 	s.Equal(http.StatusOK, rec.Code)
 
-	var createRes map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &createRes)
-	topupData := createRes["data"].(map[string]interface{})
-	s.topupID = int(topupData["id"].(float64))
+	var response map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &response)
+	data := response["data"].(map[string]interface{})
+	s.topupID = int(data["id"].(float64))
+	s.Equal(float64(50000), data["topup_amount"])
 }
 
-func (s *TopupHandlerTestSuite) Test2_FindById() {
+func (s *TopupApiTestSuite) Test2_UpdateTopup() {
 	s.Require().NotZero(s.topupID)
-	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/topup-query/%d", s.topupID), nil)
-	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
-	s.Equal(http.StatusOK, rec.Code)
-}
-
-func (s *TopupHandlerTestSuite) Test3_Update() {
-	s.Require().NotZero(s.topupID)
-	updateReq := requests.UpdateTopupRequest{
-		TopupID:     &s.topupID,
-		CardNumber:  s.cardNumber,
-		TopupAmount: 150000,
-		TopupMethod: "mastercard",
+	body := map[string]interface{}{
+		"topup_id":     s.topupID,
+		"card_number":  s.cardNumber,
+		"topup_amount": 75000,
+		"topup_method": "mandiri",
 	}
-	updateBody, _ := json.Marshal(updateReq)
-	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/topup-command/update/%d", s.topupID), bytes.NewBuffer(updateBody))
-	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/topup-command/update/"+strconv.Itoa(s.topupID), strings.NewReader(string(jsonBody)))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
+	s.echo.ServeHTTP(rec, req)
+
 	s.Equal(http.StatusOK, rec.Code)
 }
 
-func (s *TopupHandlerTestSuite) Test4_DeletePermanent() {
-	s.Require().NotZero(s.topupID)
-	request := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/topup-command/permanent/%d", s.topupID), nil)
+func (s *TopupApiTestSuite) Test3_FindOperations() {
+	// FindById
+	req := httptest.NewRequest(http.MethodGet, "/api/topup-query/"+strconv.Itoa(s.topupID), nil)
 	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
+
+	// FindAll
+	reqA := httptest.NewRequest(http.MethodGet, "/api/topup-query?page=1&page_size=10", nil)
+	recA := httptest.NewRecorder()
+	s.echo.ServeHTTP(recA, reqA)
+	s.Equal(http.StatusOK, recA.Code)
 }
 
-func TestTopupHandlerSuite(t *testing.T) {
+func (s *TopupApiTestSuite) Test4_TrashAndRestore() {
+	// Trash
+	reqT := httptest.NewRequest(http.MethodPost, "/api/topup-command/trashed/"+strconv.Itoa(s.topupID), nil)
+	recT := httptest.NewRecorder()
+	s.echo.ServeHTTP(recT, reqT)
+	s.Equal(http.StatusOK, recT.Code)
+
+	// Restore
+	reqR := httptest.NewRequest(http.MethodPost, "/api/topup-command/restore/"+strconv.Itoa(s.topupID), nil)
+	recR := httptest.NewRecorder()
+	s.echo.ServeHTTP(recR, reqR)
+	s.Equal(http.StatusOK, recR.Code)
+}
+
+func TestTopupApiSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	suite.Run(t, new(TopupHandlerTestSuite))
+	suite.Run(t, new(TopupApiTestSuite))
 }

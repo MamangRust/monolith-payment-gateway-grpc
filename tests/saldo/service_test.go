@@ -2,17 +2,18 @@ package saldo_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
-	"github.com/MamangRust/monolith-payment-gateway-saldo/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+	"github.com/MamangRust/monolith-payment-gateway-saldo/service"
 	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,11 +25,11 @@ import (
 type SaldoServiceTestSuite struct {
 	suite.Suite
 	ts           *tests.TestSuite
-	dbPool       *pgxpool.Pool
-	redisClient  *redis.Client
 	saldoService service.Service
-	userRepo     user_repo.UserCommandRepository
-	cardRepo     card_repo.CardCommandRepository
+	dbPool       *pgxpool.Pool
+	saldoID      int
+	cardNumber   string
+	userID       int
 }
 
 func (s *SaldoServiceTestSuite) SetupSuite() {
@@ -42,78 +43,160 @@ func (s *SaldoServiceTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
-	
-	userRepos := user_repo.NewRepositories(queries)
-	cardRepos := card_repo.NewRepositories(queries)
-	saldoRepos := saldo_repo.NewRepositories(queries)
-
-	s.userRepo = userRepos.UserCommand()
-	s.cardRepo = cardRepos.CardCommand
+	repos := repository.NewRepositories(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
 	s.saldoService = service.NewService(&service.Deps{
-		Repositories: saldoRepos,
+		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
 	})
-}
 
-func (s *SaldoServiceTestSuite) TearDownSuite() {
-	if s.redisClient != nil {
-		s.redisClient.Close()
-	}
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
-}
-
-func (s *SaldoServiceTestSuite) TestSaldoLifecycle() {
-	ctx := context.Background()
-
-	// Seed User and Card
-	user, err := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
+	// Seed User
+	userRepo := user_repo.NewUserCommandRepository(queries)
+	user, err := userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Saldo",
-		LastName:  "Owner",
-		Email:     "saldo.service@example.com",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("saldo.tester.%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
+	s.userID = int(user.UserID)
 
-	card, err := s.cardRepo.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID:       int(user.UserID),
+	// Seed Card
+	cardRepo := card_repo.NewCardCommandRepository(queries)
+	card, err := cardRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(2, 0, 0),
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
 		CVV:          "123",
 		CardProvider: "visa",
 	})
 	s.Require().NoError(err)
+	s.cardNumber = card.CardNumber
+}
 
-	// 1. Create Saldo
-	req := &requests.CreateSaldoRequest{
-		CardNumber:   card.CardNumber,
-		TotalBalance: 500000,
+func (s *SaldoServiceTestSuite) TearDownSuite() {
+	s.dbPool.Close()
+	s.ts.Teardown()
+}
+
+func (s *SaldoServiceTestSuite) Test1_SaldoLifecycle() {
+	ctx := context.Background()
+
+	// Create Saldo
+	createReq := &requests.CreateSaldoRequest{
+		CardNumber:   s.cardNumber,
+		TotalBalance: 1000000,
 	}
-	saldo, err := s.saldoService.CreateSaldo(ctx, req)
+	res, err := s.saldoService.CreateSaldo(ctx, createReq)
 	s.NoError(err)
-	s.NotNil(saldo)
-	s.Equal(int32(req.TotalBalance), saldo.TotalBalance)
+	s.NotNil(res)
+	s.saldoID = int(res.SaldoID)
 
-	// 2. Find By Card Number
-	found, err := s.saldoService.FindByCardNumber(ctx, card.CardNumber)
+	// FindById
+	found, err := s.saldoService.FindById(ctx, s.saldoID)
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(int32(req.TotalBalance), found.TotalBalance)
+	s.Equal(int32(s.saldoID), found.SaldoID)
+
+	// FindByCardNumber
+	foundByCard, err := s.saldoService.FindByCardNumber(ctx, s.cardNumber)
+	s.NoError(err)
+	s.NotNil(foundByCard)
+	s.Equal(s.cardNumber, foundByCard.CardNumber)
+
+	// Update Saldo
+	updateReq := &requests.UpdateSaldoRequest{
+		SaldoID:      &s.saldoID,
+		CardNumber:   s.cardNumber,
+		TotalBalance: 2000000,
+	}
+	updated, err := s.saldoService.UpdateSaldo(ctx, updateReq)
+	s.NoError(err)
+	s.NotNil(updated)
+	s.Equal(int32(2000000), updated.TotalBalance)
+
+	// Update Withdraw
+	withdrawAmount := 500000
+	now := time.Now()
+	withdrawReq := &requests.UpdateSaldoWithdraw{
+		CardNumber:     s.cardNumber,
+		TotalBalance:   2000000,
+		WithdrawAmount: &withdrawAmount,
+		WithdrawTime:   &now,
+	}
+	withdrawn, err := s.saldoService.UpdateSaldoWithdraw(ctx, withdrawReq)
+	s.NoError(err)
+	s.NotNil(withdrawn)
+}
+
+func (s *SaldoServiceTestSuite) Test2_QueryOperations() {
+	ctx := context.Background()
+
+	// FindAll
+	all, total, err := s.saldoService.FindAll(ctx, &requests.FindAllSaldos{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(all)
+	s.GreaterOrEqual(*total, 1)
+
+	// FindByActive
+	active, totalActive, err := s.saldoService.FindByActive(ctx, &requests.FindAllSaldos{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(active)
+	s.GreaterOrEqual(*totalActive, 1)
+}
+
+func (s *SaldoServiceTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
+	s.Require().NotZero(s.saldoID)
+
+	// Trash
+	trashed, err := s.saldoService.TrashSaldo(ctx, s.saldoID)
+	s.NoError(err)
+	s.NotNil(trashed)
+
+	// FindByTrashed
+	trashedList, totalTrashed, err := s.saldoService.FindByTrashed(ctx, &requests.FindAllSaldos{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(trashedList)
+	s.GreaterOrEqual(*totalTrashed, 1)
+
+	// Restore
+	restored, err := s.saldoService.RestoreSaldo(ctx, s.saldoID)
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *SaldoServiceTestSuite) Test4_BulkOperations() {
+	ctx := context.Background()
+
+	// Restore All
+	ok, err := s.saldoService.RestoreAllSaldo(ctx)
+	s.NoError(err)
+	s.True(ok)
+
+	// Delete All Permanent
+	ok, err = s.saldoService.DeleteAllSaldoPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
 }
 
 func TestSaldoServiceSuite(t *testing.T) {

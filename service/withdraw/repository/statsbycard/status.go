@@ -13,11 +13,12 @@ type withdrawStatsByCardStatusRepository struct {
 	db *db.Queries
 }
 
-func NewWithdrawStatsStatusRepository(db *db.Queries) WithdrawStatsByCardStatusRepository {
+func NewWithdrawStatsByCardStatusRepository(db *db.Queries) WithdrawStatsByCardStatusRepository {
 	return &withdrawStatsByCardStatusRepository{
 		db: db,
 	}
 }
+
 
 func (r *withdrawStatsByCardStatusRepository) GetMonthWithdrawStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthStatusWithdrawCardNumber) ([]*db.GetMonthWithdrawStatusSuccessCardNumberRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)

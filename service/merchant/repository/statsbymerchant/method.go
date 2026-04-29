@@ -37,7 +37,7 @@ func (r *merchantStatsMethodByMerchantRepository) GetMonthlyPaymentMethodByMerch
 func (r *merchantStatsMethodByMerchantRepository) GetYearlyPaymentMethodByMerchants(ctx context.Context, req *requests.MonthYearPaymentMethodMerchant) ([]*db.GetYearlyPaymentMethodByMerchantsRow, error) {
 	res, err := r.db.GetYearlyPaymentMethodByMerchants(ctx, db.GetYearlyPaymentMethodByMerchantsParams{
 		MerchantID: int32(req.MerchantID),
-		Column2:    req.Year,
+		Column1:    req.Year,
 	})
 
 	if err != nil {

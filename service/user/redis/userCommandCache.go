@@ -25,3 +25,9 @@ func (u *userCommandCache) DeleteUserCache(ctx context.Context, id int) {
 
 	sharedcachehelpers.DeleteFromCache(ctx, u.store, key)
 }
+
+func (u *userCommandCache) DeleteUserListCache(ctx context.Context) {
+	u.store.InvalidateCache(ctx, "user:all:*")
+	u.store.InvalidateCache(ctx, "user:active:*")
+	u.store.InvalidateCache(ctx, "user:trashed:*")
+}

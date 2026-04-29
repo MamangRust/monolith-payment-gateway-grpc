@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type transferStatsStatusDeps struct {
+type TransferStatsStatusDeps struct {
 	Cache mencache.TransferStatsStatusCache
 
 	Repository repository.TransferStatsStatusRepository
@@ -35,7 +35,7 @@ type transferStatsStatusService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewTransferStatsStatusService(params *transferStatsStatusDeps) TransferStatsStatusService {
+func NewTransferStatsStatusService(params *TransferStatsStatusDeps) TransferStatsStatusService {
 	return &transferStatsStatusService{
 		cache:         params.Cache,
 		repository:    params.Repository,
@@ -43,6 +43,7 @@ func NewTransferStatsStatusService(params *transferStatsStatusDeps) TransferStat
 		observability: params.Observability,
 	}
 }
+
 
 func (s *transferStatsStatusService) FindMonthTransferStatusSuccess(ctx context.Context, req *requests.MonthStatusTransfer) ([]*db.GetMonthTransferStatusSuccessRow, error) {
 	const method = "FindMonthTransferStatusSuccess"

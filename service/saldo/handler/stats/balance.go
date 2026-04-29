@@ -64,7 +64,7 @@ func (s *saldoStatsBalanceHandleGrpc) FindYearlySaldoBalances(ctx context.Contex
 	protoData := make([]*pb.SaldoYearBalanceResponse, len(res))
 	for i, item := range res {
 		protoData[i] = &pb.SaldoYearBalanceResponse{
-			Year:         item.Year.Int.String(),
+			Year:         item.YYear,
 			TotalBalance: int32(item.TotalBalance),
 		}
 	}

@@ -76,7 +76,7 @@ func (s *userCommandService) CreateUser(ctx context.Context, request *requests.C
 			status = "error"
 			return errorhandler.HandleError[*db.CreateUserRow](
 				s.logger,
-				user_errors.ErrUserEmailAlready,
+				user_errors.ErrFailedCreateUser.WithInternal(err), 
 				method,
 				span,
 				zap.String("email", request.Email),
@@ -117,6 +117,7 @@ func (s *userCommandService) CreateUser(ctx context.Context, request *requests.C
 		)
 	}
 
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully created new user", zap.String("email", res.Email), zap.Int("user_id", int(res.UserID)))
 
 	return res, nil
@@ -189,6 +190,8 @@ func (s *userCommandService) UpdateUser(ctx context.Context, request *requests.U
 		)
 	}
 
+	s.cache.DeleteUserCache(ctx, int(res.UserID))
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully updated user", zap.Int("user_id", int(res.UserID)))
 
 	return res, nil
@@ -219,6 +222,8 @@ func (s *userCommandService) TrashedUser(ctx context.Context, user_id int) (*db.
 		)
 	}
 
+	s.cache.DeleteUserCache(ctx, user_id)
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully trashed user", zap.Int("user_id", user_id))
 
 	return res, nil
@@ -249,6 +254,8 @@ func (s *userCommandService) RestoreUser(ctx context.Context, user_id int) (*db.
 		)
 	}
 
+	s.cache.DeleteUserCache(ctx, user_id)
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully restored user", zap.Int("user_id", user_id))
 
 	return res, nil
@@ -279,6 +286,8 @@ func (s *userCommandService) DeleteUserPermanent(ctx context.Context, user_id in
 		)
 	}
 
+	s.cache.DeleteUserCache(ctx, user_id)
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully deleted user permanently", zap.Int("user_id", user_id))
 
 	return true, nil
@@ -306,6 +315,7 @@ func (s *userCommandService) RestoreAllUser(ctx context.Context) (bool, error) {
 		)
 	}
 
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully restored all users")
 
 	return true, nil
@@ -333,6 +343,7 @@ func (s *userCommandService) DeleteAllUserPermanent(ctx context.Context) (bool, 
 		)
 	}
 
+	s.cache.DeleteUserListCache(ctx)
 	logSuccess("Successfully deleted all users permanently")
 
 	return true, nil

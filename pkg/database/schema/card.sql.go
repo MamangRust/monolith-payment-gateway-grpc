@@ -609,9 +609,9 @@ FROM
         FROM m.month
     )
     AND s.deleted_at IS NULL
+    AND s.card_number = $2
     LEFT JOIN cards c ON s.card_number = c.card_number
     AND c.deleted_at IS NULL
-    AND c.card_number = $2
 GROUP BY
     m.month
 ORDER BY m.month
@@ -764,9 +764,9 @@ FROM
         FROM m.month
     )
     AND t.deleted_at IS NULL
+    AND t.card_number = $1
     LEFT JOIN cards c ON t.card_number = c.card_number
     AND c.deleted_at IS NULL
-    AND t.card_number = $1
 GROUP BY
     m.month
 ORDER BY m.month
@@ -923,9 +923,9 @@ FROM
         FROM m.month
     )
     AND t.deleted_at IS NULL
+    AND t.card_number = $1
     LEFT JOIN cards c ON t.card_number = c.card_number
     AND c.deleted_at IS NULL
-    AND t.card_number = $1
 GROUP BY
     m.month
 ORDER BY m.month
@@ -1378,9 +1378,9 @@ FROM
         FROM m.month
     )
     AND w.deleted_at IS NULL
+    AND w.card_number = $1
     LEFT JOIN cards c ON w.card_number = c.card_number
     AND c.deleted_at IS NULL
-    AND w.card_number = $1
 GROUP BY
     m.month
 ORDER BY m.month

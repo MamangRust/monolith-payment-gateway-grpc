@@ -2,16 +2,18 @@ package role_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
-	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/MamangRust/monolith-payment-gateway-role/repository"
 	"github.com/MamangRust/monolith-payment-gateway-role/service"
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -22,6 +24,8 @@ import (
 type RoleServiceTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
+	dbPool      *pgxpool.Pool
+	redisClient *redis.Client
 	roleService *service.Service
 	roleID      int
 }
@@ -33,10 +37,11 @@ func (s *RoleServiceTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
+	s.dbPool = pool
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	redisClient := redis.NewClient(opts)
+	s.redisClient = redis.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
@@ -45,23 +50,34 @@ func (s *RoleServiceTestSuite) SetupSuite() {
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
 
 	s.roleService = service.NewService(&service.Deps{
 		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
 	})
+
+	// Flush Redis to ensure isolation
+	s.redisClient.FlushAll(s.ts.Ctx)
 }
 
 func (s *RoleServiceTestSuite) TearDownSuite() {
-	s.ts.Teardown()
+	if s.redisClient != nil {
+		s.redisClient.Close()
+	}
+	if s.dbPool != nil {
+		s.dbPool.Close()
+	}
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
 }
 
 func (s *RoleServiceTestSuite) Test1_CreateRole() {
 	ctx := context.Background()
 	req := &requests.CreateRoleRequest{
-		Name: "Service Role",
+		Name: fmt.Sprintf("Service Role-%d", time.Now().UnixNano()),
 	}
 
 	res, err := s.roleService.RoleCommand.CreateRole(ctx, req)
@@ -81,22 +97,51 @@ func (s *RoleServiceTestSuite) Test2_FindById() {
 	s.Equal(s.roleID, int(found.RoleID))
 }
 
-func (s *RoleServiceTestSuite) Test3_UpdateRole() {
+func (s *RoleServiceTestSuite) Test3_FindAll() {
+	ctx := context.Background()
+	
+	req := &requests.FindAllRoles{
+		Search:   "Role",
+		Page:     1,
+		PageSize: 10,
+	}
+	roles, total, err := s.roleService.RoleQuery.FindAll(ctx, req)
+	s.NoError(err)
+	s.NotNil(roles)
+	s.NotZero(*total)
+}
+
+func (s *RoleServiceTestSuite) Test4_FindByActive() {
+	ctx := context.Background()
+	
+	req := &requests.FindAllRoles{
+		Search:   "Role",
+		Page:     1,
+		PageSize: 10,
+	}
+	roles, total, err := s.roleService.RoleQuery.FindByActiveRole(ctx, req)
+	s.NoError(err)
+	s.NotNil(roles)
+	s.NotZero(*total)
+}
+
+func (s *RoleServiceTestSuite) Test5_UpdateRole() {
 	s.Require().NotZero(s.roleID)
 	ctx := context.Background()
 
+	updateName := fmt.Sprintf("Updated Role-%d", time.Now().UnixNano())
 	req := &requests.UpdateRoleRequest{
 		ID:   &s.roleID,
-		Name: "Updated Service Role",
+		Name: updateName,
 	}
 
 	res, err := s.roleService.RoleCommand.UpdateRole(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
-	s.Equal("Updated Service Role", res.RoleName)
+	s.Equal(updateName, res.RoleName)
 }
 
-func (s *RoleServiceTestSuite) Test4_TrashAndRestore() {
+func (s *RoleServiceTestSuite) Test6_TrashAndRestore() {
 	s.Require().NotZero(s.roleID)
 	ctx := context.Background()
 
@@ -104,19 +149,63 @@ func (s *RoleServiceTestSuite) Test4_TrashAndRestore() {
 	_, err := s.roleService.RoleCommand.TrashedRole(ctx, s.roleID)
 	s.NoError(err)
 
+	// Find By Trashed
+	req := &requests.FindAllRoles{
+		Page:     1,
+		PageSize: 10,
+	}
+	trashed, total, err := s.roleService.RoleQuery.FindByTrashedRole(ctx, req)
+	s.NoError(err)
+	s.NotNil(trashed)
+	s.NotZero(*total)
+
 	// Restore
 	_, err = s.roleService.RoleCommand.RestoreRole(ctx, s.roleID)
 	s.NoError(err)
 }
 
-func (s *RoleServiceTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.roleID)
+func (s *RoleServiceTestSuite) Test7_BulkOperations() {
 	ctx := context.Background()
 
+	// Trash for bulk test
 	_, err := s.roleService.RoleCommand.TrashedRole(ctx, s.roleID)
 	s.NoError(err)
 
-	success, err := s.roleService.RoleCommand.DeleteRolePermanent(ctx, s.roleID)
+	// Restore All
+	success, err := s.roleService.RoleCommand.RestoreAllRole(ctx)
+	s.NoError(err)
+	s.True(success)
+
+	// Trash again for delete all
+	_, err = s.roleService.RoleCommand.TrashedRole(ctx, s.roleID)
+	s.NoError(err)
+
+	// Delete All Permanent
+	success, err = s.roleService.RoleCommand.DeleteAllRolePermanent(ctx)
+	s.NoError(err)
+	s.True(success)
+	
+	s.roleID = 0
+}
+
+func (s *RoleServiceTestSuite) Test8_DeletePermanent() {
+	ctx := context.Background()
+	
+	// Create another role
+	req := &requests.CreateRoleRequest{
+		Name: fmt.Sprintf("DeleteMe-%d", time.Now().UnixNano()),
+	}
+	res, err := s.roleService.RoleCommand.CreateRole(ctx, req)
+	s.NoError(err)
+	
+	rid := int(res.RoleID)
+	
+	// Trash first
+	_, err = s.roleService.RoleCommand.TrashedRole(ctx, rid)
+	s.NoError(err)
+
+	// Delete Permanent
+	success, err := s.roleService.RoleCommand.DeleteRolePermanent(ctx, rid)
 	s.NoError(err)
 	s.True(success)
 }

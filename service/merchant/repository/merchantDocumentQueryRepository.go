@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -77,7 +77,7 @@ func (r *merchantDocumentQueryRepository) FindByTrashedDocuments(ctx context.Con
 func (r *merchantDocumentQueryRepository) FindByIdDocument(ctx context.Context, id int) (*db.GetMerchantDocumentRow, error) {
 	doc, err := r.db.GetMerchantDocument(ctx, int32(id))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, merchantdocument_errors.ErrFindMerchantDocumentByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

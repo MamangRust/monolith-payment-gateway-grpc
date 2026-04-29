@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type withdrawStatsAmountDeps struct {
+type WithdrawStatsAmountDeps struct {
 	Cache mencache.WithdrawStatsAmountCache
 
 	Repository repository.WithdrawStatsAmountRepository
@@ -34,12 +34,12 @@ type withdrawStatsAmountService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewWithdrawStatsAmountService(deps *withdrawStatsAmountDeps) WithdrawStatsAmountService {
+func NewWithdrawStatsAmountService(params *WithdrawStatsAmountDeps) WithdrawStatsAmountService {
 	return &withdrawStatsAmountService{
-		cache:         deps.Cache,
-		repository:    deps.Repository,
-		logger:        deps.Logger,
-		observability: deps.Observability,
+		cache:         params.Cache,
+		repository:    params.Repository,
+		logger:        params.Logger,
+		observability: params.Observability,
 	}
 }
 

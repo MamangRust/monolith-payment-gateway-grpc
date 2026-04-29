@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -79,7 +79,7 @@ func (r *saldoQueryRepository) FindByCardNumber(ctx context.Context, card_number
 	res, err := r.db.GetSaldoByCardNumber(ctx, card_number)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, saldo_errors.ErrFindSaldoByCardNumberFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -92,7 +92,7 @@ func (r *saldoQueryRepository) FindById(ctx context.Context, saldo_id int) (*db.
 	res, err := r.db.GetSaldoByID(ctx, int32(saldo_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, saldo_errors.ErrFindSaldoByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

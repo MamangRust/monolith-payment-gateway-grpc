@@ -2,42 +2,40 @@ package card_test
 
 import (
 	"context"
-	"net"
+	"fmt"
 	"testing"
 	"time"
 
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pbuser "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	tests "github.com/MamangRust/monolith-payment-gateway-test"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-card/handler"
 	"github.com/MamangRust/monolith-payment-gateway-card/repository"
 	"github.com/MamangRust/monolith-payment-gateway-card/service"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	user_handler "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	user_repository "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	user_service "github.com/MamangRust/monolith-payment-gateway-user/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type CardGapiTestSuite struct {
 	suite.Suite
-	ts           *tests.TestSuite
-	dbPool       *pgxpool.Pool
-	redisClient *redis.Client
-	grpcServer   *grpc.Server
-	conn         *grpc.ClientConn
-	queryClient  pb.CardQueryServiceClient
-	cmdClient    pb.CardCommandServiceClient
-	userID       int
-	cardID       int
+	ts     *tests.TestSuite
+	dbPool *pgxpool.Pool
+	cardH  handler.Handler
+	userH  user_handler.Handler
+	userID int32
+	cardID int32
 }
 
 func (s *CardGapiTestSuite) SetupSuite() {
@@ -51,131 +49,143 @@ func (s *CardGapiTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
-	userRepo := user_repo.NewRepositories(queries)
+	userRepos := user_repository.NewRepositories(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
+	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	cardService := service.NewService(&service.Deps{
+	cardSvc := service.NewService(&service.Deps{
+		Cache:        cacheStore,
 		Repositories: repos,
 		Logger:       log,
-		Cache:        cacheStore,
 		Kafka:        nil,
 	})
 
-	cardHandler := handler.NewHandler(cardService)
-	server := grpc.NewServer()
-	pb.RegisterCardQueryServiceServer(server, cardHandler)
-	pb.RegisterCardCommandServiceServer(server, cardHandler)
-	s.grpcServer = server
+	userSvc := user_service.NewService(&user_service.Deps{
+		Cache:        cacheStore,
+		Repositories: userRepos,
+		Hash:         hasher,
+		Logger:       log,
+	})
 
-	lis, err := net.Listen("tcp", "localhost:0")
-	s.Require().NoError(err)
+	s.cardH = handler.NewHandler(cardSvc)
+	s.userH = user_handler.NewHandler(userSvc)
 
-	go func() {
-		_ = server.Serve(lis)
-	}()
-
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	s.Require().NoError(err)
-	s.conn = conn
-	s.queryClient = pb.NewCardQueryServiceClient(conn)
-	s.cmdClient = pb.NewCardCommandServiceClient(conn)
-
-	// Create user
-	user, err := userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Gapi",
-		LastName:  "Card",
-		Email:     "gapi.card@example.com",
-		Password:  "password123",
+	// Create a user for testing
+	ctx := context.Background()
+	userRes, err := s.userH.Create(ctx, &pbuser.CreateUserRequest{
+		Firstname:       "Card",
+		Lastname:        "User",
+		Email:           fmt.Sprintf("card.user.%d.%d@example.com", time.Now().UnixNano(), time.Now().UnixNano()%10000),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
 	})
 	s.Require().NoError(err)
-	s.userID = int(user.UserID)
+	s.userID = userRes.Data.Id
 }
 
 func (s *CardGapiTestSuite) TearDownSuite() {
-	s.conn.Close()
-	s.grpcServer.Stop()
-	s.redisClient.Close()
-	s.dbPool.Close()
-	s.ts.Teardown()
+	if s.dbPool != nil {
+		s.dbPool.Close()
+	}
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
 }
 
-func (s *CardGapiTestSuite) Test1_CreateCard() {
-	req := &pb.CreateCardRequest{
-		UserId:       int32(s.userID),
+func (s *CardGapiTestSuite) Test1_CardLifecycle() {
+	ctx := context.Background()
+
+	// Create
+	createReq := &pb.CreateCardRequest{
+		UserId:       s.userID,
 		CardType:     "debit",
 		ExpireDate:   timestamppb.New(time.Now().AddDate(5, 0, 0)),
 		Cvv:          "123",
-		CardProvider: "Visa",
+		CardProvider: "visa",
 	}
-
-	res, err := s.cmdClient.CreateCard(context.Background(), req)
+	res, err := s.cardH.CreateCard(ctx, createReq)
 	s.NoError(err)
 	s.NotNil(res)
-	s.Equal("success", res.Status)
-	s.cardID = int(res.Data.Id)
-}
+	s.cardID = res.Data.Id
+	s.Equal("debit", res.Data.CardType)
 
-func (s *CardGapiTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.cardID)
-	req := &pb.FindByIdCardRequest{
-		CardId: int32(s.cardID),
-	}
-
-	res, err := s.queryClient.FindByIdCard(context.Background(), req)
+	// FindById
+	findReq := &pb.FindByIdCardRequest{CardId: s.cardID}
+	resF, err := s.cardH.FindByIdCard(ctx, findReq)
 	s.NoError(err)
-	s.NotNil(res)
-	s.Equal(int32(s.cardID), res.Data.Id)
-}
+	s.Equal("debit", resF.Data.CardType)
 
-func (s *CardGapiTestSuite) Test3_UpdateCard() {
-	s.Require().NotZero(s.cardID)
-	req := &pb.UpdateCardRequest{
-		CardId:       int32(s.cardID),
-		UserId:       int32(s.userID),
+	// Update
+	updateReq := &pb.UpdateCardRequest{
+		CardId:       s.cardID,
+		UserId:       s.userID,
 		CardType:     "credit",
-		ExpireDate:   timestamppb.New(time.Now().AddDate(6, 0, 0)),
+		ExpireDate:   createReq.ExpireDate,
 		Cvv:          "456",
-		CardProvider: "MasterCard",
+		CardProvider: "mastercard",
 	}
-
-	res, err := s.cmdClient.UpdateCard(context.Background(), req)
+	resU, err := s.cardH.UpdateCard(ctx, updateReq)
 	s.NoError(err)
-	s.NotNil(res)
-	s.Equal("success", res.Status)
-	s.Equal("credit", res.Data.CardType)
+	s.Equal("credit", resU.Data.CardType)
 }
 
-func (s *CardGapiTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.cardID)
+func (s *CardGapiTestSuite) Test2_QueryOperations() {
 	ctx := context.Background()
+	s.Require().NotZero(s.cardID)
 
-	trashRes, err := s.cmdClient.TrashedCard(ctx, &pb.FindByIdCardRequest{CardId: int32(s.cardID)})
+	// FindAll
+	allReq := &pb.FindAllCardRequest{Page: 1, PageSize: 10}
+	resA, err := s.cardH.FindAllCard(ctx, allReq)
 	s.NoError(err)
-	s.Equal("success", trashRes.Status)
+	s.GreaterOrEqual(resA.PaginationMeta.TotalRecords, int32(1))
 
-	restoreRes, err := s.cmdClient.RestoreCard(ctx, &pb.FindByIdCardRequest{CardId: int32(s.cardID)})
+	// FindByActive
+	resAc, err := s.cardH.FindByActiveCard(ctx, allReq)
 	s.NoError(err)
-	s.Equal("success", restoreRes.Status)
+	s.GreaterOrEqual(resAc.PaginationMeta.TotalRecords, int32(1))
 }
 
-func (s *CardGapiTestSuite) Test5_DeletePermanent() {
+func (s *CardGapiTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
 	s.Require().NotZero(s.cardID)
+
+	// Trash
+	resT, err := s.cardH.TrashedCard(ctx, &pb.FindByIdCardRequest{CardId: s.cardID})
+	s.NoError(err)
+	s.NotNil(resT)
+
+	// FindByTrashed
+	resTL, err := s.cardH.FindByTrashedCard(ctx, &pb.FindAllCardRequest{Page: 1, PageSize: 10})
+	s.NoError(err)
+	s.GreaterOrEqual(resTL.PaginationMeta.TotalRecords, int32(1))
+
+	// Restore
+	resR, err := s.cardH.RestoreCard(ctx, &pb.FindByIdCardRequest{CardId: s.cardID})
+	s.NoError(err)
+	s.NotNil(resR)
+}
+
+func (s *CardGapiTestSuite) Test4_BulkOperations() {
 	ctx := context.Background()
 
-	_, _ = s.cmdClient.TrashedCard(ctx, &pb.FindByIdCardRequest{CardId: int32(s.cardID)})
-
-	delRes, err := s.cmdClient.DeleteCardPermanent(ctx, &pb.FindByIdCardRequest{CardId: int32(s.cardID)})
+	// Restore All
+	resR, err := s.cardH.RestoreAllCard(ctx, &emptypb.Empty{})
 	s.NoError(err)
-	s.Equal("success", delRes.Status)
+	s.Equal("success", resR.Status)
+
+	// Delete All Permanent
+	resD, err := s.cardH.DeleteAllCardPermanent(ctx, &emptypb.Empty{})
+	s.NoError(err)
+	s.Equal("success", resD.Status)
 }
 
 func TestCardGapiSuite(t *testing.T) {

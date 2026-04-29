@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -100,7 +100,7 @@ func (r *withdrawQueryRepository) FindById(ctx context.Context, id int) (*db.Get
 	withdraw, err := r.db.GetWithdrawByID(ctx, int32(id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, withdraw_errors.ErrFindWithdrawByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

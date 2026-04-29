@@ -6,6 +6,7 @@ require (
 	github.com/MamangRust/monolith-payment-gateway-pb v1.0.10
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.28
+	github.com/jackc/pgx/v5 v5.8.0
 	go.opentelemetry.io/otel v1.40.0
 	go.uber.org/zap v1.27.1
 	google.golang.org/grpc v1.78.0
@@ -22,7 +23,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.8.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect

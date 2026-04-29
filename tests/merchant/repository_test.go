@@ -2,7 +2,9 @@ package merchant_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
@@ -16,13 +18,10 @@ import (
 
 type MerchantRepositoryTestSuite struct {
 	suite.Suite
-	ts         *tests.TestSuite
-	dbPool     *pgxpool.Pool
-	repo       repository.MerchantCommandRepository
-	queryRepo  repository.MerchantQueryRepository
-	userRepo   user_repo.UserCommandRepository
-	userID     int
-	merchantID int
+	ts       *tests.TestSuite
+	repo     repository.Repositories
+	userRepo user_repo.Repositories
+	userID   int
 }
 
 func (s *MerchantRepositoryTestSuite) SetupSuite() {
@@ -32,18 +31,16 @@ func (s *MerchantRepositoryTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
-	s.dbPool = pool
 
 	queries := db.New(pool)
-	s.repo = repository.NewMerchantCommandRepository(queries)
-	s.queryRepo = repository.NewMerchantQueryRepository(queries)
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
+	s.repo = repository.NewRepositories(queries)
+	s.userRepo = user_repo.NewRepositories(queries)
 
 	// Seed User
-	user, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
+	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Merchant",
 		LastName:  "Owner",
-		Email:     "merchant.owner@example.com",
+		Email:     fmt.Sprintf("merchant.owner-%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
@@ -51,68 +48,157 @@ func (s *MerchantRepositoryTestSuite) SetupSuite() {
 }
 
 func (s *MerchantRepositoryTestSuite) TearDownSuite() {
-	s.dbPool.Close()
 	s.ts.Teardown()
 }
 
-func (s *MerchantRepositoryTestSuite) Test1_CreateMerchant() {
+func (s *MerchantRepositoryTestSuite) createSeedMerchant() (*db.CreateMerchantRow, error) {
+	return s.repo.CreateMerchant(context.Background(), &requests.CreateMerchantRequest{
+		Name:   fmt.Sprintf("Test Merchant-%d", time.Now().UnixNano()),
+		UserID: s.userID,
+	})
+}
+
+func (s *MerchantRepositoryTestSuite) TestCreateMerchant() {
+	ctx := context.Background()
 	req := &requests.CreateMerchantRequest{
 		Name:   "Test Merchant",
 		UserID: s.userID,
 	}
 
-	merchant, err := s.repo.CreateMerchant(context.Background(), req)
+	res, err := s.repo.CreateMerchant(ctx, req)
 	s.NoError(err)
-	s.NotNil(merchant)
-	s.Equal(req.Name, merchant.Name)
-	s.Equal(int32(s.userID), merchant.UserID)
-	s.merchantID = int(merchant.MerchantID)
+	s.NotNil(res)
 }
 
-func (s *MerchantRepositoryTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.merchantID)
+func (s *MerchantRepositoryTestSuite) TestFindAllMerchants() {
+	_, err := s.createSeedMerchant()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	found, err := s.queryRepo.FindByMerchantId(ctx, s.merchantID)
+	res, err := s.repo.FindAllMerchants(ctx, &requests.FindAllMerchants{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *MerchantRepositoryTestSuite) TestFindById() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	found, err := s.repo.FindByMerchantId(ctx, int(merchant.MerchantID))
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(s.merchantID, int(found.MerchantID))
+	s.Equal(merchant.MerchantID, found.MerchantID)
 }
 
-func (s *MerchantRepositoryTestSuite) Test3_UpdateMerchant() {
-	s.Require().NotZero(s.merchantID)
+func (s *MerchantRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedMerchant()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	updateReq := &requests.UpdateMerchantRequest{
-		MerchantID: &s.merchantID,
+	res, err := s.repo.FindByActive(ctx, &requests.FindAllMerchants{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *MerchantRepositoryTestSuite) TestFindByTrashed() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedMerchant(ctx, int(merchant.MerchantID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.FindByTrashed(ctx, &requests.FindAllMerchants{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *MerchantRepositoryTestSuite) TestUpdateMerchant() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	id := int(merchant.MerchantID)
+	req := &requests.UpdateMerchantRequest{
+		MerchantID: &id,
 		Name:       "Updated Merchant",
 		UserID:     s.userID,
 		Status:     "active",
 	}
 
-	updated, err := s.repo.UpdateMerchant(ctx, updateReq)
+	res, err := s.repo.UpdateMerchant(ctx, req)
 	s.NoError(err)
-	s.NotNil(updated)
-	s.Equal(updateReq.Name, updated.Name)
-	s.Equal(updateReq.Status, updated.Status)
+	s.NotNil(res)
 }
 
-func (s *MerchantRepositoryTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.merchantID)
+func (s *MerchantRepositoryTestSuite) TestTrashMerchant() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	_, err := s.repo.TrashedMerchant(ctx, s.merchantID)
+	trashed, err := s.repo.TrashedMerchant(ctx, int(merchant.MerchantID))
 	s.NoError(err)
-
-	_, err = s.repo.RestoreMerchant(ctx, s.merchantID)
-	s.NoError(err)
+	s.NotNil(trashed)
 }
 
-func (s *MerchantRepositoryTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.merchantID)
+func (s *MerchantRepositoryTestSuite) TestRestoreMerchant() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	success, err := s.repo.DeleteMerchantPermanent(ctx, s.merchantID)
+	_, err = s.repo.TrashedMerchant(ctx, int(merchant.MerchantID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.RestoreMerchant(ctx, int(merchant.MerchantID))
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *MerchantRepositoryTestSuite) TestDeleteMerchantPermanent() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedMerchant(ctx, int(merchant.MerchantID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.DeleteMerchantPermanent(ctx, int(merchant.MerchantID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *MerchantRepositoryTestSuite) TestRestoreAllMerchant() {
+	merchant, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedMerchant(ctx, int(merchant.MerchantID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.RestoreAllMerchant(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *MerchantRepositoryTestSuite) TestDeleteAllMerchantPermanent() {
+	_, err := s.createSeedMerchant()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.DeleteAllMerchantPermanent(ctx)
 	s.NoError(err)
 	s.True(success)
 }

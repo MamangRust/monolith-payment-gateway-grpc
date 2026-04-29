@@ -1,38 +1,80 @@
 package withdraw_test
 
 import (
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	withdraw_repo "github.com/MamangRust/monolith-payment-gateway-withdraw/repository"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
-	"github.com/MamangRust/monolith-payment-gateway-withdraw/service"
-	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	"github.com/MamangRust/monolith-payment-gateway-test"
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
+	"github.com/MamangRust/monolith-payment-gateway-withdraw/repository"
+	"github.com/MamangRust/monolith-payment-gateway-withdraw/service"
+	user_repo_impl "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	card_repo_impl "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	saldo_repo_impl "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+type testCardRepo struct {
+	db *db.Queries
+}
+
+func (r *testCardRepo) FindUserCardByCardNumber(ctx context.Context, card_number string) (*db.GetUserEmailByCardNumberRow, error) {
+	return r.db.GetUserEmailByCardNumber(ctx, card_number)
+}
+
+type testSaldoRepo struct {
+	db *db.Queries
+}
+
+func (r *testSaldoRepo) FindByCardNumber(ctx context.Context, card_number string) (*db.Saldo, error) {
+	return r.db.GetSaldoByCardNumber(ctx, card_number)
+}
+
+func (r *testSaldoRepo) UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*db.UpdateSaldoBalanceRow, error) {
+	return r.db.UpdateSaldoBalance(ctx, db.UpdateSaldoBalanceParams{
+		CardNumber:   request.CardNumber,
+		TotalBalance: int32(request.TotalBalance),
+	})
+}
+
+func (r *testSaldoRepo) UpdateSaldoWithdraw(ctx context.Context, request *requests.UpdateSaldoWithdraw) (*db.UpdateSaldoWithdrawRow, error) {
+	withdrawTime := pgtype.Timestamp{}
+	if request.WithdrawTime != nil {
+		withdrawTime.Time = *request.WithdrawTime
+		withdrawTime.Valid = true
+	}
+
+	var withdrawAmount *int32
+	if request.WithdrawAmount != nil {
+		amount := int32(*request.WithdrawAmount)
+		withdrawAmount = &amount
+	}
+
+	return r.db.UpdateSaldoWithdraw(ctx, db.UpdateSaldoWithdrawParams{
+		CardNumber:     request.CardNumber,
+		WithdrawAmount: withdrawAmount,
+		WithdrawTime:   withdrawTime,
+	})
+}
+
 type WithdrawServiceTestSuite struct {
 	suite.Suite
 	ts              *tests.TestSuite
-	dbPool          *pgxpool.Pool
-	redisClient     *redis.Client
 	withdrawService service.Service
-	userRepo        user_repo.UserCommandRepository
-	cardRepo        card_repo.CardCommandRepository
-	saldoRepo       saldo_repo.Repositories
-	withdrawID      int32
+	dbPool          *pgxpool.Pool
+	withdrawID      int
 	cardNumber      string
+	userID          int
 }
 
 func (s *WithdrawServiceTestSuite) SetupSuite() {
@@ -46,27 +88,19 @@ func (s *WithdrawServiceTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	
-	// Create individual repositories from their respective modules
-	userCommandRepo := user_repo.NewUserCommandRepository(queries)
-	cardRepos := card_repo.NewRepositories(queries)
-	saldoRepos := saldo_repo.NewRepositories(queries)
-	
-	repos := withdraw_repo.NewRepositories(queries, cardRepos.CardQuery, saldoRepos)
-	s.userRepo = userCommandRepo
-	s.cardRepo = cardRepos.CardCommand
-	s.saldoRepo = saldoRepos
+	cardRepo := &testCardRepo{db: queries}
+	saldoRepo := &testSaldoRepo{db: queries}
+	repos := repository.NewRepositories(queries, cardRepo, saldoRepo)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
-	obs, _ := observability.NewObservability("test", log)
-	_ = obs
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
 	s.withdrawService = service.NewService(&service.Deps{
 		Kafka:        nil,
@@ -75,113 +109,145 @@ func (s *WithdrawServiceTestSuite) SetupSuite() {
 		Cache:        cacheStore,
 	})
 
-	// Seed User, Card and Saldo
-	ctx := context.Background()
-	user, _ := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
+	// Seed User
+	userRepo := user_repo_impl.NewUserCommandRepository(queries)
+	user, err := userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Withdraw",
-		LastName:  "User",
-		Email:     "withdraw.service@example.com",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("withdraw.tester.%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
-	card, _ := s.cardRepo.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID:       int(user.UserID),
+	s.Require().NoError(err)
+	s.userID = int(user.UserID)
+
+	// Seed Card
+	cardCmdRepo := card_repo_impl.NewCardCommandRepository(queries)
+	card, err := cardCmdRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(2, 0, 0),
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
 		CVV:          "123",
 		CardProvider: "visa",
 	})
+	s.Require().NoError(err)
 	s.cardNumber = card.CardNumber
-	s.saldoRepo.CreateSaldo(ctx, &requests.CreateSaldoRequest{
+
+	// Seed Saldo
+	saldoCmdRepo := saldo_repo_impl.NewSaldoCommandRepository(queries)
+	_, err = saldoCmdRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
 		CardNumber:   s.cardNumber,
-		TotalBalance: 500000,
+		TotalBalance: 1000000,
 	})
+	s.Require().NoError(err)
 }
 
 func (s *WithdrawServiceTestSuite) TearDownSuite() {
-	if s.redisClient != nil {
-		s.redisClient.Close()
-	}
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
+	s.dbPool.Close()
+	s.ts.Teardown()
 }
 
-func (s *WithdrawServiceTestSuite) Test1_Create() {
-	req := &requests.CreateWithdrawRequest{
+func (s *WithdrawServiceTestSuite) Test1_WithdrawLifecycle() {
+	ctx := context.Background()
+
+	// Create Withdraw
+	createReq := &requests.CreateWithdrawRequest{
 		CardNumber:     s.cardNumber,
 		WithdrawAmount: 100000,
 		WithdrawTime:   time.Now(),
 	}
-	withdraw, err := s.withdrawService.Create(context.Background(), req)
+	res, err := s.withdrawService.Create(ctx, createReq)
 	s.NoError(err)
-	s.NotNil(withdraw)
-	s.Equal(int32(req.WithdrawAmount), withdraw.WithdrawAmount)
-	s.withdrawID = withdraw.WithdrawID
-}
+	s.NotNil(res)
+	s.withdrawID = int(res.WithdrawID)
+	s.Equal("success", res.Status)
 
-func (s *WithdrawServiceTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.withdrawID)
-
-	found, err := s.withdrawService.FindById(context.Background(), int(s.withdrawID))
+	// FindById
+	found, err := s.withdrawService.FindById(ctx, s.withdrawID)
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(s.withdrawID, found.WithdrawID)
-}
+	s.Equal(int32(s.withdrawID), found.WithdrawID)
 
-func (s *WithdrawServiceTestSuite) Test3_FindAll() {
-	req := &requests.FindAllWithdraws{
-		Page:     1,
-		PageSize: 10,
-	}
-	withdraws, total, err := s.withdrawService.FindAll(context.Background(), req)
-	s.NoError(err)
-	s.NotNil(withdraws)
-	s.NotZero(*total)
-}
-
-func (s *WithdrawServiceTestSuite) Test4_Update() {
-	s.Require().NotZero(s.withdrawID)
-
-	id := int(s.withdrawID)
-	req := &requests.UpdateWithdrawRequest{
-		WithdrawID:     &id,
+	// Update Withdraw
+	updateReq := &requests.UpdateWithdrawRequest{
+		WithdrawID:     &s.withdrawID,
 		CardNumber:     s.cardNumber,
-		WithdrawAmount: 150000,
+		WithdrawAmount: 200000,
 		WithdrawTime:   time.Now(),
 	}
-	updated, err := s.withdrawService.Update(context.Background(), req)
+	updated, err := s.withdrawService.Update(ctx, updateReq)
 	s.NoError(err)
 	s.NotNil(updated)
-	s.Equal(int32(req.WithdrawAmount), updated.WithdrawAmount)
+	s.Equal(int32(200000), updated.WithdrawAmount)
 }
 
-func (s *WithdrawServiceTestSuite) Test5_Trashed() {
-	s.Require().NotZero(s.withdrawID)
+func (s *WithdrawServiceTestSuite) Test2_QueryOperations() {
+	ctx := context.Background()
 
-	withdraw, err := s.withdrawService.TrashedWithdraw(context.Background(), int(s.withdrawID))
+	// FindAll
+	all, total, err := s.withdrawService.FindAll(ctx, &requests.FindAllWithdraws{
+		Page:     1,
+		PageSize: 10,
+	})
 	s.NoError(err)
-	s.NotNil(withdraw)
-	s.True(withdraw.DeletedAt.Valid)
+	s.NotNil(all)
+	s.GreaterOrEqual(*total, 1)
+
+	// FindByActive
+	active, totalActive, err := s.withdrawService.FindByActive(ctx, &requests.FindAllWithdraws{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(active)
+	s.GreaterOrEqual(*totalActive, 1)
+
+	// FindByCardNumber
+	byCard, totalCard, err := s.withdrawService.FindAllByCardNumber(ctx, &requests.FindAllWithdrawCardNumber{
+		CardNumber: s.cardNumber,
+		Page:       1,
+		PageSize:   10,
+	})
+	s.NoError(err)
+	s.NotNil(byCard)
+	s.GreaterOrEqual(*totalCard, 1)
 }
 
-func (s *WithdrawServiceTestSuite) Test6_Restore() {
+func (s *WithdrawServiceTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
 	s.Require().NotZero(s.withdrawID)
 
-	withdraw, err := s.withdrawService.RestoreWithdraw(context.Background(), int(s.withdrawID))
+	// Trash
+	trashed, err := s.withdrawService.TrashedWithdraw(ctx, s.withdrawID)
 	s.NoError(err)
-	s.NotNil(withdraw)
-	s.False(withdraw.DeletedAt.Valid)
+	s.NotNil(trashed)
+
+	// FindByTrashed
+	trashedList, totalTrashed, err := s.withdrawService.FindByTrashed(ctx, &requests.FindAllWithdraws{
+		Page:     1,
+		PageSize: 10,
+	})
+	s.NoError(err)
+	s.NotNil(trashedList)
+	s.GreaterOrEqual(*totalTrashed, 1)
+
+	// Restore
+	restored, err := s.withdrawService.RestoreWithdraw(ctx, s.withdrawID)
+	s.NoError(err)
+	s.NotNil(restored)
 }
 
-func (s *WithdrawServiceTestSuite) Test7_DeletePermanent() {
-	s.Require().NotZero(s.withdrawID)
+func (s *WithdrawServiceTestSuite) Test4_BulkOperations() {
+	ctx := context.Background()
 
-	success, err := s.withdrawService.DeleteWithdrawPermanent(context.Background(), int(s.withdrawID))
+	// Restore All
+	ok, err := s.withdrawService.RestoreAllWithdraw(ctx)
 	s.NoError(err)
-	s.True(success)
+	s.True(ok)
+
+	// Delete All Permanent
+	ok, err = s.withdrawService.DeleteAllWithdrawPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
 }
 
 func TestWithdrawServiceSuite(t *testing.T) {

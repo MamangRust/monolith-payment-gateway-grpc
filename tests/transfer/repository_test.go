@@ -2,33 +2,28 @@ package transfer_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-transfer/repository"
+	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
-	"github.com/MamangRust/monolith-payment-gateway-transfer/repository"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
 )
 
 type TransferRepositoryTestSuite struct {
 	suite.Suite
-	ts     *tests.TestSuite
-	dbPool *pgxpool.Pool
-	commandRepo   repository.TransferCommandRepository
-	queryRepo     repository.TransferQueryRepository
-	userRepo    user_repo.UserCommandRepository
-	cardRepo    card_repo.Repositories
-	saldoRepo   saldo_repo.Repositories
-
-	senderCardNumber   string
-	receiverCardNumber string
-	transferID         int
+	ts       *tests.TestSuite
+	repo     repository.Repositories
+	cardRepo *card_repo.Repositories
+	userRepo user_repo.Repositories
+	userID   int
 }
 
 func (s *TransferRepositoryTestSuite) SetupSuite() {
@@ -38,90 +33,218 @@ func (s *TransferRepositoryTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
-	s.dbPool = pool
 
 	queries := db.New(pool)
-	
-	// Repositories for seeding
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
-	s.cardRepo = *card_repo.NewRepositories(queries)
-	s.saldoRepo = saldo_repo.NewRepositories(queries)
+	s.userRepo = user_repo.NewRepositories(queries)
+	s.cardRepo = card_repo.NewRepositories(queries)
+	s.repo = repository.NewRepositories(queries, nil, nil)
 
-	s.commandRepo = repository.NewTransferCommandRepository(queries)
-	s.queryRepo = repository.NewTransferQueryRepository(queries)
+	// Create user
+	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
+		FirstName: "Transfer",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("transfer.tester-%d@example.com", time.Now().UnixNano()),
+		Password:  "password123",
+	})
+	s.Require().NoError(err)
+	s.userID = int(user.UserID)
 }
 
 func (s *TransferRepositoryTestSuite) TearDownSuite() {
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
+	s.ts.Teardown()
 }
 
-func (s *TransferRepositoryTestSuite) Test1_CreateTransfer() {
-	ctx := context.Background()
-
-	// Seed Sender
-	sender, err := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
-		FirstName: "Sender",
-		LastName:  "Repo",
-		Email:     "sender.repo@test.com",
-		Password:  "password123",
-	})
-	s.Require().NoError(err)
-
-	sCard, err := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID:       int(sender.UserID),
+func (s *TransferRepositoryTestSuite) createSeedTransfer() (*db.CreateTransferRow, error) {
+    fromCard, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(1, 0, 0),
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
 		CVV:          "111",
-		CardProvider: "visa",
+		CardProvider: "Visa",
 	})
-	s.Require().NoError(err)
-	s.senderCardNumber = sCard.CardNumber
+    if err != nil {
+        return nil, err
+    }
 
-	// Seed Receiver
-	receiver, err := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
-		FirstName: "Receiver",
-		LastName:  "Repo",
-		Email:     "receiver.repo@test.com",
-		Password:  "password123",
-	})
-	s.Require().NoError(err)
-
-	rCard, err := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID:       int(receiver.UserID),
+    toCard, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
 		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(1, 0, 0),
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
 		CVV:          "222",
-		CardProvider: "mastercard",
+		CardProvider: "MasterCard",
 	})
-	s.Require().NoError(err)
-	s.receiverCardNumber = rCard.CardNumber
+    if err != nil {
+        return nil, err
+    }
+
+	return s.repo.CreateTransfer(context.Background(), &requests.CreateTransferRequest{
+		TransferFrom:   fromCard.CardNumber,
+		TransferTo:     toCard.CardNumber,
+		TransferAmount: 100000,
+	})
+}
+
+func (s *TransferRepositoryTestSuite) TestCreateTransfer() {
+	ctx := context.Background()
+    
+    fromCard, _ := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "111",
+		CardProvider: "Visa",
+	})
+
+    toCard, _ := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "222",
+		CardProvider: "MasterCard",
+	})
 
 	req := &requests.CreateTransferRequest{
-		TransferFrom:   s.senderCardNumber,
-		TransferTo:     s.receiverCardNumber,
-		TransferAmount: 25000,
+		TransferFrom:   fromCard.CardNumber,
+		TransferTo:     toCard.CardNumber,
+		TransferAmount: 100000,
 	}
 
-	transfer, err := s.commandRepo.CreateTransfer(ctx, req)
-	s.Require().NoError(err)
-	s.Require().NotNil(transfer)
-	s.transferID = int(transfer.TransferID)
-	s.Equal(int32(req.TransferAmount), transfer.TransferAmount)
+	res, err := s.repo.CreateTransfer(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
 }
 
-func (s *TransferRepositoryTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.transferID)
+func (s *TransferRepositoryTestSuite) TestFindAllTransfers() {
+	_, err := s.createSeedTransfer()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	res, err := s.queryRepo.FindById(ctx, s.transferID)
+	res, err := s.repo.FindAll(ctx, &requests.FindAllTransfers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TransferRepositoryTestSuite) TestFindById() {
+	transfer, err := s.createSeedTransfer()
 	s.Require().NoError(err)
-	s.Require().NotNil(res)
-	s.Equal(int32(s.transferID), res.TransferID)
+	ctx := context.Background()
+
+	found, err := s.repo.FindById(ctx, int(transfer.TransferID))
+	s.NoError(err)
+	s.NotNil(found)
+	s.Equal(transfer.TransferID, found.TransferID)
+}
+
+func (s *TransferRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	res, err := s.repo.FindByActive(ctx, &requests.FindAllTransfers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TransferRepositoryTestSuite) TestFindByTrashed() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransfer(ctx, int(transfer.TransferID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.FindByTrashed(ctx, &requests.FindAllTransfers{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TransferRepositoryTestSuite) TestUpdateTransfer() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	id := int(transfer.TransferID)
+	req := &requests.UpdateTransferRequest{
+		TransferID:     &id,
+		TransferFrom:   transfer.TransferFrom,
+		TransferTo:     transfer.TransferTo,
+		TransferAmount: 200000,
+	}
+
+	res, err := s.repo.UpdateTransfer(ctx, req)
+	s.NoError(err)
+	s.NotNil(res)
+}
+
+func (s *TransferRepositoryTestSuite) TestTrashTransfer() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	trashed, err := s.repo.TrashedTransfer(ctx, int(transfer.TransferID))
+	s.NoError(err)
+	s.NotNil(trashed)
+}
+
+func (s *TransferRepositoryTestSuite) TestRestoreTransfer() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransfer(ctx, int(transfer.TransferID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.RestoreTransfer(ctx, int(transfer.TransferID))
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *TransferRepositoryTestSuite) TestDeleteTransferPermanent() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransfer(ctx, int(transfer.TransferID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.DeleteTransferPermanent(ctx, int(transfer.TransferID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TransferRepositoryTestSuite) TestRestoreAllTransfer() {
+	transfer, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransfer(ctx, int(transfer.TransferID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.RestoreAllTransfer(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TransferRepositoryTestSuite) TestDeleteAllTransferPermanent() {
+	_, err := s.createSeedTransfer()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.DeleteAllTransferPermanent(ctx)
+	s.NoError(err)
+	s.True(success)
 }
 
 func TestTransferRepositorySuite(t *testing.T) {

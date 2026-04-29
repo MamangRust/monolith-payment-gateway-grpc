@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type transferStatsByCardStatusDeps struct {
+type TransferStatsByCardStatusDeps struct {
 	Cache mencache.TransferStatsByCardStatusCache
 
 	Repository repository.TransferStatsByCardStatusRepository
@@ -35,7 +35,7 @@ type transferStatsByCardStatusService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewTransferStatsByCardStatusService(params *transferStatsByCardStatusDeps) TransferStatsByCardStatusService {
+func NewTransferStatsByCardStatusService(params *TransferStatsByCardStatusDeps) TransferStatsByCardStatusService {
 	return &transferStatsByCardStatusService{
 		cache:         params.Cache,
 		repository:    params.Repository,
@@ -43,6 +43,7 @@ func NewTransferStatsByCardStatusService(params *transferStatsByCardStatusDeps) 
 		observability: params.Observability,
 	}
 }
+
 
 func (s *transferStatsByCardStatusService) FindMonthTransferStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthStatusTransferCardNumber) ([]*db.GetMonthTransferStatusSuccessCardNumberRow, error) {
 	const method = "FindMonthTransferStatusSuccessByCardNumber"

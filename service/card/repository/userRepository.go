@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -23,7 +23,7 @@ func (r *userRepository) FindById(ctx context.Context, user_id int) (*db.GetUser
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound
 		}
 

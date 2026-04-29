@@ -28,13 +28,13 @@ type DepsStats struct {
 
 func NewWithdrawStatsService(deps *DepsStats) WithdrawStatsService {
 	return &withdrawStatsStatsService{
-		WithdrawStatsAmountService: NewWithdrawStatsAmountService(&withdrawStatsAmountDeps{
+		WithdrawStatsAmountService: NewWithdrawStatsAmountService(&WithdrawStatsAmountDeps{
 			Cache:         deps.Cache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		WithdrawStatsStatusService: NewWithdrawStatsStatusService(&withdrawStatsStatusDeps{
+		WithdrawStatsStatusService: NewWithdrawStatsStatusService(&WithdrawStatsStatusDeps{
 			Cache:         deps.Cache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
@@ -42,3 +42,4 @@ func NewWithdrawStatsService(deps *DepsStats) WithdrawStatsService {
 		}),
 	}
 }
+

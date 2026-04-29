@@ -28,19 +28,19 @@ type DepsStatsByApiKey struct {
 
 func NewMerchantStatsByApiKeyService(deps *DepsStatsByApiKey) MerchantStatsByApiKeyService {
 	return &merchantStatsByApiKeyService{
-		NewMerchantStatsAmountByApiKeyService(&merchantStatsAmountByApiKeyDeps{
+		NewMerchantStatsAmountByApiKeyService(&MerchantStatsAmountByApiKeyDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		NewMerchantStatsTotalAmountByApiKeyService(&merchantStatsTotalAmountByApiKeyDeps{
+		NewMerchantStatsTotalAmountByApiKeyService(&MerchantStatsTotalAmountByApiKeyDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		NewMerchantStatsMethodByApiKeyService(&merchantStatsMethodByApiKeyDeps{
+		NewMerchantStatsMethodByApiKeyService(&MerchantStatsMethodByApiKeyDeps{
 			Cache:         deps.Mencache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
@@ -48,3 +48,4 @@ func NewMerchantStatsByApiKeyService(deps *DepsStatsByApiKey) MerchantStatsByApi
 		}),
 	}
 }
+

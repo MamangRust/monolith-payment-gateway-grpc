@@ -2,18 +2,19 @@ package merchant_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/repository"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/service"
 	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
@@ -23,12 +24,11 @@ import (
 type MerchantServiceTestSuite struct {
 	suite.Suite
 	ts              *tests.TestSuite
-	dbPool          *pgxpool.Pool
-	redisClient     *redis.Client
 	merchantService service.Service
-	userRepo        user_repo.UserCommandRepository
-	userID          int
+	dbPool          *pgxpool.Pool
 	merchantID      int
+	documentID      int
+	userID          int
 }
 
 func (s *MerchantServiceTestSuite) SetupSuite() {
@@ -42,30 +42,30 @@ func (s *MerchantServiceTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
 	s.merchantService = service.NewService(&service.Deps{
-		Kafka:        nil,
 		Repositories: repos,
 		Logger:       log,
 		Cache:        cacheStore,
+		Kafka:        nil,
 	})
 
 	// Seed User
-	user, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
+	userRepo := user_repo.NewUserCommandRepository(queries)
+	user, err := userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Merchant",
-		LastName:  "ServiceOwner",
-		Email:     "merchant.service.owner@example.com",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("merchant.tester.%d@example.com", time.Now().UnixNano()),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
@@ -73,69 +73,146 @@ func (s *MerchantServiceTestSuite) SetupSuite() {
 }
 
 func (s *MerchantServiceTestSuite) TearDownSuite() {
-	s.redisClient.Close()
 	s.dbPool.Close()
 	s.ts.Teardown()
 }
 
-func (s *MerchantServiceTestSuite) Test1_CreateMerchant() {
+func (s *MerchantServiceTestSuite) Test1_MerchantOperations() {
 	ctx := context.Background()
-
-	req := &requests.CreateMerchantRequest{
-		Name:   "Service Merchant",
+	
+	// Create Merchant
+	createReq := &requests.CreateMerchantRequest{
 		UserID: s.userID,
+		Name:   fmt.Sprintf("Test Merchant %d", time.Now().UnixNano()),
 	}
-	merchant, err := s.merchantService.MerchantCommandService().CreateMerchant(ctx, req)
+	res, err := s.merchantService.MerchantCommandService().CreateMerchant(ctx, createReq)
 	s.NoError(err)
-	s.NotNil(merchant)
-	s.Equal(req.Name, merchant.Name)
-	s.merchantID = int(merchant.MerchantID)
-}
+	s.NotNil(res)
+	s.merchantID = int(res.MerchantID)
 
-func (s *MerchantServiceTestSuite) Test2_FindMerchantById() {
-	s.Require().NotZero(s.merchantID)
-	ctx := context.Background()
-
+	// FindById
 	found, err := s.merchantService.MerchantQueryService().FindById(ctx, s.merchantID)
 	s.NoError(err)
 	s.NotNil(found)
-	s.Equal(s.merchantID, int(found.MerchantID))
-}
+	s.Equal(int32(s.merchantID), found.MerchantID)
 
-func (s *MerchantServiceTestSuite) Test3_UpdateMerchant() {
-	s.Require().NotZero(s.merchantID)
-	ctx := context.Background()
-
+	// Update Merchant
 	updateReq := &requests.UpdateMerchantRequest{
 		MerchantID: &s.merchantID,
-		Name:       "Updated Service Merchant",
+		Name:       "Updated Merchant Name",
 		UserID:     s.userID,
-		Status:     "active",
+		Status:     "inactive",
 	}
 	updated, err := s.merchantService.MerchantCommandService().UpdateMerchant(ctx, updateReq)
 	s.NoError(err)
 	s.NotNil(updated)
-	s.Equal(updateReq.Name, updated.Name)
+	s.Equal("Updated Merchant Name", updated.Name)
+
+	// Update Status
+	statusReq := &requests.UpdateMerchantStatusRequest{
+		MerchantID: &s.merchantID,
+		Status:     "active",
+	}
+	statusUpdated, err := s.merchantService.MerchantCommandService().UpdateMerchantStatus(ctx, statusReq)
+	s.NoError(err)
+	s.NotNil(statusUpdated)
+	s.Equal("active", statusUpdated.Status)
 }
 
-func (s *MerchantServiceTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.merchantID)
+func (s *MerchantServiceTestSuite) Test2_DocumentOperations() {
 	ctx := context.Background()
+	s.Require().NotZero(s.merchantID)
 
-	_, err := s.merchantService.MerchantCommandService().TrashedMerchant(ctx, s.merchantID)
+	// Create Document
+	createDocReq := &requests.CreateMerchantDocumentRequest{
+		MerchantID:   s.merchantID,
+		DocumentType: "Identity Proof",
+		DocumentUrl:  "http://example.com/doc.pdf",
+	}
+	res, err := s.merchantService.MerchantDocumentCommandService().CreateMerchantDocument(ctx, createDocReq)
 	s.NoError(err)
+	s.NotNil(res)
+	s.documentID = int(res.DocumentID)
 
-	_, err = s.merchantService.MerchantCommandService().RestoreMerchant(ctx, s.merchantID)
+	// FindByIdDocument
+	found, err := s.merchantService.MerchantDocumentQueryService().FindById(ctx, s.documentID)
 	s.NoError(err)
+	s.NotNil(found)
+	s.Equal(int32(s.documentID), found.DocumentID)
+
+	// Update Document
+	updateDocReq := &requests.UpdateMerchantDocumentRequest{
+		DocumentID:   &s.documentID,
+		MerchantID:   s.merchantID,
+		DocumentType: "Updated Type",
+		DocumentUrl:  "http://example.com/updated.pdf",
+		Status:       "pending",
+		Note:         "Please re-upload",
+	}
+	updated, err := s.merchantService.MerchantDocumentCommandService().UpdateMerchantDocument(ctx, updateDocReq)
+	s.NoError(err)
+	s.NotNil(updated)
+	s.Equal("Updated Type", updated.DocumentType)
+
+	// Update Document Status
+	statusDocReq := &requests.UpdateMerchantDocumentStatusRequest{
+		DocumentID: &s.documentID,
+		MerchantID: s.merchantID,
+		Status:     "approved",
+		Note:       "All good",
+	}
+	statusUpdated, err := s.merchantService.MerchantDocumentCommandService().UpdateMerchantDocumentStatus(ctx, statusDocReq)
+	s.NoError(err)
+	s.NotNil(statusUpdated)
+	s.Equal("approved", statusUpdated.Status)
 }
 
-func (s *MerchantServiceTestSuite) Test5_DeletePermanent() {
+func (s *MerchantServiceTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
 	s.Require().NotZero(s.merchantID)
+	s.Require().NotZero(s.documentID)
+
+	// Trash Document
+	trashedDoc, err := s.merchantService.MerchantDocumentCommandService().TrashedMerchantDocument(ctx, s.documentID)
+	s.NoError(err)
+	s.NotNil(trashedDoc)
+
+	// Restore Document
+	restoredDoc, err := s.merchantService.MerchantDocumentCommandService().RestoreMerchantDocument(ctx, s.documentID)
+	s.NoError(err)
+	s.NotNil(restoredDoc)
+
+	// Trash Merchant
+	trashedMerchant, err := s.merchantService.MerchantCommandService().TrashedMerchant(ctx, s.merchantID)
+	s.NoError(err)
+	s.NotNil(trashedMerchant)
+
+	// Restore Merchant
+	restoredMerchant, err := s.merchantService.MerchantCommandService().RestoreMerchant(ctx, s.merchantID)
+	s.NoError(err)
+	s.NotNil(restoredMerchant)
+}
+
+func (s *MerchantServiceTestSuite) Test4_BulkOperations() {
 	ctx := context.Background()
 
-	success, err := s.merchantService.MerchantCommandService().DeleteMerchantPermanent(ctx, s.merchantID)
+	// Restore All
+	ok, err := s.merchantService.MerchantCommandService().RestoreAllMerchant(ctx)
 	s.NoError(err)
-	s.True(success)
+	s.True(ok)
+
+	ok, err = s.merchantService.MerchantDocumentCommandService().RestoreAllMerchantDocument(ctx)
+	s.NoError(err)
+	s.True(ok)
+
+	// Delete All Permanent
+	ok, err = s.merchantService.MerchantCommandService().DeleteAllMerchantPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
+
+	ok, err = s.merchantService.MerchantDocumentCommandService().DeleteAllMerchantDocumentPermanent(ctx)
+	s.NoError(err)
+	s.True(ok)
 }
 
 func TestMerchantServiceSuite(t *testing.T) {

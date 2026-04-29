@@ -22,6 +22,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	SaldoCommandService_CreateSaldo_FullMethodName             = "/pb.saldo.SaldoCommandService/CreateSaldo"
 	SaldoCommandService_UpdateSaldo_FullMethodName             = "/pb.saldo.SaldoCommandService/UpdateSaldo"
+	SaldoCommandService_UpdateSaldoBalance_FullMethodName      = "/pb.saldo.SaldoCommandService/UpdateSaldoBalance"
 	SaldoCommandService_UpdateSaldoWithdraw_FullMethodName     = "/pb.saldo.SaldoCommandService/UpdateSaldoWithdraw"
 	SaldoCommandService_TrashedSaldo_FullMethodName            = "/pb.saldo.SaldoCommandService/TrashedSaldo"
 	SaldoCommandService_RestoreSaldo_FullMethodName            = "/pb.saldo.SaldoCommandService/RestoreSaldo"
@@ -36,6 +37,7 @@ const (
 type SaldoCommandServiceClient interface {
 	CreateSaldo(ctx context.Context, in *CreateSaldoRequest, opts ...grpc.CallOption) (*ApiResponseSaldo, error)
 	UpdateSaldo(ctx context.Context, in *UpdateSaldoRequest, opts ...grpc.CallOption) (*ApiResponseSaldo, error)
+	UpdateSaldoBalance(ctx context.Context, in *UpdateSaldoBalanceRequest, opts ...grpc.CallOption) (*ApiResponseSaldo, error)
 	UpdateSaldoWithdraw(ctx context.Context, in *UpdateSaldoWithdrawRequest, opts ...grpc.CallOption) (*ApiResponseSaldo, error)
 	TrashedSaldo(ctx context.Context, in *FindByIdSaldoRequest, opts ...grpc.CallOption) (*ApiResponseSaldoDeleteAt, error)
 	RestoreSaldo(ctx context.Context, in *FindByIdSaldoRequest, opts ...grpc.CallOption) (*ApiResponseSaldoDeleteAt, error)
@@ -66,6 +68,16 @@ func (c *saldoCommandServiceClient) UpdateSaldo(ctx context.Context, in *UpdateS
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ApiResponseSaldo)
 	err := c.cc.Invoke(ctx, SaldoCommandService_UpdateSaldo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *saldoCommandServiceClient) UpdateSaldoBalance(ctx context.Context, in *UpdateSaldoBalanceRequest, opts ...grpc.CallOption) (*ApiResponseSaldo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApiResponseSaldo)
+	err := c.cc.Invoke(ctx, SaldoCommandService_UpdateSaldoBalance_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +150,7 @@ func (c *saldoCommandServiceClient) DeleteAllSaldoPermanent(ctx context.Context,
 type SaldoCommandServiceServer interface {
 	CreateSaldo(context.Context, *CreateSaldoRequest) (*ApiResponseSaldo, error)
 	UpdateSaldo(context.Context, *UpdateSaldoRequest) (*ApiResponseSaldo, error)
+	UpdateSaldoBalance(context.Context, *UpdateSaldoBalanceRequest) (*ApiResponseSaldo, error)
 	UpdateSaldoWithdraw(context.Context, *UpdateSaldoWithdrawRequest) (*ApiResponseSaldo, error)
 	TrashedSaldo(context.Context, *FindByIdSaldoRequest) (*ApiResponseSaldoDeleteAt, error)
 	RestoreSaldo(context.Context, *FindByIdSaldoRequest) (*ApiResponseSaldoDeleteAt, error)
@@ -159,6 +172,9 @@ func (UnimplementedSaldoCommandServiceServer) CreateSaldo(context.Context, *Crea
 }
 func (UnimplementedSaldoCommandServiceServer) UpdateSaldo(context.Context, *UpdateSaldoRequest) (*ApiResponseSaldo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateSaldo not implemented")
+}
+func (UnimplementedSaldoCommandServiceServer) UpdateSaldoBalance(context.Context, *UpdateSaldoBalanceRequest) (*ApiResponseSaldo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSaldoBalance not implemented")
 }
 func (UnimplementedSaldoCommandServiceServer) UpdateSaldoWithdraw(context.Context, *UpdateSaldoWithdrawRequest) (*ApiResponseSaldo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateSaldoWithdraw not implemented")
@@ -231,6 +247,24 @@ func _SaldoCommandService_UpdateSaldo_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SaldoCommandServiceServer).UpdateSaldo(ctx, req.(*UpdateSaldoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SaldoCommandService_UpdateSaldoBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSaldoBalanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SaldoCommandServiceServer).UpdateSaldoBalance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SaldoCommandService_UpdateSaldoBalance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SaldoCommandServiceServer).UpdateSaldoBalance(ctx, req.(*UpdateSaldoBalanceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -357,6 +391,10 @@ var SaldoCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateSaldo",
 			Handler:    _SaldoCommandService_UpdateSaldo_Handler,
+		},
+		{
+			MethodName: "UpdateSaldoBalance",
+			Handler:    _SaldoCommandService_UpdateSaldoBalance_Handler,
 		},
 		{
 			MethodName: "UpdateSaldoWithdraw",

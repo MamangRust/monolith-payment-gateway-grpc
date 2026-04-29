@@ -1,51 +1,55 @@
 package merchant_test
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
-	api "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/merchant"
+	merchant_handler "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/merchant"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/merchant"
+	pbuser "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	app_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/handler"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/repository"
 	"github.com/MamangRust/monolith-payment-gateway-merchant/service"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-
+	user_handler "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	user_repository "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	user_service "github.com/MamangRust/monolith-payment-gateway-user/service"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
+	redis_client "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
-type MerchantHandlerTestSuite struct {
+type MerchantApiTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
 	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
+	echo        *echo.Echo
 	grpcServer  *grpc.Server
-	conn        *grpc.ClientConn
-	router      *echo.Echo
-	userRepo    user_repo.UserCommandRepository
-	userID      int
-	merchantID  int
+	lis         *bufconn.Listener
+	userID      int32
+	merchantID  int32
+	apiKey      string
 }
 
-func (s *MerchantHandlerTestSuite) SetupSuite() {
+func (s *MerchantApiTestSuite) SetupSuite() {
 	ts, err := tests.SetupTestSuite()
 	s.Require().NoError(err)
 	s.ts = ts
@@ -54,110 +58,188 @@ func (s *MerchantHandlerTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.dbPool = pool
 
-	opts, err := redis.ParseURL(s.ts.RedisURL)
+	opts, err := redis_client.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis_client.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
+	userRepos := user_repository.NewRepositories(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
-	obs, _ := observability.NewObservability("test", log)
+	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	merchantService := service.NewService(&service.Deps{
-		Kafka:        nil,
+	merchantSvc := service.NewService(&service.Deps{
+		Cache:        cacheStore,
 		Repositories: repos,
 		Logger:       log,
+		Kafka:        nil,
+	})
+
+	userSvc := user_service.NewService(&user_service.Deps{
 		Cache:        cacheStore,
+		Repositories: userRepos,
+		Hash:         hasher,
+		Logger:       log,
 	})
 
-	// Seed User
-	user, err := s.userRepo.CreateUser(s.ts.Ctx, &requests.CreateUserRequest{
-		FirstName: "Handler",
-		LastName:  "Merchant",
-		Email:     "handler.merchant@example.com",
-		Password:  "password123",
-	})
-	s.Require().NoError(err)
-	s.userID = int(user.UserID)
+	merchantH := handler.NewHandler(merchantSvc)
+	userH := user_handler.NewHandler(userSvc)
 
-	// Start gRPC Server
-	merchantHandler := handler.NewHandler(merchantService)
-	server := grpc.NewServer()
-	pb.RegisterMerchantCommandServiceServer(server, merchantHandler)
-	pb.RegisterMerchantQueryServiceServer(server, merchantHandler)
-	s.grpcServer = server
-
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
+	// Setup gRPC server
+	s.lis = bufconn.Listen(1024 * 1024)
+	s.grpcServer = grpc.NewServer()
+	pb.RegisterMerchantQueryServiceServer(s.grpcServer, merchantH)
+	pb.RegisterMerchantCommandServiceServer(s.grpcServer, merchantH)
 
 	go func() {
-		_ = server.Serve(lis)
+		if err := s.grpcServer.Serve(s.lis); err != nil {
+		}
 	}()
 
-	// Create gRPC Client for Echo
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	s.echo = echo.New()
+	
+	// Middleware for injecting userID in tests
+	s.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if uid := c.Request().Header.Get("X-Test-User-ID"); uid != "" {
+				uidInt, _ := strconv.Atoi(uid)
+				c.Set("user_id", int32(uidInt))
+			}
+			return next(c)
+		}
+	})
+
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return s.lis.Dial()
+		}),
+		grpc.WithInsecure())
 	s.Require().NoError(err)
-	s.conn = conn
 
-	// Setup Echo
-	s.router = echo.New()
-	apiErrorHandler := app_errors.NewApiHandler(obs, log)
+	obs, err := observability.NewObservability("test", log)
+	s.Require().NoError(err)
+	apiHandler := errors.NewApiHandler(obs, log)
 
-	api.RegisterMerchantHandler(&api.DepsMerchant{
+	merchant_handler.RegisterMerchantHandler(&merchant_handler.DepsMerchant{
 		Client:     conn,
-		E:          s.router,
+		E:          s.echo,
 		Logger:     log,
 		Cache:      cacheStore,
-		ApiHandler: apiErrorHandler,
+		ApiHandler: apiHandler,
 	})
+
+	// Create a user for testing
+	ctx := context.Background()
+	userRes, err := userH.Create(ctx, &pbuser.CreateUserRequest{
+		Firstname:       "Merchant",
+		Lastname:        "Api",
+		Email:           fmt.Sprintf("merchant.api.%d@example.com", time.Now().UnixNano()),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
+	})
+	s.Require().NoError(err)
+	s.userID = userRes.Data.Id
 }
 
-func (s *MerchantHandlerTestSuite) TearDownSuite() {
-	s.conn.Close()
-	s.grpcServer.Stop()
-	s.redisClient.Close()
-	s.dbPool.Close()
-	s.ts.Teardown()
-}
-
-func (s *MerchantHandlerTestSuite) Test1_CreateMerchant() {
-	req := requests.CreateMerchantRequest{
-		Name:   "Handler Merchant",
-		UserID: s.userID,
+func (s *MerchantApiTestSuite) TearDownSuite() {
+	if s.grpcServer != nil {
+		s.grpcServer.Stop()
 	}
-	body, _ := json.Marshal(req)
-
-	request := httptest.NewRequest(http.MethodPost, "/api/merchant-command/create", bytes.NewBuffer(body))
-	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-
-	s.router.ServeHTTP(rec, request)
-	s.Require().Equal(http.StatusOK, rec.Code, rec.Body.String())
-
-	var createRes map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &createRes)
-	merchantData := createRes["data"].(map[string]interface{})
-	s.merchantID = int(merchantData["id"].(float64))
+	if s.dbPool != nil {
+		s.dbPool.Close()
+	}
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
 }
 
-func (s *MerchantHandlerTestSuite) Test2_FindMerchantById() {
-	s.Require().NotZero(s.merchantID)
-
-	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/merchant-query/%d", s.merchantID), nil)
+func (s *MerchantApiTestSuite) Test1_MerchantLifecycle() {
+	// Create
+	reqJSON := fmt.Sprintf(`{"name": "Api Merchant", "user_id": %d}`, s.userID)
+	req := httptest.NewRequest(http.MethodPost, "/api/merchant-command/create", strings.NewReader(reqJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
+	s.echo.ServeHTTP(rec, req)
+
+	s.Equal(http.StatusOK, rec.Code)
+	var res map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &res)
+	s.NoError(err)
+	data := res["data"].(map[string]interface{})
+	s.merchantID = int32(data["id"].(float64))
+	s.apiKey = data["api_key"].(string)
+	s.Equal("Api Merchant", data["name"])
+
+	// FindById
+	req = httptest.NewRequest(http.MethodGet, "/api/merchant-query/"+strconv.Itoa(int(s.merchantID)), nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// Update
+	updateJSON := fmt.Sprintf(`{"name": "Updated Api Merchant", "user_id": %d, "status": "active"}`, s.userID)
+	req = httptest.NewRequest(http.MethodPost, "/api/merchant-command/updates/"+strconv.Itoa(int(s.merchantID)), strings.NewReader(updateJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 }
 
-func TestMerchantHandlerSuite(t *testing.T) {
+func (s *MerchantApiTestSuite) Test2_QueryOperations() {
+	// FindAll
+	req := httptest.NewRequest(http.MethodGet, "/api/merchant-query?page=1&page_size=10", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// FindActive
+	req = httptest.NewRequest(http.MethodGet, "/api/merchant-query/active?page=1&page_size=10", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+	
+	// FindByApiKey
+	req = httptest.NewRequest(http.MethodGet, "/api/merchant-query/api-key?api_key="+s.apiKey, nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// FindByMerchantUserId
+	req = httptest.NewRequest(http.MethodGet, "/api/merchant-query/merchant-user", nil)
+	req.Header.Set("X-Test-User-ID", strconv.Itoa(int(s.userID)))
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+}
+
+func (s *MerchantApiTestSuite) Test3_TrashAndRestore() {
+	// Trash
+	req := httptest.NewRequest(http.MethodPost, "/api/merchant-command/trashed/"+strconv.Itoa(int(s.merchantID)), nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+	
+	// FindTrashed
+	req = httptest.NewRequest(http.MethodGet, "/api/merchant-query/trashed?page=1&page_size=10", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// Restore
+	req = httptest.NewRequest(http.MethodPost, "/api/merchant-command/restore/"+strconv.Itoa(int(s.merchantID)), nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+}
+
+func TestMerchantApiSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	suite.Run(t, new(MerchantHandlerTestSuite))
+	suite.Run(t, new(MerchantApiTestSuite))
 }

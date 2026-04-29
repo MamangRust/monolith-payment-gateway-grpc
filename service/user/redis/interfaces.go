@@ -23,4 +23,5 @@ type UserQueryCache interface {
 
 type UserCommandCache interface {
 	DeleteUserCache(ctx context.Context, id int)
+	DeleteUserListCache(ctx context.Context)
 }

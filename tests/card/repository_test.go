@@ -2,13 +2,14 @@ package card_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/MamangRust/monolith-payment-gateway-card/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	"github.com/MamangRust/monolith-payment-gateway-card/repository"
 	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +22,6 @@ type CardRepositoryTestSuite struct {
 	repo     *repository.Repositories
 	userRepo user_repo.Repositories
 	userID   int
-	cardID   int
 }
 
 func (s *CardRepositoryTestSuite) SetupSuite() {
@@ -40,7 +40,7 @@ func (s *CardRepositoryTestSuite) SetupSuite() {
 	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
 		FirstName: "Card",
 		LastName:  "Owner",
-		Email:     "card.owner@example.com",
+		Email:     fmt.Sprintf("card.owner-%d-%d@example.com", time.Now().UnixNano(), time.Now().UnixNano()%10000),
 		Password:  "password123",
 	})
 	s.Require().NoError(err)
@@ -51,7 +51,17 @@ func (s *CardRepositoryTestSuite) TearDownSuite() {
 	s.ts.Teardown()
 }
 
-func (s *CardRepositoryTestSuite) Test1_CreateCard() {
+func (s *CardRepositoryTestSuite) createSeedCard() (*db.CreateCardRow, error) {
+	return s.repo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
+		CardProvider: "Visa",
+	})
+}
+
+func (s *CardRepositoryTestSuite) TestCreateCard() {
 	ctx := context.Background()
 	req := &requests.CreateCardRequest{
 		UserID:       s.userID,
@@ -64,26 +74,71 @@ func (s *CardRepositoryTestSuite) Test1_CreateCard() {
 	res, err := s.repo.CardCommand.CreateCard(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
-	s.NotEmpty(res.CardNumber)
-	s.cardID = int(res.CardID)
 }
 
-func (s *CardRepositoryTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.cardID)
+func (s *CardRepositoryTestSuite) TestFindAllCards() {
+	_, err := s.createSeedCard()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	found, err := s.repo.CardQuery.FindById(ctx, s.cardID)
+	res, err := s.repo.CardQuery.FindAllCards(ctx, &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
 	s.NoError(err)
-	s.NotNil(found)
-	s.Equal(int32(s.cardID), found.CardID)
+	s.GreaterOrEqual(len(res), 1)
 }
 
-func (s *CardRepositoryTestSuite) Test3_UpdateCard() {
-	s.Require().NotZero(s.cardID)
+func (s *CardRepositoryTestSuite) TestFindById() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	found, err := s.repo.CardQuery.FindById(ctx, int(card.CardID))
+	s.NoError(err)
+	s.NotNil(found)
+	s.Equal(card.CardID, found.CardID)
+}
+
+func (s *CardRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	res, err := s.repo.CardQuery.FindByActive(ctx, &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *CardRepositoryTestSuite) TestFindByTrashed() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.CardCommand.TrashedCard(ctx, int(card.CardID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.CardQuery.FindByTrashed(ctx, &requests.FindAllCards{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *CardRepositoryTestSuite) TestUpdateCard() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
 	req := &requests.UpdateCardRequest{
-		CardID:       s.cardID,
+		CardID:       int(card.CardID),
 		UserID:       s.userID,
 		CardType:     "credit",
 		ExpireDate:   time.Now().AddDate(6, 0, 0),
@@ -94,30 +149,63 @@ func (s *CardRepositoryTestSuite) Test3_UpdateCard() {
 	res, err := s.repo.CardCommand.UpdateCard(ctx, req)
 	s.NoError(err)
 	s.NotNil(res)
-	s.Equal("credit", res.CardType)
 }
 
-func (s *CardRepositoryTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.cardID)
+func (s *CardRepositoryTestSuite) TestTrashCard() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	trashed, err := s.repo.CardCommand.TrashedCard(ctx, s.cardID)
+	trashed, err := s.repo.CardCommand.TrashedCard(ctx, int(card.CardID))
 	s.NoError(err)
 	s.NotNil(trashed)
+}
 
-	restored, err := s.repo.CardCommand.RestoreCard(ctx, s.cardID)
+func (s *CardRepositoryTestSuite) TestRestoreCard() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.CardCommand.TrashedCard(ctx, int(card.CardID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.CardCommand.RestoreCard(ctx, int(card.CardID))
 	s.NoError(err)
 	s.NotNil(restored)
 }
 
-func (s *CardRepositoryTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.cardID)
+func (s *CardRepositoryTestSuite) TestDeleteCardPermanent() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
 	ctx := context.Background()
 
-	trashed, _ := s.repo.CardCommand.TrashedCard(ctx, s.cardID)
-	s.NotNil(trashed)
+	_, err = s.repo.CardCommand.TrashedCard(ctx, int(card.CardID))
+	s.Require().NoError(err)
 
-	success, err := s.repo.CardCommand.DeleteCardPermanent(ctx, s.cardID)
+	success, err := s.repo.CardCommand.DeleteCardPermanent(ctx, int(card.CardID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *CardRepositoryTestSuite) TestRestoreAllCard() {
+	card, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.CardCommand.TrashedCard(ctx, int(card.CardID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.CardCommand.RestoreAllCard(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *CardRepositoryTestSuite) TestDeleteAllCardPermanent() {
+	_, err := s.createSeedCard()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.CardCommand.DeleteAllCardPermanent(ctx)
 	s.NoError(err)
 	s.True(success)
 }

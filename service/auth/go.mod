@@ -6,6 +6,7 @@ require (
 	github.com/MamangRust/monolith-payment-gateway-pb v1.0.10
 	github.com/MamangRust/monolith-payment-gateway-pkg v1.0.28
 	github.com/MamangRust/monolith-payment-gateway-shared v1.0.29
+	github.com/jackc/pgx/v5 v5.8.0
 	github.com/spf13/viper v1.21.0
 	go.opentelemetry.io/otel v1.40.0
 	go.uber.org/mock v0.6.0
@@ -39,7 +40,6 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.8.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect

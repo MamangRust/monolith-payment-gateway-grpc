@@ -306,6 +306,58 @@ func (x *UpdateSaldoWithdrawRequest) GetWithdrawAmount() int32 {
 	return 0
 }
 
+type UpdateSaldoBalanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CardNumber    string                 `protobuf:"bytes,1,opt,name=card_number,json=cardNumber,proto3" json:"card_number,omitempty"`
+	TotalBalance  int32                  `protobuf:"varint,2,opt,name=total_balance,json=totalBalance,proto3" json:"total_balance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSaldoBalanceRequest) Reset() {
+	*x = UpdateSaldoBalanceRequest{}
+	mi := &file_saldo_saldo_command_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSaldoBalanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSaldoBalanceRequest) ProtoMessage() {}
+
+func (x *UpdateSaldoBalanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saldo_saldo_command_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSaldoBalanceRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSaldoBalanceRequest) Descriptor() ([]byte, []int) {
+	return file_saldo_saldo_command_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UpdateSaldoBalanceRequest) GetCardNumber() string {
+	if x != nil {
+		return x.CardNumber
+	}
+	return ""
+}
+
+func (x *UpdateSaldoBalanceRequest) GetTotalBalance() int32 {
+	if x != nil {
+		return x.TotalBalance
+	}
+	return 0
+}
+
 var File_saldo_saldo_command_proto protoreflect.FileDescriptor
 
 const file_saldo_saldo_command_proto_rawDesc = "" +
@@ -331,10 +383,15 @@ const file_saldo_saldo_command_proto_rawDesc = "" +
 	"cardNumber\x12#\n" +
 	"\rtotal_balance\x18\x02 \x01(\x05R\ftotalBalance\x12#\n" +
 	"\rwithdraw_time\x18\x03 \x01(\tR\fwithdrawTime\x12'\n" +
-	"\x0fwithdraw_amount\x18\x04 \x01(\x05R\x0ewithdrawAmount2\xae\x05\n" +
+	"\x0fwithdraw_amount\x18\x04 \x01(\x05R\x0ewithdrawAmount\"a\n" +
+	"\x19UpdateSaldoBalanceRequest\x12\x1f\n" +
+	"\vcard_number\x18\x01 \x01(\tR\n" +
+	"cardNumber\x12#\n" +
+	"\rtotal_balance\x18\x02 \x01(\x05R\ftotalBalance2\x87\x06\n" +
 	"\x13SaldoCommandService\x12I\n" +
 	"\vCreateSaldo\x12\x1c.pb.saldo.CreateSaldoRequest\x1a\x1a.pb.saldo.ApiResponseSaldo\"\x00\x12I\n" +
-	"\vUpdateSaldo\x12\x1c.pb.saldo.UpdateSaldoRequest\x1a\x1a.pb.saldo.ApiResponseSaldo\"\x00\x12Y\n" +
+	"\vUpdateSaldo\x12\x1c.pb.saldo.UpdateSaldoRequest\x1a\x1a.pb.saldo.ApiResponseSaldo\"\x00\x12W\n" +
+	"\x12UpdateSaldoBalance\x12#.pb.saldo.UpdateSaldoBalanceRequest\x1a\x1a.pb.saldo.ApiResponseSaldo\"\x00\x12Y\n" +
 	"\x13UpdateSaldoWithdraw\x12$.pb.saldo.UpdateSaldoWithdrawRequest\x1a\x1a.pb.saldo.ApiResponseSaldo\"\x00\x12T\n" +
 	"\fTrashedSaldo\x12\x1e.pb.saldo.FindByIdSaldoRequest\x1a\".pb.saldo.ApiResponseSaldoDeleteAt\"\x00\x12T\n" +
 	"\fRestoreSaldo\x12\x1e.pb.saldo.FindByIdSaldoRequest\x1a\".pb.saldo.ApiResponseSaldoDeleteAt\"\x00\x12Z\n" +
@@ -354,37 +411,40 @@ func file_saldo_saldo_command_proto_rawDescGZIP() []byte {
 	return file_saldo_saldo_command_proto_rawDescData
 }
 
-var file_saldo_saldo_command_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_saldo_saldo_command_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_saldo_saldo_command_proto_goTypes = []any{
 	(*CreateSaldoRequest)(nil),         // 0: pb.saldo.CreateSaldoRequest
 	(*UpdateSaldoRequest)(nil),         // 1: pb.saldo.UpdateSaldoRequest
 	(*ApiResponseSaldoDelete)(nil),     // 2: pb.saldo.ApiResponseSaldoDelete
 	(*ApiResponseSaldoAll)(nil),        // 3: pb.saldo.ApiResponseSaldoAll
 	(*UpdateSaldoWithdrawRequest)(nil), // 4: pb.saldo.UpdateSaldoWithdrawRequest
-	(*FindByIdSaldoRequest)(nil),       // 5: pb.saldo.FindByIdSaldoRequest
-	(*emptypb.Empty)(nil),              // 6: google.protobuf.Empty
-	(*ApiResponseSaldo)(nil),           // 7: pb.saldo.ApiResponseSaldo
-	(*ApiResponseSaldoDeleteAt)(nil),   // 8: pb.saldo.ApiResponseSaldoDeleteAt
+	(*UpdateSaldoBalanceRequest)(nil),  // 5: pb.saldo.UpdateSaldoBalanceRequest
+	(*FindByIdSaldoRequest)(nil),       // 6: pb.saldo.FindByIdSaldoRequest
+	(*emptypb.Empty)(nil),              // 7: google.protobuf.Empty
+	(*ApiResponseSaldo)(nil),           // 8: pb.saldo.ApiResponseSaldo
+	(*ApiResponseSaldoDeleteAt)(nil),   // 9: pb.saldo.ApiResponseSaldoDeleteAt
 }
 var file_saldo_saldo_command_proto_depIdxs = []int32{
 	0, // 0: pb.saldo.SaldoCommandService.CreateSaldo:input_type -> pb.saldo.CreateSaldoRequest
 	1, // 1: pb.saldo.SaldoCommandService.UpdateSaldo:input_type -> pb.saldo.UpdateSaldoRequest
-	4, // 2: pb.saldo.SaldoCommandService.UpdateSaldoWithdraw:input_type -> pb.saldo.UpdateSaldoWithdrawRequest
-	5, // 3: pb.saldo.SaldoCommandService.TrashedSaldo:input_type -> pb.saldo.FindByIdSaldoRequest
-	5, // 4: pb.saldo.SaldoCommandService.RestoreSaldo:input_type -> pb.saldo.FindByIdSaldoRequest
-	5, // 5: pb.saldo.SaldoCommandService.DeleteSaldoPermanent:input_type -> pb.saldo.FindByIdSaldoRequest
-	6, // 6: pb.saldo.SaldoCommandService.RestoreAllSaldo:input_type -> google.protobuf.Empty
-	6, // 7: pb.saldo.SaldoCommandService.DeleteAllSaldoPermanent:input_type -> google.protobuf.Empty
-	7, // 8: pb.saldo.SaldoCommandService.CreateSaldo:output_type -> pb.saldo.ApiResponseSaldo
-	7, // 9: pb.saldo.SaldoCommandService.UpdateSaldo:output_type -> pb.saldo.ApiResponseSaldo
-	7, // 10: pb.saldo.SaldoCommandService.UpdateSaldoWithdraw:output_type -> pb.saldo.ApiResponseSaldo
-	8, // 11: pb.saldo.SaldoCommandService.TrashedSaldo:output_type -> pb.saldo.ApiResponseSaldoDeleteAt
-	8, // 12: pb.saldo.SaldoCommandService.RestoreSaldo:output_type -> pb.saldo.ApiResponseSaldoDeleteAt
-	2, // 13: pb.saldo.SaldoCommandService.DeleteSaldoPermanent:output_type -> pb.saldo.ApiResponseSaldoDelete
-	3, // 14: pb.saldo.SaldoCommandService.RestoreAllSaldo:output_type -> pb.saldo.ApiResponseSaldoAll
-	3, // 15: pb.saldo.SaldoCommandService.DeleteAllSaldoPermanent:output_type -> pb.saldo.ApiResponseSaldoAll
-	8, // [8:16] is the sub-list for method output_type
-	0, // [0:8] is the sub-list for method input_type
+	5, // 2: pb.saldo.SaldoCommandService.UpdateSaldoBalance:input_type -> pb.saldo.UpdateSaldoBalanceRequest
+	4, // 3: pb.saldo.SaldoCommandService.UpdateSaldoWithdraw:input_type -> pb.saldo.UpdateSaldoWithdrawRequest
+	6, // 4: pb.saldo.SaldoCommandService.TrashedSaldo:input_type -> pb.saldo.FindByIdSaldoRequest
+	6, // 5: pb.saldo.SaldoCommandService.RestoreSaldo:input_type -> pb.saldo.FindByIdSaldoRequest
+	6, // 6: pb.saldo.SaldoCommandService.DeleteSaldoPermanent:input_type -> pb.saldo.FindByIdSaldoRequest
+	7, // 7: pb.saldo.SaldoCommandService.RestoreAllSaldo:input_type -> google.protobuf.Empty
+	7, // 8: pb.saldo.SaldoCommandService.DeleteAllSaldoPermanent:input_type -> google.protobuf.Empty
+	8, // 9: pb.saldo.SaldoCommandService.CreateSaldo:output_type -> pb.saldo.ApiResponseSaldo
+	8, // 10: pb.saldo.SaldoCommandService.UpdateSaldo:output_type -> pb.saldo.ApiResponseSaldo
+	8, // 11: pb.saldo.SaldoCommandService.UpdateSaldoBalance:output_type -> pb.saldo.ApiResponseSaldo
+	8, // 12: pb.saldo.SaldoCommandService.UpdateSaldoWithdraw:output_type -> pb.saldo.ApiResponseSaldo
+	9, // 13: pb.saldo.SaldoCommandService.TrashedSaldo:output_type -> pb.saldo.ApiResponseSaldoDeleteAt
+	9, // 14: pb.saldo.SaldoCommandService.RestoreSaldo:output_type -> pb.saldo.ApiResponseSaldoDeleteAt
+	2, // 15: pb.saldo.SaldoCommandService.DeleteSaldoPermanent:output_type -> pb.saldo.ApiResponseSaldoDelete
+	3, // 16: pb.saldo.SaldoCommandService.RestoreAllSaldo:output_type -> pb.saldo.ApiResponseSaldoAll
+	3, // 17: pb.saldo.SaldoCommandService.DeleteAllSaldoPermanent:output_type -> pb.saldo.ApiResponseSaldoAll
+	9, // [9:18] is the sub-list for method output_type
+	0, // [0:9] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -402,7 +462,7 @@ func file_saldo_saldo_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saldo_saldo_command_proto_rawDesc), len(file_saldo_saldo_command_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

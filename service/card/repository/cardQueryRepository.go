@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -79,7 +79,7 @@ func (r *cardQueryRepository) FindById(ctx context.Context, card_id int) (*db.Ge
 	res, err := r.db.GetCardByID(ctx, int32(card_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, card_errors.ErrFindCardByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -92,7 +92,7 @@ func (r *cardQueryRepository) FindCardByUserId(ctx context.Context, user_id int)
 	res, err := r.db.GetCardByUserID(ctx, int32(user_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, card_errors.ErrFindCardByUserIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -105,7 +105,7 @@ func (r *cardQueryRepository) FindCardByCardNumber(ctx context.Context, card_num
 	res, err := r.db.GetCardByCardNumber(ctx, card_number)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, card_errors.ErrFindCardByCardNumberFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -118,7 +118,7 @@ func (r *cardQueryRepository) FindUserCardByCardNumber(ctx context.Context, card
 	res, err := r.db.GetUserEmailByCardNumber(ctx, card_number)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, card_errors.ErrFindUserCardByCardNumberFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

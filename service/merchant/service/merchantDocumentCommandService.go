@@ -99,9 +99,11 @@ func (s *merchantDocumentCommandService) CreateMerchantDocument(ctx context.Cont
 			return
 		}
 
-		err = s.kafka.SendMessage("email-service-topic-merchant-document-created", strconv.Itoa(int(merchantDocument.DocumentID)), payloadBytes)
-		if err != nil {
-			s.logger.Error("failed to send merchant document creation email via kafka", zap.Error(err), zap.Int("document_id", int(merchantDocument.DocumentID)))
+		if s.kafka != nil {
+			err = s.kafka.SendMessage("email-service-topic-merchant-document-created", strconv.Itoa(int(merchantDocument.DocumentID)), payloadBytes)
+			if err != nil {
+				s.logger.Error("failed to send merchant document creation email via kafka", zap.Error(err), zap.Int("document_id", int(merchantDocument.DocumentID)))
+			}
 		}
 	}()
 
@@ -203,9 +205,11 @@ func (s *merchantDocumentCommandService) UpdateMerchantDocumentStatus(ctx contex
 			return
 		}
 
-		err = s.kafka.SendMessage("email-service-topic-merchant-document-update-status", strconv.Itoa(request.MerchantID), payloadBytes)
-		if err != nil {
-			s.logger.Error("failed to send merchant document status update email via kafka", zap.Error(err), zap.Int("merchant_id", request.MerchantID))
+		if s.kafka != nil {
+			err = s.kafka.SendMessage("email-service-topic-merchant-document-update-status", strconv.Itoa(request.MerchantID), payloadBytes)
+			if err != nil {
+				s.logger.Error("failed to send merchant document status update email via kafka", zap.Error(err), zap.Int("merchant_id", request.MerchantID))
+			}
 		}
 	}()
 

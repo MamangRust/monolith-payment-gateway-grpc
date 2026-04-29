@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -79,7 +79,7 @@ func (r *merchantQueryRepository) FindByMerchantId(ctx context.Context, merchant
 	res, err := r.db.GetMerchantByID(ctx, int32(merchant_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, merchant_errors.ErrFindMerchantByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -92,7 +92,7 @@ func (r *merchantQueryRepository) FindByApiKey(ctx context.Context, api_key stri
 	res, err := r.db.GetMerchantByApiKey(ctx, api_key)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, merchant_errors.ErrFindMerchantByApiKeyFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -105,7 +105,7 @@ func (r *merchantQueryRepository) FindByName(ctx context.Context, name string) (
 	res, err := r.db.GetMerchantByName(ctx, name)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, merchant_errors.ErrFindMerchantByNameFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -118,7 +118,7 @@ func (r *merchantQueryRepository) FindByMerchantUserId(ctx context.Context, user
 	res, err := r.db.GetMerchantsByUserID(ctx, int32(user_id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, merchant_errors.ErrFindMerchantByUserIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

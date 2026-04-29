@@ -13,11 +13,12 @@ type transactionStatsByCardAmountRepository struct {
 	db *db.Queries
 }
 
-func NewTransactionStatsByCardAmountRepository(db *db.Queries) TransactonStatsByCardAmountRepository {
+func NewTransactionStatsByCardAmountRepository(db *db.Queries) TransactionStatsByCardAmountRepository {
 	return &transactionStatsByCardAmountRepository{
 		db: db,
 	}
 }
+
 
 func (r *transactionStatsByCardAmountRepository) GetMonthlyAmountsByCardNumber(ctx context.Context, req *requests.MonthYearPaymentMethod) ([]*db.GetMonthlyAmountsByCardNumberRow, error) {
 	cardNumber := req.CardNumber

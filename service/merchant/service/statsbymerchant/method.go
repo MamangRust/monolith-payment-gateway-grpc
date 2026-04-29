@@ -15,27 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
-type merchantStatsByMerchantMethodDeps struct {
+type MerchantStatsByMerchantMethodDeps struct {
 	Cache mencache.MerchantStatsMethodByMerchantCache
 
-	Repository repository.MerchantStatsByMerchantRepository
+	Repository repository.MerchantStatsMethodByMerchantRepository
 
 	Logger logger.LoggerInterface
 
 	Observability observability.TraceLoggerObservability
 }
 
+
 type merchantStatsByMerchantMethodService struct {
 	cache mencache.MerchantStatsMethodByMerchantCache
 
-	repository repository.MerchantStatsByMerchantRepository
+	repository repository.MerchantStatsMethodByMerchantRepository
 
 	logger logger.LoggerInterface
 
 	observability observability.TraceLoggerObservability
 }
 
-func NewMerchantStatsByMerchantMethodService(params *merchantStatsByMerchantMethodDeps) *merchantStatsByMerchantMethodService {
+func NewMerchantStatsByMerchantMethodService(params *MerchantStatsByMerchantMethodDeps) *merchantStatsByMerchantMethodService {
 	return &merchantStatsByMerchantMethodService{
 		cache:         params.Cache,
 		repository:    params.Repository,

@@ -13,11 +13,12 @@ type transactionStatsByCardStatusRepository struct {
 	db *db.Queries
 }
 
-func NewTransactionStatsByCardStatusRepository(db *db.Queries) TransactonStatsByCardStatusRepository {
+func NewTransactionStatsByCardStatusRepository(db *db.Queries) TransactionStatsByCardStatusRepository {
 	return &transactionStatsByCardStatusRepository{
 		db: db,
 	}
 }
+
 
 func (r *transactionStatsByCardStatusRepository) GetMonthTransactionStatusSuccessByCardNumber(ctx context.Context, req *requests.MonthStatusTransactionCardNumber) ([]*db.GetMonthTransactionStatusSuccessCardNumberRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)

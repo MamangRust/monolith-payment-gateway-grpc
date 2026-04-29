@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type merchantStatsAmountByApiKeyDeps struct {
+type MerchantStatsAmountByApiKeyDeps struct {
 	Cache mencache.MerchantStatsAmountByApiKeyCache
 
 	Repository repository.MerchantStatsAmountByApiKeyRepository
@@ -35,7 +35,7 @@ type merchantStatsAmountByApiKeyService struct {
 	observability observability.TraceLoggerObservability
 }
 
-func NewMerchantStatsAmountByApiKeyService(params *merchantStatsAmountByApiKeyDeps) MerchantStatsByApiKeyAmountService {
+func NewMerchantStatsAmountByApiKeyService(params *MerchantStatsAmountByApiKeyDeps) MerchantStatsByApiKeyAmountService {
 	return &merchantStatsAmountByApiKeyService{
 		cache:         params.Cache,
 		repository:    params.Repository,

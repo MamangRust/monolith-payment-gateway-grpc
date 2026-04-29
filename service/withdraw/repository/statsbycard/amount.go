@@ -13,11 +13,12 @@ type withdrawStatsByCardAmountRepository struct {
 	db *db.Queries
 }
 
-func NewWithdrawStatsAmountRepository(db *db.Queries) WithdrawStatsByCardAmountRepository {
+func NewWithdrawStatsByCardAmountRepository(db *db.Queries) WithdrawStatsByCardAmountRepository {
 	return &withdrawStatsByCardAmountRepository{
 		db: db,
 	}
 }
+
 
 func (r *withdrawStatsByCardAmountRepository) GetMonthlyWithdrawsByCardNumber(ctx context.Context, req *requests.YearMonthCardNumber) ([]*db.GetMonthlyWithdrawsByCardNumberRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)

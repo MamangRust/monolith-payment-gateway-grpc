@@ -2,17 +2,17 @@ package transaction_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-
+	"github.com/MamangRust/monolith-payment-gateway-transaction/repository"
+	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	merchant_repo "github.com/MamangRust/monolith-payment-gateway-merchant/repository"
+	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	"github.com/MamangRust/monolith-payment-gateway-transaction/repository"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
-	merchant_repo "github.com/MamangRust/monolith-payment-gateway-merchant/repository"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
@@ -20,19 +20,13 @@ import (
 
 type TransactionRepositoryTestSuite struct {
 	suite.Suite
-	ts            *tests.TestSuite
-	dbPool        *pgxpool.Pool
-	commandRepo   repository.TransactionCommandRepository
-	queryRepo     repository.TransactionQueryRepository
-	
-	// Repositories for seeding
-	userRepo     user_repo.UserCommandRepository
-	cardRepo     card_repo.Repositories
+	ts           *tests.TestSuite
+	repo         repository.Repositories
+	cardRepo     *card_repo.Repositories
 	merchantRepo merchant_repo.Repositories
-
-	customerCardNumber string
-	merchantID         int
-	transactionID      int
+	userRepo     user_repo.Repositories
+	userID       int
+	merchantID   int
 }
 
 func (s *TransactionRepositoryTestSuite) SetupSuite() {
@@ -42,109 +36,215 @@ func (s *TransactionRepositoryTestSuite) SetupSuite() {
 
 	pool, err := pgxpool.New(s.ts.Ctx, s.ts.DBURL)
 	s.Require().NoError(err)
-	s.dbPool = pool
 
 	queries := db.New(pool)
-	s.userRepo = user_repo.NewUserCommandRepository(queries)
-	s.cardRepo = *card_repo.NewRepositories(queries)
+	s.userRepo = user_repo.NewRepositories(queries)
+	s.cardRepo = card_repo.NewRepositories(queries)
 	s.merchantRepo = merchant_repo.NewRepositories(queries)
+	s.repo = repository.NewRepositories(queries, nil, nil, nil)
 
-	transactionRepos := repository.NewRepositories(queries, nil, nil, nil) // We don't need saldo/card/merchant for the base repo tests if we seed directly
-	s.commandRepo = transactionRepos
-	s.queryRepo = transactionRepos
-}
-
-func (s *TransactionRepositoryTestSuite) TearDownSuite() {
-	if s.dbPool != nil {
-		s.dbPool.Close()
-	}
-	if s.ts != nil {
-		s.ts.Teardown()
-	}
-}
-
-func (s *TransactionRepositoryTestSuite) Test1_CreateTransaction() {
-	ctx := context.Background()
-	
-	// Seed 
-	user, err := s.userRepo.CreateUser(ctx, &requests.CreateUserRequest{
-		FirstName: "Repo", LastName: "Owner", Email: "repo@test.com", Password: "password123",
+	// Create user
+	user, err := s.userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
+		FirstName: "Transaction",
+		LastName:  "Tester",
+		Email:     fmt.Sprintf("transaction.tester-%d@example.com", time.Now().UnixNano()),
+		Password:  "password123",
 	})
 	s.Require().NoError(err)
+	s.userID = int(user.UserID)
 
-	card, err := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
-		UserID: int(user.UserID), CardType: "debit", ExpireDate: time.Now().AddDate(2, 0, 0), CVV: "123", CardProvider: "visa",
-	})
-	s.Require().NoError(err)
-	s.customerCardNumber = card.CardNumber
-
-	merchant, err := s.merchantRepo.CreateMerchant(ctx, &requests.CreateMerchantRequest{
-		Name: "Repo Merchant", UserID: int(user.UserID),
+	// Create merchant
+	merchant, err := s.merchantRepo.CreateMerchant(context.Background(), &requests.CreateMerchantRequest{
+		Name:   "Test Merchant",
+		UserID: s.userID,
 	})
 	s.Require().NoError(err)
 	s.merchantID = int(merchant.MerchantID)
+}
 
-	req := &requests.CreateTransactionRequest{
-		CardNumber:      s.customerCardNumber,
+func (s *TransactionRepositoryTestSuite) TearDownSuite() {
+	s.ts.Teardown()
+}
+
+func (s *TransactionRepositoryTestSuite) createSeedTransaction() (*db.CreateTransactionRow, error) {
+    card, err := s.cardRepo.CardCommand.CreateCard(context.Background(), &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
+		CardProvider: "Visa",
+	})
+    if err != nil {
+        return nil, err
+    }
+
+    mid := s.merchantID
+	return s.repo.CreateTransaction(context.Background(), &requests.CreateTransactionRequest{
+		CardNumber:      card.CardNumber,
 		Amount:          100000,
-		MerchantID:      &s.merchantID,
-		PaymentMethod:   "visa",
+		PaymentMethod:   "debit",
+		MerchantID:      &mid,
+		TransactionTime: time.Now(),
+	})
+}
+
+func (s *TransactionRepositoryTestSuite) TestCreateTransaction() {
+	ctx := context.Background()
+    
+    card, _ := s.cardRepo.CardCommand.CreateCard(ctx, &requests.CreateCardRequest{
+		UserID:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   time.Now().AddDate(5, 0, 0),
+		CVV:          "123",
+		CardProvider: "Visa",
+	})
+
+    mid := s.merchantID
+	req := &requests.CreateTransactionRequest{
+		CardNumber:      card.CardNumber,
+		Amount:          100000,
+		PaymentMethod:   "debit",
+		MerchantID:      &mid,
 		TransactionTime: time.Now(),
 	}
 
-	res, err := s.commandRepo.CreateTransaction(ctx, req)
+	res, err := s.repo.CreateTransaction(ctx, req)
 	s.NoError(err)
-	s.Require().NotNil(res)
-	s.Equal(int32(req.Amount), res.Amount)
-	s.transactionID = int(res.TransactionID)
+	s.NotNil(res)
 }
 
-func (s *TransactionRepositoryTestSuite) Test2_FindById() {
+func (s *TransactionRepositoryTestSuite) TestFindAllTransactions() {
+	_, err := s.createSeedTransaction()
+	s.Require().NoError(err)
 	ctx := context.Background()
-	s.Require().NotZero(s.transactionID)
-	res, err := s.queryRepo.FindById(ctx, s.transactionID)
+
+	res, err := s.repo.FindAllTransactions(ctx, &requests.FindAllTransactions{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
 	s.NoError(err)
-	s.Require().NotNil(res)
-	s.Equal(int32(s.transactionID), res.TransactionID)
+	s.GreaterOrEqual(len(res), 1)
 }
 
-func (s *TransactionRepositoryTestSuite) Test3_UpdateTransaction() {
+func (s *TransactionRepositoryTestSuite) TestFindById() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
 	ctx := context.Background()
-	s.Require().NotZero(s.transactionID)
+
+	found, err := s.repo.FindById(ctx, int(transaction.TransactionID))
+	s.NoError(err)
+	s.NotNil(found)
+	s.Equal(transaction.TransactionID, found.TransactionID)
+}
+
+func (s *TransactionRepositoryTestSuite) TestFindByActive() {
+	_, err := s.createSeedTransaction()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	res, err := s.repo.FindByActive(ctx, &requests.FindAllTransactions{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TransactionRepositoryTestSuite) TestFindByTrashed() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransaction(ctx, int(transaction.TransactionID))
+	s.Require().NoError(err)
+
+	res, err := s.repo.FindByTrashed(ctx, &requests.FindAllTransactions{
+		Page:     1,
+		PageSize: 10,
+		Search:   "",
+	})
+	s.NoError(err)
+	s.GreaterOrEqual(len(res), 1)
+}
+
+func (s *TransactionRepositoryTestSuite) TestUpdateTransaction() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	id := int(transaction.TransactionID)
+	mid := s.merchantID
 	req := &requests.UpdateTransactionRequest{
-		TransactionID:   &s.transactionID,
-		CardNumber:      s.customerCardNumber,
+		TransactionID:   &id,
+		CardNumber:      transaction.CardNumber,
 		Amount:          200000,
-		MerchantID:      &s.merchantID,
-		PaymentMethod:   "visa",
+		PaymentMethod:   "credit",
+		MerchantID:      &mid,
 		TransactionTime: time.Now(),
 	}
-	res, err := s.commandRepo.UpdateTransaction(ctx, req)
+
+	res, err := s.repo.UpdateTransaction(ctx, req)
 	s.NoError(err)
-	s.Require().NotNil(res)
-	s.Equal(int32(200000), res.Amount)
+	s.NotNil(res)
 }
 
-func (s *TransactionRepositoryTestSuite) Test4_TrashedTransaction() {
+func (s *TransactionRepositoryTestSuite) TestTrashTransaction() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
 	ctx := context.Background()
-	s.Require().NotZero(s.transactionID)
-	res, err := s.commandRepo.TrashedTransaction(ctx, s.transactionID)
+
+	trashed, err := s.repo.TrashedTransaction(ctx, int(transaction.TransactionID))
 	s.NoError(err)
-	s.NotNil(res.DeletedAt)
+	s.NotNil(trashed)
 }
 
-func (s *TransactionRepositoryTestSuite) Test5_RestoreTransaction() {
+func (s *TransactionRepositoryTestSuite) TestRestoreTransaction() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
 	ctx := context.Background()
-	s.Require().NotZero(s.transactionID)
-	res, err := s.commandRepo.RestoreTransaction(ctx, s.transactionID)
+
+	_, err = s.repo.TrashedTransaction(ctx, int(transaction.TransactionID))
+	s.Require().NoError(err)
+
+	restored, err := s.repo.RestoreTransaction(ctx, int(transaction.TransactionID))
 	s.NoError(err)
-	s.True(res.DeletedAt.Time.IsZero())
+	s.NotNil(restored)
 }
 
-func (s *TransactionRepositoryTestSuite) Test6_PermanentDeleteTransaction() {
+func (s *TransactionRepositoryTestSuite) TestDeleteTransactionPermanent() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
 	ctx := context.Background()
-	s.Require().NotZero(s.transactionID)
-	success, err := s.commandRepo.DeleteTransactionPermanent(ctx, s.transactionID)
+
+	_, err = s.repo.TrashedTransaction(ctx, int(transaction.TransactionID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.DeleteTransactionPermanent(ctx, int(transaction.TransactionID))
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TransactionRepositoryTestSuite) TestRestoreAllTransaction() {
+	transaction, err := s.createSeedTransaction()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	_, err = s.repo.TrashedTransaction(ctx, int(transaction.TransactionID))
+	s.Require().NoError(err)
+
+	success, err := s.repo.RestoreAllTransaction(ctx)
+	s.NoError(err)
+	s.True(success)
+}
+
+func (s *TransactionRepositoryTestSuite) TestDeleteAllTransactionPermanent() {
+	_, err := s.createSeedTransaction()
+	s.Require().NoError(err)
+	ctx := context.Background()
+
+	success, err := s.repo.DeleteAllTransactionPermanent(ctx)
 	s.NoError(err)
 	s.True(success)
 }

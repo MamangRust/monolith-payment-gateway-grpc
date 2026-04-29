@@ -2,38 +2,33 @@ package user_test
 
 import (
 	"context"
-	"net"
+	"fmt"
 	"testing"
+	"time"
 
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	"github.com/MamangRust/monolith-payment-gateway-user/handler"
+	"github.com/MamangRust/monolith-payment-gateway-user/repository"
+	"github.com/MamangRust/monolith-payment-gateway-user/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	gapi "github.com/MamangRust/monolith-payment-gateway-user/handler"
-	"github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-user/service"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type UserGapiTestSuite struct {
 	suite.Suite
-	ts          *tests.TestSuite
-	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
-	grpcServer  *grpc.Server
-	client      pb.UserCommandServiceClient
-	queryClient pb.UserQueryServiceClient
-	conn        *grpc.ClientConn
-	userID      int
+	ts     *tests.TestSuite
+	dbPool *pgxpool.Pool
+	userH  handler.Handler
+	userID int32
 }
 
 func (s *UserGapiTestSuite) SetupSuite() {
@@ -47,7 +42,7 @@ func (s *UserGapiTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
@@ -57,72 +52,112 @@ func (s *UserGapiTestSuite) SetupSuite() {
 	log, _ := logger.NewLogger("test", lp)
 	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	userService := service.NewService(&service.Deps{
-		Repositories: repos,
-		Logger:       log,
-		Hash:         hasher,
+	userSvc := service.NewService(&service.Deps{
 		Cache:        cacheStore,
+		Repositories: repos,
+		Hash:         hasher,
+		Logger:       log,
 	})
 
-	// Start gRPC Server
-	userHandler := gapi.NewHandler(userService)
-	server := grpc.NewServer()
-	pb.RegisterUserCommandServiceServer(server, userHandler)
-	pb.RegisterUserQueryServiceServer(server, userHandler)
-	s.grpcServer = server
-
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
-
-	go func() {
-		_ = server.Serve(lis)
-	}()
-
-	// Create Client
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	s.Require().NoError(err)
-	s.conn = conn
-	s.client = pb.NewUserCommandServiceClient(conn)
-	s.queryClient = pb.NewUserQueryServiceClient(conn)
+	s.userH = handler.NewHandler(userSvc)
 }
 
 func (s *UserGapiTestSuite) TearDownSuite() {
-	s.conn.Close()
-	s.grpcServer.Stop()
-	s.redisClient.Close()
-	s.dbPool.Close()
-	s.ts.Teardown()
+	if s.dbPool != nil {
+		s.dbPool.Close()
+	}
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
 }
 
-func (s *UserGapiTestSuite) Test1_CreateUser() {
+func (s *UserGapiTestSuite) Test1_UserLifecycle() {
 	ctx := context.Background()
 
-	// 1. Create
+	// Create
 	createReq := &pb.CreateUserRequest{
-		Firstname:       "Gapi",
-		Lastname:        "User",
-		Email:           "gapi.user@example.com",
-		Password:        "password123",
-		ConfirmPassword: "password123",
+		Firstname:       "John",
+		Lastname:        "Doe",
+		Email:           fmt.Sprintf("john.%d@example.com", time.Now().UnixNano()),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
 	}
-	res, err := s.client.Create(ctx, createReq)
+	res, err := s.userH.Create(ctx, createReq)
 	s.NoError(err)
-	s.Equal(createReq.Email, res.Data.Email)
-	s.userID = int(res.Data.Id)
+	s.NotNil(res)
+	s.userID = res.Data.Id
+	s.Equal("John", res.Data.Firstname)
+
+	// FindById
+	findReq := &pb.FindByIdUserRequest{Id: s.userID}
+	resF, err := s.userH.FindById(ctx, findReq)
+	s.NoError(err)
+	s.Equal("John", resF.Data.Firstname)
+
+	// Update
+	updateReq := &pb.UpdateUserRequest{
+		Id:              s.userID,
+		Firstname:       "JohnUpdated",
+		Lastname:        "Doe",
+		Email:           createReq.Email,
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
+	}
+	resU, err := s.userH.Update(ctx, updateReq)
+	s.NoError(err)
+	s.Equal("JohnUpdated", resU.Data.Firstname)
 }
 
-func (s *UserGapiTestSuite) Test2_FindUserById() {
+func (s *UserGapiTestSuite) Test2_QueryOperations() {
+	ctx := context.Background()
 	s.Require().NotZero(s.userID)
+
+	// FindAll
+	allReq := &pb.FindAllUserRequest{Page: 1, PageSize: 10}
+	resA, err := s.userH.FindAll(ctx, allReq)
+	s.NoError(err)
+	s.GreaterOrEqual(resA.PaginationMeta.TotalRecords, int32(1))
+
+	// FindByActive
+	active, err := s.userH.FindByActive(ctx, allReq)
+	s.NoError(err)
+	s.GreaterOrEqual(active.PaginationMeta.TotalRecords, int32(1))
+}
+
+func (s *UserGapiTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
+	s.Require().NotZero(s.userID)
+
+	// Trash
+	trashed, err := s.userH.TrashedUser(ctx, &pb.FindByIdUserRequest{Id: s.userID})
+	s.NoError(err)
+	s.NotNil(trashed)
+
+	// FindByTrashed
+	trashedList, err := s.userH.FindByTrashed(ctx, &pb.FindAllUserRequest{Page: 1, PageSize: 10})
+	s.NoError(err)
+	s.GreaterOrEqual(trashedList.PaginationMeta.TotalRecords, int32(1))
+
+	// Restore
+	restored, err := s.userH.RestoreUser(ctx, &pb.FindByIdUserRequest{Id: s.userID})
+	s.NoError(err)
+	s.NotNil(restored)
+}
+
+func (s *UserGapiTestSuite) Test4_BulkOperations() {
 	ctx := context.Background()
 
-	findReq := &pb.FindByIdUserRequest{
-		Id: int32(s.userID),
-	}
-	found, err := s.queryClient.FindById(ctx, findReq)
+	// Restore All
+	resR, err := s.userH.RestoreAllUser(ctx, &emptypb.Empty{})
 	s.NoError(err)
-	s.Equal(int32(s.userID), found.Data.Id)
+	s.Equal("success", resR.Status)
+
+	// Delete All Permanent
+	resD, err := s.userH.DeleteAllUserPermanent(ctx, &emptypb.Empty{})
+	s.NoError(err)
+	s.Equal("success", resD.Status)
 }
 
 func TestUserGapiSuite(t *testing.T) {

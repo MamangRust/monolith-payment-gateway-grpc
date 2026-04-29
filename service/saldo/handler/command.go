@@ -73,7 +73,6 @@ func (s *saldoCommandHandleGrpc) UpdateSaldo(ctx context.Context, req *pb.Update
 	if err := request.Validate(); err != nil {
 		return nil, saldo_errors.ErrGrpcValidateUpdateSaldo
 	}
-
 	saldo, err := s.service.UpdateSaldo(ctx, &request)
 	if err != nil {
 		return nil, errors.ToGrpcError(err)
@@ -92,6 +91,38 @@ func (s *saldoCommandHandleGrpc) UpdateSaldo(ctx context.Context, req *pb.Update
 	return &pb.ApiResponseSaldo{
 		Status:  "success",
 		Message: "Successfully updated saldo record",
+		Data:    protoSaldo,
+	}, nil
+}
+
+func (s *saldoCommandHandleGrpc) UpdateSaldoBalance(ctx context.Context, req *pb.UpdateSaldoBalanceRequest) (*pb.ApiResponseSaldo, error) {
+	request := requests.UpdateSaldoBalance{
+		CardNumber:   req.GetCardNumber(),
+		TotalBalance: int(req.GetTotalBalance()),
+	}
+
+	if err := request.Validate(); err != nil {
+		return nil, saldo_errors.ErrGrpcValidateUpdateSaldo
+	}
+
+	saldo, err := s.service.UpdateSaldoBalance(ctx, &request)
+	if err != nil {
+		return nil, errors.ToGrpcError(err)
+	}
+
+	protoSaldo := &pb.SaldoResponse{
+		SaldoId:        int32(saldo.SaldoID),
+		CardNumber:     saldo.CardNumber,
+		TotalBalance:   int32(saldo.TotalBalance),
+		WithdrawTime:   saldo.WithdrawTime.Time.Format(time.RFC3339),
+		WithdrawAmount: Int32Value(saldo.WithdrawAmount),
+		CreatedAt:      saldo.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:      saldo.UpdatedAt.Time.Format(time.RFC3339),
+	}
+
+	return &pb.ApiResponseSaldo{
+		Status:  "success",
+		Message: "Successfully updated saldo balance record",
 		Data:    protoSaldo,
 	}, nil
 }

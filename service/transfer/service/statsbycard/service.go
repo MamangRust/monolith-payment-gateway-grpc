@@ -26,14 +26,14 @@ type DepsStats struct {
 
 func NewTransferStatsByCardService(deps *DepsStats) TransferStatsByCardService {
 	return &transferStatsByCardService{
-		TransferStatsByCardAmountService: NewTransferStatsByCardAmountService(&transferStatsByCardAmountDeps{
+		TransferStatsByCardAmountService: NewTransferStatsByCardAmountService(&TransferStatsByCardAmountDeps{
 			Cache:         deps.Cache,
 			Sender:        deps.Repository,
 			Receiver:      deps.Repository,
 			Logger:        deps.Logger,
 			Observability: deps.Observability,
 		}),
-		TransferStatsByCardStatusService: NewTransferStatsByCardStatusService(&transferStatsByCardStatusDeps{
+		TransferStatsByCardStatusService: NewTransferStatsByCardStatusService(&TransferStatsByCardStatusDeps{
 			Cache:         deps.Cache,
 			Repository:    deps.Repository,
 			Logger:        deps.Logger,
@@ -41,3 +41,4 @@ func NewTransferStatsByCardService(deps *DepsStats) TransferStatsByCardService {
 		}),
 	}
 }
+

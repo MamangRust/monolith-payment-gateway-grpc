@@ -1,51 +1,49 @@
 package user_test
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
-	api "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/user"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/user"
+	user_handler "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	app_errors "github.com/MamangRust/monolith-payment-gateway-shared/errors"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
-	tests "github.com/MamangRust/monolith-payment-gateway-test"
-	gapi "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	"github.com/MamangRust/monolith-payment-gateway-user/handler"
 	"github.com/MamangRust/monolith-payment-gateway-user/repository"
 	"github.com/MamangRust/monolith-payment-gateway-user/service"
-
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
+	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
+	redis_client "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
-type UserHandlerTestSuite struct {
+type UserApiTestSuite struct {
 	suite.Suite
-	ts          *tests.TestSuite
-	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
-	grpcServer  *grpc.Server
-	client      pb.UserCommandServiceClient
-	conn        *grpc.ClientConn
-	router      *echo.Echo
-	userID      int
-	userEmail   string
+	ts         *tests.TestSuite
+	dbPool     *pgxpool.Pool
+	echo       *echo.Echo
+	grpcServer *grpc.Server
+	lis        *bufconn.Listener
+	userID     int32
 }
 
-func (s *UserHandlerTestSuite) SetupSuite() {
+func (s *UserApiTestSuite) SetupSuite() {
 	ts, err := tests.SetupTestSuite()
 	s.Require().NoError(err)
 	s.ts = ts
@@ -54,9 +52,9 @@ func (s *UserHandlerTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.dbPool = pool
 
-	opts, err := redis.ParseURL(s.ts.RedisURL)
+	opts, err := redis_client.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis_client.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
@@ -65,121 +63,112 @@ func (s *UserHandlerTestSuite) SetupSuite() {
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
 	hasher := hash.NewHashingPassword()
-	obs, _ := observability.NewObservability("test", log)
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	userService := service.NewService(&service.Deps{
-		Cache:        cacheStore,
+	svc := service.NewService(&service.Deps{
 		Repositories: repos,
-		Hash:         hasher,
 		Logger:       log,
+		Cache:        cacheStore,
+		Hash:         hasher,
 	})
 
-	// Start gRPC Server
-	userHandler := gapi.NewHandler(userService)
-	server := grpc.NewServer()
-	pb.RegisterUserQueryServiceServer(server, userHandler)
-	pb.RegisterUserCommandServiceServer(server, userHandler)
-	s.grpcServer = server
+	userHandler := handler.NewHandler(svc)
 
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
+	// Setup gRPC server
+	s.lis = bufconn.Listen(1024 * 1024)
+	s.grpcServer = grpc.NewServer()
+	pb.RegisterUserQueryServiceServer(s.grpcServer, userHandler)
+	pb.RegisterUserCommandServiceServer(s.grpcServer, userHandler)
 
 	go func() {
-		_ = server.Serve(lis)
+		if err := s.grpcServer.Serve(s.lis); err != nil {
+		}
 	}()
 
-	// Create gRPC Client
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	s.echo = echo.New()
+
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return s.lis.Dial()
+		}),
+		grpc.WithInsecure())
 	s.Require().NoError(err)
-	s.conn = conn
-	s.client = pb.NewUserCommandServiceClient(conn)
 
-	// Setup Echo
-	s.router = echo.New()
-	apiErrorHandler := app_errors.NewApiHandler(obs, log)
+	obs, err := observability.NewObservability("test", log)
+	s.Require().NoError(err)
+	apiHandler := errors.NewApiHandler(obs, log)
 
-	api.RegisterUserHandler(&api.DepsUser{
+	user_handler.RegisterUserHandler(&user_handler.DepsUser{
 		Client:     conn,
-		E:          s.router,
+		E:          s.echo,
 		Logger:     log,
 		Cache:      cacheStore,
-		ApiHandler: apiErrorHandler,
+		ApiHandler: apiHandler,
 	})
 }
 
-func (s *UserHandlerTestSuite) TearDownSuite() {
-	s.conn.Close()
-	s.grpcServer.Stop()
-	s.redisClient.Close()
-	s.dbPool.Close()
-	s.ts.Teardown()
-}
-
-func (s *UserHandlerTestSuite) Test1_CreateUser() {
-	s.userEmail = "handler.user@example.com"
-	req := requests.CreateUserRequest{
-		FirstName:       "Handler",
-		LastName:        "User",
-		Email:           s.userEmail,
-		Password:        "password123",
-		ConfirmPassword: "password123",
+func (s *UserApiTestSuite) TearDownSuite() {
+	if s.grpcServer != nil {
+		s.grpcServer.Stop()
 	}
-	body, _ := json.Marshal(req)
-
-	request := httptest.NewRequest(http.MethodPost, "/api/user-command/create", bytes.NewBuffer(body))
-	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-
-	s.router.ServeHTTP(rec, request)
-	s.Require().Equal(http.StatusOK, rec.Code, rec.Body.String())
-
-	var createRes map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &createRes)
-	userData := createRes["data"].(map[string]interface{})
-	s.userID = int(userData["id"].(float64))
-}
-
-func (s *UserHandlerTestSuite) Test2_FindUserById() {
-	s.Require().NotZero(s.userID)
-
-	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/user-query/%d", s.userID), nil)
-	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
-	s.Equal(http.StatusOK, rec.Code)
-}
-
-func (s *UserHandlerTestSuite) Test3_UpdateUser() {
-	s.Require().NotZero(s.userID)
-
-	updateReq := requests.UpdateUserRequest{
-		FirstName:       "Updated",
-		LastName:        "User",
-		Email:           s.userEmail,
-		Password:        "password123",
-		ConfirmPassword: "password123",
+	if s.dbPool != nil {
+		s.dbPool.Close()
 	}
-	updateBody, _ := json.Marshal(updateReq)
-	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/user-command/update/%d", s.userID), bytes.NewBuffer(updateBody))
-	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
+}
+
+func (s *UserApiTestSuite) Test1_UserLifecycle() {
+	// Create
+	email := fmt.Sprintf("api.%d@example.com", time.Now().UnixNano())
+	reqJSON := fmt.Sprintf(`{"firstname": "JohnApi", "lastname": "DoeApi", "email": "%s", "password": "Password123!", "confirm_password": "Password123!"}`, email)
+	req := httptest.NewRequest(http.MethodPost, "/api/user-command/create", strings.NewReader(reqJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
+	s.echo.ServeHTTP(rec, req)
+
+	s.Equal(http.StatusOK, rec.Code)
+	var res map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &res)
+	s.NoError(err)
+	data := res["data"].(map[string]interface{})
+	s.userID = int32(data["id"].(float64))
+	s.Equal("JohnApi", data["firstname"])
+
+	// FindById
+	req = httptest.NewRequest(http.MethodGet, "/api/user-query/"+strconv.Itoa(int(s.userID)), nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// Update
+	updateJSON := fmt.Sprintf(`{"firstname": "JohnUpdated", "lastname": "DoeApi", "email": "%s", "password": "Password123!", "confirm_password": "Password123!"}`, email)
+	req = httptest.NewRequest(http.MethodPost, "/api/user-command/update/"+strconv.Itoa(int(s.userID)), strings.NewReader(updateJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 }
 
-func (s *UserHandlerTestSuite) Test4_PermanentDeleteUser() {
-	s.Require().NotZero(s.userID)
-
-	request := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/user-command/permanent/%d", s.userID), nil)
+func (s *UserApiTestSuite) Test2_QueryOperations() {
+	// FindAll
+	req := httptest.NewRequest(http.MethodGet, "/api/user-query?page=1&page_size=10", nil)
 	rec := httptest.NewRecorder()
-	s.router.ServeHTTP(rec, request)
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// FindActive
+	req = httptest.NewRequest(http.MethodGet, "/api/user-query/active?page=1&page_size=10", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 }
 
-func TestUserHandlerSuite(t *testing.T) {
+func TestUserApiSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	suite.Run(t, new(UserHandlerTestSuite))
+	suite.Run(t, new(UserApiTestSuite))
 }

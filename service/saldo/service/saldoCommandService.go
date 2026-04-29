@@ -90,6 +90,31 @@ func (s *saldoCommandService) UpdateSaldo(ctx context.Context, request *requests
 	return res, nil
 }
 
+func (s *saldoCommandService) UpdateSaldoBalance(ctx context.Context, request *requests.UpdateSaldoBalance) (*db.UpdateSaldoBalanceRow, error) {
+	const method = "UpdateSaldoBalance"
+
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
+	defer func() { end(status) }()
+
+	_, err := s.cardRepository.FindCardByCardNumber(ctx, request.CardNumber)
+	if err != nil {
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateSaldoBalanceRow](s.logger, err, method, span, zap.String("card_number", request.CardNumber))
+	}
+
+	res, err := s.saldoCommandRepository.UpdateSaldoBalance(ctx, request)
+	if err != nil {
+		status = "error"
+		return errorhandler.HandleError[*db.UpdateSaldoBalanceRow](s.logger, err, method, span, zap.String("card_number", request.CardNumber))
+	}
+
+	s.cache.DeleteSaldoCache(ctx, int(res.SaldoID))
+
+	logSuccess("Successfully updated saldo balance", zap.String("card_number", request.CardNumber), zap.Float64("amount", float64(request.TotalBalance)))
+
+	return res, nil
+}
+
 func (s *saldoCommandService) UpdateSaldoWithdraw(ctx context.Context, request *requests.UpdateSaldoWithdraw) (*db.UpdateSaldoWithdrawRow, error) {
 	const method = "UpdateSaldoWithdraw"
 

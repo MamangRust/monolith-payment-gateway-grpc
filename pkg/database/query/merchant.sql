@@ -407,90 +407,84 @@ SELECT year, total_amount
 FROM last_five_years
 ORDER BY year;
 
--- GetMonthlyTotalAmountMerchant: Retrieves total transaction amounts for the current and previous month
+-- GetMonthlyTotalAmountMerchant: Retrieves total transaction amounts for all 12 months of a given year
 -- Purpose: Provide monthly transaction summary including zero values if no transactions exist
 -- Parameters:
---   $1: reference_date - Any date within the target (current) month
+--   $1: reference_date - Any date within the target year
 -- Returns:
 --   - Year (as text)
 --   - Month (abbreviated name, e.g., Jan, Feb)
 --   - Total transaction amount for each month
 -- Business Logic:
---   - Aggregates total transaction amounts for the target month and the month before
+--   - Aggregates total transaction amounts for all 12 months of the year
 --   - Filters only active (non-deleted) transactions and merchants
---   - Includes 0 as total_amount if there's no transaction data for either month
+--   - Includes 0 as total_amount if there's no transaction data for a month
 --   - Uses UNION ALL to combine real data with "missing month" placeholders
---   - Results are sorted by year and month (most recent first)
+--   - Results are sorted by year and month
 -- name: GetMonthlyTotalAmountMerchant :many
 WITH
     monthly_data AS (
         SELECT EXTRACT(
                 YEAR
                 FROM t.transaction_time
-            )::text AS year, TO_CHAR(t.transaction_time, 'Mon') AS month, COALESCE(SUM(t.amount), 0)::integer AS total_amount
+            )::integer AS year, EXTRACT(
+                MONTH
+                FROM t.transaction_time
+            )::integer AS month, COALESCE(SUM(t.amount), 0)::integer AS total_amount
         FROM transactions t
             INNER JOIN merchants m ON t.merchant_id = m.merchant_id
         WHERE
             t.deleted_at IS NULL
             AND m.deleted_at IS NULL
-            AND (
-                t.transaction_time >= date_trunc('month', $1::timestamp) - interval '1 month'
-                AND t.transaction_time < date_trunc('month', $1::timestamp) + interval '1 month'
+            AND EXTRACT(
+                YEAR
+                FROM t.transaction_time
+            ) = EXTRACT(
+                YEAR
+                FROM $1::timestamp
             )
         GROUP BY
             EXTRACT(
                 YEAR
                 FROM t.transaction_time
             ),
-            TO_CHAR(t.transaction_time, 'Mon')
-    ),
-    missing_months AS (
-        SELECT EXTRACT(
-                YEAR
-                FROM $1::timestamp
-            )::text AS year, TO_CHAR($1::timestamp, 'Mon') AS month, 0::integer AS total_amount
-        WHERE
-            NOT EXISTS (
-                SELECT 1
-                FROM monthly_data
-                WHERE
-                    year = EXTRACT(
-                        YEAR
-                        FROM $1::timestamp
-                    )::text
-                    AND month = TO_CHAR($1::timestamp, 'Mon')
+            EXTRACT(
+                MONTH
+                FROM t.transaction_time
             )
+    ),
+    formatted_data AS (
+        SELECT year::text, TO_CHAR(
+                TO_DATE(month::text, 'MM'), 'Mon'
+            ) AS month, total_amount
+        FROM monthly_data
         UNION ALL
         SELECT EXTRACT(
                 YEAR
-                FROM date_trunc('month', $1::timestamp) - interval '1 month'
-            )::text AS year, TO_CHAR(
-                date_trunc('month', $1::timestamp) - interval '1 month', 'Mon'
-            ) AS month, 0::integer AS total_amount
+                FROM gs.month
+            )::text AS year, TO_CHAR(gs.month, 'Mon') AS month, 0::integer AS total_amount
+        FROM generate_series(
+                date_trunc('year', $1::timestamp), date_trunc('year', $1::timestamp) + interval '11 month', interval '1 month'
+            ) AS gs (month)
         WHERE
             NOT EXISTS (
                 SELECT 1
-                FROM monthly_data
+                FROM monthly_data md
                 WHERE
-                    year = EXTRACT(
+                    md.year = EXTRACT(
                         YEAR
-                        FROM date_trunc('month', $1::timestamp) - interval '1 month'
-                    )::text
-                    AND month = TO_CHAR(
-                        date_trunc('month', $1::timestamp) - interval '1 month',
-                        'Mon'
-                    )
+                        FROM gs.month
+                    )::integer
+                    AND md.month = EXTRACT(
+                        MONTH
+                        FROM gs.month
+                    )::integer
             )
     )
 SELECT year, month, total_amount
-FROM (
-        SELECT year, month, total_amount
-        FROM monthly_data
-        UNION ALL
-        SELECT year, month, total_amount
-        FROM missing_months
-    ) combined
-ORDER BY year DESC, TO_DATE(month, 'Mon') DESC;
+FROM formatted_data
+ORDER BY year ASC, TO_DATE(month, 'Mon') ASC;
+
 
 -- GetYearlyTotalAmountMerchant: Retrieves total transaction amounts for the current and previous year
 -- Purpose: Provide yearly transaction summary with fallback to 0 if no transactions exist
@@ -693,15 +687,15 @@ WITH
         WHERE
             t.deleted_at IS NULL
             AND m.deleted_at IS NULL
-            AND t.merchant_id = $1
+            AND t.merchant_id = $2
             AND EXTRACT(
                 YEAR
                 FROM t.transaction_time
-            ) >= $2 - 4
+            ) >= $1 - 4
             AND EXTRACT(
                 YEAR
                 FROM t.transaction_time
-            ) <= $2
+            ) <= $1
         GROUP BY
             EXTRACT(
                 YEAR
@@ -883,7 +877,7 @@ WITH
     )
 SELECT *
 FROM formatted_data
-ORDER BY year DESC, TO_DATE(month, 'Mon') DESC;
+ORDER BY year ASC, TO_DATE(month, 'Mon') ASC;
 
 -- GetYearlyTotalAmountByMerchant: Retrieves total transaction amounts for the current and previous year
 -- Purpose: Provide yearly transaction summary with fallback to 0 if no transactions exist
@@ -1045,9 +1039,12 @@ FROM
     )
     AND t.payment_method = pm.payment_method
     AND t.deleted_at IS NULL
-    LEFT JOIN merchants mch ON t.merchant_id = mch.merchant_id
-    AND mch.deleted_at IS NULL
-    AND mch.api_key = $2
+    AND EXISTS (
+        SELECT 1 FROM merchants mch 
+        WHERE mch.merchant_id = t.merchant_id 
+        AND mch.deleted_at IS NULL 
+        AND mch.api_key = $2
+    )
 GROUP BY
     m.month,
     pm.payment_method
@@ -1140,9 +1137,12 @@ FROM
         FROM m.month
     )
     AND t.deleted_at IS NULL
-    LEFT JOIN merchants mch ON t.merchant_id = mch.merchant_id
-    AND mch.deleted_at IS NULL
-    AND mch.api_key = $2
+    AND EXISTS (
+        SELECT 1 FROM merchants mch 
+        WHERE mch.merchant_id = t.merchant_id 
+        AND mch.deleted_at IS NULL 
+        AND mch.api_key = $2
+    )
 GROUP BY
     m.month
 ORDER BY m.month;
@@ -1270,7 +1270,7 @@ WITH
     )
 SELECT *
 FROM formatted_data
-ORDER BY year DESC, TO_DATE(month, 'Mon') DESC;
+ORDER BY year ASC, TO_DATE(month, 'Mon') ASC;
 
 -- GetYearlyTotalAmountByApikey: Retrieves total transaction amounts for the current and previous year
 -- Purpose: Provide yearly transaction summary with fallback to 0 if no transactions exist

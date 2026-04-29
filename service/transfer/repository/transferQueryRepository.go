@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"database/sql"
+	"github.com/jackc/pgx/v5"
 	"errors"
 
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
@@ -79,7 +79,7 @@ func (r *transferQueryRepository) FindById(ctx context.Context, id int) (*db.Get
 	transfer, err := r.db.GetTransferByID(ctx, int32(id))
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, transfer_errors.ErrFindTransferByIdFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -92,7 +92,7 @@ func (r *transferQueryRepository) FindTransferByTransferFrom(ctx context.Context
 	res, err := r.db.GetTransfersBySourceCard(ctx, transfer_from)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, transfer_errors.ErrFindTransferByTransferFromFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)
@@ -105,7 +105,7 @@ func (r *transferQueryRepository) FindTransferByTransferTo(ctx context.Context, 
 	res, err := r.db.GetTransfersByDestinationCard(ctx, transfer_to)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, transfer_errors.ErrFindTransferByTransferToFailed.WithInternal(err)
 		}
 		return nil, sharedErrors.ErrInternal.WithInternal(err)

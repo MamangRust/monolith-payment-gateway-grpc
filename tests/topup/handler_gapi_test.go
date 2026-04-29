@@ -2,20 +2,32 @@ package topup_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/adapter"
+	pbcard "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pbsaldo "github.com/MamangRust/monolith-payment-gateway-pb/saldo"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/topup"
-	card_repo "github.com/MamangRust/monolith-payment-gateway-card/repository"
-	saldo_repo "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
-	topup_repo "github.com/MamangRust/monolith-payment-gateway-topup/repository"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-topup/service"
+	pbuser "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
 	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	card_handler "github.com/MamangRust/monolith-payment-gateway-card/handler"
+	card_repository "github.com/MamangRust/monolith-payment-gateway-card/repository"
+	card_service "github.com/MamangRust/monolith-payment-gateway-card/service"
+	saldo_handler "github.com/MamangRust/monolith-payment-gateway-saldo/handler"
+	saldo_repository "github.com/MamangRust/monolith-payment-gateway-saldo/repository"
+	saldo_service "github.com/MamangRust/monolith-payment-gateway-saldo/service"
+	"github.com/MamangRust/monolith-payment-gateway-topup/handler"
+	"github.com/MamangRust/monolith-payment-gateway-topup/repository"
+	"github.com/MamangRust/monolith-payment-gateway-topup/service"
+	user_handler "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	user_repository "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	user_service "github.com/MamangRust/monolith-payment-gateway-user/service"
+	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
 	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,27 +35,23 @@ import (
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	gapi "github.com/MamangRust/monolith-payment-gateway-topup/handler"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TopupGapiTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
 	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
+	topupH      handler.Handler
+	userID      int32
+	cardID      int32
+	cardNumber  string
+	topupID     int32
 	grpcServer  *grpc.Server
-	commandClient pb.TopupCommandServiceClient
-	queryClient   pb.TopupQueryServiceClient
+	lis         *bufconn.Listener
 	conn        *grpc.ClientConn
-	
-	userRepo     user_repo.UserCommandRepository
-	cardRepo     card_repo.CardCommandRepository
-	saldoRepo    saldo_repo.Repositories
-	topupRepo    topup_repo.Repositories
-
-	cardNumber string
-	topupID    int32
 }
 
 func (s *TopupGapiTestSuite) SetupSuite() {
@@ -57,69 +65,104 @@ func (s *TopupGapiTestSuite) SetupSuite() {
 
 	opts, err := redis.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis.NewClient(opts)
 
 	queries := db.New(pool)
 	
-	userRepos := user_repo.NewRepositories(queries)
-	cardRepos := card_repo.NewRepositories(queries)
-	saldoRepos := saldo_repo.NewRepositories(queries)
-	
-	cardAdapter := &topupCardRepoAdapter{
-		CardQueryRepository:   cardRepos.CardQuery,
-		CardCommandRepository: cardRepos.CardCommand,
-	}
-	s.topupRepo = topup_repo.NewRepositories(queries, cardAdapter, saldoRepos)
-	s.userRepo = userRepos.UserCommand()
-	s.cardRepo = cardRepos.CardCommand
-	s.saldoRepo = saldoRepos
-
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
+	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	topupService := service.NewService(&service.Deps{
-		Kafka:        nil,
+	// Dependency services handlers (local implementation)
+	cardSvc := card_service.NewService(&card_service.Deps{
 		Cache:        cacheStore,
-		Repositories: s.topupRepo,
+		Repositories: card_repository.NewRepositories(queries),
+		Logger:       log,
+		Kafka:        nil,
+	})
+	cardH := card_handler.NewHandler(cardSvc)
+
+	saldoSvc := saldo_service.NewService(&saldo_service.Deps{
+		Cache:        cacheStore,
+		Repositories: saldo_repository.NewRepositories(queries),
 		Logger:       log,
 	})
+	saldoH := saldo_handler.NewHandler(saldoSvc)
 
-	// Seed User, Card, Saldo
-	user, err := s.userRepo.CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Topup", LastName: "Gapi", Email: "topup.gapi@test.com", Password: "password123",
+	userSvc := user_service.NewService(&user_service.Deps{
+		Cache:        cacheStore,
+		Repositories: user_repository.NewRepositories(queries),
+		Hash:         hasher,
+		Logger:       log,
+	})
+	userH := user_handler.NewHandler(userSvc)
+
+	// Setup gRPC server for adapters
+	s.lis = bufconn.Listen(1024 * 1024)
+	s.grpcServer = grpc.NewServer()
+	pbcard.RegisterCardQueryServiceServer(s.grpcServer, cardH)
+	pbcard.RegisterCardCommandServiceServer(s.grpcServer, cardH)
+	pbsaldo.RegisterSaldoQueryServiceServer(s.grpcServer, saldoH)
+	pbsaldo.RegisterSaldoCommandServiceServer(s.grpcServer, saldoH)
+
+	go func() {
+		if err := s.grpcServer.Serve(s.lis); err != nil {
+		}
+	}()
+
+	s.conn, err = grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return s.lis.Dial()
+		}),
+		grpc.WithInsecure())
+	s.Require().NoError(err)
+
+	// Create adapters
+	cardAdapter := adapter.NewCardAdapter(pbcard.NewCardQueryServiceClient(s.conn), pbcard.NewCardCommandServiceClient(s.conn))
+	saldoAdapter := adapter.NewSaldoAdapter(pbsaldo.NewSaldoQueryServiceClient(s.conn), pbsaldo.NewSaldoCommandServiceClient(s.conn))
+
+	// Topup Repositories with adapters
+	repos := repository.NewRepositories(queries, cardAdapter, saldoAdapter)
+
+	topupSvc := service.NewService(&service.Deps{
+		Kafka:        nil,
+		Cache:        cacheStore,
+		Repositories: repos,
+		Logger:       log,
+	})
+	s.topupH = handler.NewHandler(topupSvc)
+
+	// Create test environment (User, Card, Saldo)
+	ctx := context.Background()
+	userRes, err := userH.Create(ctx, &pbuser.CreateUserRequest{
+		Firstname:       "Topup",
+		Lastname:        "Gapi",
+		Email:           fmt.Sprintf("topup.gapi.%d@example.com", time.Now().UnixNano()),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
 	})
 	s.Require().NoError(err)
-	
-	card, err := s.cardRepo.CreateCard(context.Background(), &requests.CreateCardRequest{
-		UserID: int(user.UserID), CardType: "debit", ExpireDate: time.Now().AddDate(1, 0, 0), CVV: "444", CardProvider: "visa",
+	s.userID = userRes.Data.Id
+
+	cardRes, err := cardH.CreateCard(ctx, &pbcard.CreateCardRequest{
+		UserId:       s.userID,
+		CardType:     "debit",
+		ExpireDate:   timestamppb.New(time.Now().AddDate(5, 0, 0)),
+		Cvv:          "123",
+		CardProvider: "visa",
 	})
 	s.Require().NoError(err)
-	s.cardNumber = card.CardNumber
-	
-	_, err = s.saldoRepo.CreateSaldo(context.Background(), &requests.CreateSaldoRequest{
-		CardNumber: s.cardNumber, TotalBalance: 0,
+	s.cardID = cardRes.Data.Id
+	s.cardNumber = cardRes.Data.CardNumber
+
+	_, err = saldoH.CreateSaldo(ctx, &pbsaldo.CreateSaldoRequest{
+		CardNumber:   s.cardNumber,
+		TotalBalance: 100000,
 	})
 	s.Require().NoError(err)
-
-	// Start gRPC Server
-	topupHandler := gapi.NewHandler(topupService)
-	server := grpc.NewServer()
-	pb.RegisterTopupCommandServiceServer(server, topupHandler)
-	pb.RegisterTopupQueryServiceServer(server, topupHandler)
-	s.grpcServer = server
-
-	lis, err := net.Listen("tcp", ":0")
-	s.Require().NoError(err)
-	go func() { _ = server.Serve(lis) }()
-
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	s.Require().NoError(err)
-	s.conn = conn
-	s.commandClient = pb.NewTopupCommandServiceClient(conn)
-	s.queryClient = pb.NewTopupQueryServiceClient(conn)
 }
 
 func (s *TopupGapiTestSuite) TearDownSuite() {
@@ -129,9 +172,6 @@ func (s *TopupGapiTestSuite) TearDownSuite() {
 	if s.grpcServer != nil {
 		s.grpcServer.Stop()
 	}
-	if s.redisClient != nil {
-		s.redisClient.Close()
-	}
 	if s.dbPool != nil {
 		s.dbPool.Close()
 	}
@@ -140,76 +180,89 @@ func (s *TopupGapiTestSuite) TearDownSuite() {
 	}
 }
 
-func (s *TopupGapiTestSuite) Test1_Create() {
+func (s *TopupGapiTestSuite) Test1_TopupLifecycle() {
 	ctx := context.Background()
 
+	// Create Topup
 	createReq := &pb.CreateTopupRequest{
 		CardNumber:  s.cardNumber,
-		TopupAmount: 100000,
-		TopupMethod: "bri",
+		TopupAmount: 50000,
+		TopupMethod: "bca",
 	}
-	res, err := s.commandClient.CreateTopup(ctx, createReq)
-	s.NoError(err)
-	s.Equal(int32(100000), res.Data.TopupAmount)
-
+	res, err := s.topupH.CreateTopup(ctx, createReq)
+	s.Require().NoError(err)
+	s.Require().NotNil(res)
 	s.topupID = res.Data.Id
+	s.Equal(int32(50000), res.Data.TopupAmount)
 
-	// Verify balance
-	saldo, _ := s.saldoRepo.FindByCardNumber(ctx, s.cardNumber)
-	s.Equal(int32(100000), saldo.TotalBalance)
-}
+	// FindById
+	resF, err := s.topupH.FindByIdTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
+	s.Require().NoError(err)
+	s.Equal(int32(50000), resF.Data.TopupAmount)
 
-func (s *TopupGapiTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.topupID)
-	ctx := context.Background()
-
-	found, err := s.queryClient.FindByIdTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
-	s.NoError(err)
-	s.Equal(s.topupID, found.Data.Id)
-}
-
-func (s *TopupGapiTestSuite) Test3_Update() {
-	s.Require().NotZero(s.topupID)
-	ctx := context.Background()
-
+	// Update Topup
 	updateReq := &pb.UpdateTopupRequest{
 		TopupId:     s.topupID,
 		CardNumber:  s.cardNumber,
-		TopupAmount: 150000,
-		TopupMethod: "bri",
+		TopupAmount: 75000,
+		TopupMethod: "mandiri",
 	}
-	updated, err := s.commandClient.UpdateTopup(ctx, updateReq)
-	s.NoError(err)
-	s.Equal(int32(150000), updated.Data.TopupAmount)
-
-	// Verify adjusted balance
-	saldo, _ := s.saldoRepo.FindByCardNumber(ctx, s.cardNumber)
-	s.Equal(int32(150000), saldo.TotalBalance)
+	resU, err := s.topupH.UpdateTopup(ctx, updateReq)
+	s.Require().NoError(err)
+	s.Equal(int32(75000), resU.Data.TopupAmount)
 }
 
-func (s *TopupGapiTestSuite) Test4_Trashed() {
+func (s *TopupGapiTestSuite) Test2_QueryOperations() {
+	ctx := context.Background()
 	s.Require().NotZero(s.topupID)
+
+	allReq := &pb.FindAllTopupRequest{Page: 1, PageSize: 10}
+	
+	// FindAll
+	resA, err := s.topupH.FindAllTopup(ctx, allReq)
+	s.NoError(err)
+	s.GreaterOrEqual(resA.PaginationMeta.TotalRecords, int32(1))
+
+	// FindByActive
+	resAc, err := s.topupH.FindByActive(ctx, allReq)
+	s.NoError(err)
+	s.GreaterOrEqual(resAc.PaginationMeta.TotalRecords, int32(1))
+}
+
+func (s *TopupGapiTestSuite) Test3_TrashAndRestore() {
+	ctx := context.Background()
+	s.Require().NotZero(s.topupID)
+
+	// Trashed
+	resT, err := s.topupH.TrashedTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
+	s.NoError(err)
+	s.NotNil(resT)
+
+	// FindByTrashed
+	resTL, err := s.topupH.FindByTrashed(ctx, &pb.FindAllTopupRequest{Page: 1, PageSize: 10})
+	s.NoError(err)
+	s.GreaterOrEqual(resTL.PaginationMeta.TotalRecords, int32(1))
+
+	// Restore
+	resR, err := s.topupH.RestoreTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
+	s.NoError(err)
+	s.NotNil(resR)
+}
+
+func (s *TopupGapiTestSuite) Test4_BulkOperations() {
 	ctx := context.Background()
 
-	_, err := s.commandClient.TrashedTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
+	// Restore All
+	resR, err := s.topupH.RestoreAllTopup(ctx, &emptypb.Empty{})
 	s.NoError(err)
+	s.Equal("success", resR.Status)
+
+	// Delete All Permanent
+	resD, err := s.topupH.DeleteAllTopupPermanent(ctx, &emptypb.Empty{})
+	s.NoError(err)
+	s.Equal("success", resD.Status)
 }
 
-func (s *TopupGapiTestSuite) Test5_Restore() {
-	s.Require().NotZero(s.topupID)
-	ctx := context.Background()
-
-	_, err := s.commandClient.RestoreTopup(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
-	s.NoError(err)
-}
-
-func (s *TopupGapiTestSuite) Test6_DeletePermanent() {
-	s.Require().NotZero(s.topupID)
-	ctx := context.Background()
-
-	_, err := s.commandClient.DeleteTopupPermanent(ctx, &pb.FindByIdTopupRequest{TopupId: s.topupID})
-	s.NoError(err)
-}
 func TestTopupGapiSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

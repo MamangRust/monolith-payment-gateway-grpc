@@ -38,6 +38,7 @@ func NewService(deps *Deps) Service {
 			Mencache:   cache,
 			Logger:     deps.Logger,
 			Repository: deps.Repositories,
+			Observability: observability,
 		}),
 	}
 }

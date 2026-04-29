@@ -64,7 +64,7 @@ SELECT
     COUNT(*) OVER () AS total_count
 FROM users
 WHERE
-    deleted_at IS NOT NULL
+    deleted_at IS NULL
     AND (
         $1::TEXT IS NULL
         OR firstname ILIKE '%' || $1 || '%'

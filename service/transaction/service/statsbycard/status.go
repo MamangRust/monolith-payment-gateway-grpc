@@ -18,7 +18,7 @@ import (
 type transactionStatsByCardStatusServiceDeps struct {
 	Cache cache.TransactionStatsByCardStatusCache
 
-	Repository repository.TransactonStatsByCardStatusRepository
+	Repository repository.TransactionStatsByCardStatusRepository
 
 	Logger logger.LoggerInterface
 
@@ -28,12 +28,13 @@ type transactionStatsByCardStatusServiceDeps struct {
 type transactionStatsByCardStatusService struct {
 	cache cache.TransactionStatsByCardStatusCache
 
-	repository repository.TransactonStatsByCardStatusRepository
+	repository repository.TransactionStatsByCardStatusRepository
 
 	logger logger.LoggerInterface
 
 	observability observability.TraceLoggerObservability
 }
+
 
 func NewTransactionStatsByCardStatusService(params *transactionStatsByCardStatusServiceDeps) TransactionStatsByCardStatusService {
 	return &transactionStatsByCardStatusService{

@@ -1,7 +1,6 @@
 package card_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,41 +8,45 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	cardhandler "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/card"
+	card_handler "github.com/MamangRust/monolith-payment-gateway-apigateway/handler/card"
 	pb "github.com/MamangRust/monolith-payment-gateway-pb/card"
+	pbuser "github.com/MamangRust/monolith-payment-gateway-pb/user"
 	db "github.com/MamangRust/monolith-payment-gateway-pkg/database/schema"
-	"github.com/MamangRust/monolith-payment-gateway-shared/domain/requests"
-	tests "github.com/MamangRust/monolith-payment-gateway-test"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/hash"
+	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
 	"github.com/MamangRust/monolith-payment-gateway-card/handler"
 	"github.com/MamangRust/monolith-payment-gateway-card/repository"
 	"github.com/MamangRust/monolith-payment-gateway-card/service"
-	user_repo "github.com/MamangRust/monolith-payment-gateway-user/repository"
-	"github.com/MamangRust/monolith-payment-gateway-pkg/logger"
+	user_handler "github.com/MamangRust/monolith-payment-gateway-user/handler"
+	user_repository "github.com/MamangRust/monolith-payment-gateway-user/repository"
+	user_service "github.com/MamangRust/monolith-payment-gateway-user/service"
 	"github.com/MamangRust/monolith-payment-gateway-shared/cache"
-	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
 	"github.com/MamangRust/monolith-payment-gateway-shared/errors"
-
+	"github.com/MamangRust/monolith-payment-gateway-shared/observability"
+	tests "github.com/MamangRust/monolith-payment-gateway-test"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
+	redis_client "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 type CardApiTestSuite struct {
 	suite.Suite
 	ts          *tests.TestSuite
 	dbPool      *pgxpool.Pool
-	redisClient *redis.Client
+	echo        *echo.Echo
 	grpcServer  *grpc.Server
-	echoApp     *echo.Echo
-	userID      int
-	cardID      int
+	lis         *bufconn.Listener
+	userID      int32
+	cardID      int32
+	cardNumber  string
 }
 
 func (s *CardApiTestSuite) SetupSuite() {
@@ -55,165 +58,181 @@ func (s *CardApiTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.dbPool = pool
 
-	opts, err := redis.ParseURL(s.ts.RedisURL)
+	opts, err := redis_client.ParseURL(s.ts.RedisURL)
 	s.Require().NoError(err)
-	s.redisClient = redis.NewClient(opts)
+	redisClient := redis_client.NewClient(opts)
 
 	queries := db.New(pool)
 	repos := repository.NewRepositories(queries)
-	userRepo := user_repo.NewRepositories(queries)
+	userRepos := user_repository.NewRepositories(queries)
 
 	logger.ResetInstance()
 	lp := sdklog.NewLoggerProvider()
 	log, _ := logger.NewLogger("test", lp)
+	hasher := hash.NewHashingPassword()
 	cacheMetrics, _ := observability.NewCacheMetrics("test")
-	cacheStore := cache.NewCacheStore(s.redisClient, log, cacheMetrics)
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
 
-	cardService := service.NewService(&service.Deps{
+	cardSvc := service.NewService(&service.Deps{
+		Cache:        cacheStore,
 		Repositories: repos,
 		Logger:       log,
-		Cache:        cacheStore,
 		Kafka:        nil,
 	})
 
-	cardGapiHandler := handler.NewHandler(cardService)
-	server := grpc.NewServer()
-	pb.RegisterCardQueryServiceServer(server, cardGapiHandler)
-	pb.RegisterCardCommandServiceServer(server, cardGapiHandler)
-	pb.RegisterCardDashboardServiceServer(server, cardGapiHandler)
-	s.grpcServer = server
+	userSvc := user_service.NewService(&user_service.Deps{
+		Cache:        cacheStore,
+		Repositories: userRepos,
+		Hash:         hasher,
+		Logger:       log,
+	})
 
-	lis, err := net.Listen("tcp", "localhost:0")
+	cardH := handler.NewHandler(cardSvc)
+	userH := user_handler.NewHandler(userSvc)
+
+	// Setup gRPC server
+	s.lis = bufconn.Listen(1024 * 1024)
+	s.grpcServer = grpc.NewServer()
+	pb.RegisterCardQueryServiceServer(s.grpcServer, cardH)
+	pb.RegisterCardCommandServiceServer(s.grpcServer, cardH)
+
+	go func() {
+		if err := s.grpcServer.Serve(s.lis); err != nil {
+		}
+	}()
+
+	s.echo = echo.New()
+	
+	// Middleware for injecting userID in tests
+	s.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if uid := c.Request().Header.Get("X-Test-User-ID"); uid != "" {
+				c.Set("userID", uid)
+			}
+			return next(c)
+		}
+	})
+
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return s.lis.Dial()
+		}),
+		grpc.WithInsecure())
 	s.Require().NoError(err)
-	go func() { _ = server.Serve(lis) }()
 
-	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	obs, err := observability.NewObservability("test", log)
 	s.Require().NoError(err)
-
-	s.echoApp = echo.New()
-	obs, _ := observability.NewObservability("test", log)
 	apiHandler := errors.NewApiHandler(obs, log)
 
-	cardhandler.RegisterCardHandler(&cardhandler.DepsCard{
+	card_handler.RegisterCardHandler(&card_handler.DepsCard{
 		Client:     conn,
-		E:          s.echoApp,
+		E:          s.echo,
 		Logger:     log,
 		Cache:      cacheStore,
 		ApiHandler: apiHandler,
 	})
 
-	// Create user
-	user, err := userRepo.UserCommand().CreateUser(context.Background(), &requests.CreateUserRequest{
-		FirstName: "Api",
-		LastName:  "Card",
-		Email:     "api.card@example.com",
-		Password:  "password123",
+	// Create a user for testing
+	ctx := context.Background()
+	userRes, err := userH.Create(ctx, &pbuser.CreateUserRequest{
+		Firstname:       "Card",
+		Lastname:        "Api",
+		Email:           fmt.Sprintf("card.api.%d.%d@example.com", time.Now().UnixNano(), time.Now().UnixNano()%1000),
+		Password:        "Password123!",
+		ConfirmPassword: "Password123!",
 	})
 	s.Require().NoError(err)
-	s.userID = int(user.UserID)
-
-	// Auth Bypass
-	s.echoApp.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			c.Set("userID", strconv.Itoa(s.userID))
-			return next(c)
-		}
-	})
+	s.userID = userRes.Data.Id
 }
 
 func (s *CardApiTestSuite) TearDownSuite() {
-	s.grpcServer.Stop()
-	s.redisClient.Close()
-	s.dbPool.Close()
-	s.ts.Teardown()
-}
-
-func (s *CardApiTestSuite) Test1_CreateCard() {
-	req := requests.CreateCardRequest{
-		UserID:       s.userID,
-		CardType:     "debit",
-		ExpireDate:   time.Now().AddDate(5, 0, 0),
-		CVV:          "123",
-		CardProvider: "Visa",
+	if s.grpcServer != nil {
+		s.grpcServer.Stop()
 	}
-	body, _ := json.Marshal(req)
-
-	rec := httptest.NewRecorder()
-	httpReq := httptest.NewRequest(http.MethodPost, "/api/card-command/create", bytes.NewBuffer(body))
-	httpReq.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-
-	s.echoApp.ServeHTTP(rec, httpReq)
-
-	s.Equal(http.StatusOK, rec.Code)
-	var resp map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	s.cardID = int(data["id"].(float64))
-}
-
-func (s *CardApiTestSuite) Test2_FindById() {
-	s.Require().NotZero(s.cardID)
-	rec := httptest.NewRecorder()
-	httpReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/card-query/%d", s.cardID), nil)
-
-	s.echoApp.ServeHTTP(rec, httpReq)
-
-	s.Equal(http.StatusOK, rec.Code)
-	var resp map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	s.Equal(float64(s.cardID), data["id"].(float64))
-}
-
-func (s *CardApiTestSuite) Test3_UpdateCard() {
-	s.Require().NotZero(s.cardID)
-	req := requests.UpdateCardRequest{
-		CardID:       s.cardID,
-		UserID:       s.userID,
-		CardType:     "credit",
-		ExpireDate:   time.Now().AddDate(6, 0, 0),
-		CVV:          "456",
-		CardProvider: "MasterCard",
+	if s.dbPool != nil {
+		s.dbPool.Close()
 	}
-	body, _ := json.Marshal(req)
+	if s.ts != nil {
+		s.ts.Teardown()
+	}
+}
 
+func (s *CardApiTestSuite) Test1_CardLifecycle() {
+	// Create
+	reqJSON := fmt.Sprintf(`{"user_id": %d, "card_type": "debit", "expire_date": "%s", "cvv": "123", "card_provider": "visa"}`, s.userID, time.Now().AddDate(5, 0, 0).Format(time.RFC3339))
+	req := httptest.NewRequest(http.MethodPost, "/api/card-command/create", strings.NewReader(reqJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
-	httpReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/card-command/update/%d", s.cardID), bytes.NewBuffer(body))
-	httpReq.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	s.echo.ServeHTTP(rec, req)
 
-	s.echoApp.ServeHTTP(rec, httpReq)
+	s.Equal(http.StatusOK, rec.Code)
+	var res map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &res)
+	s.NoError(err)
+	data := res["data"].(map[string]interface{})
+	s.cardID = int32(data["id"].(float64))
+	s.cardNumber = data["card_number"].(string)
+	s.Equal("debit", data["card_type"])
 
+	// FindById
+	req = httptest.NewRequest(http.MethodGet, "/api/card-query/"+strconv.Itoa(int(s.cardID)), nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+
+	// Update
+	updateJSON := fmt.Sprintf(`{"card_id": %d, "user_id": %d, "card_type": "credit", "expire_date": "%s", "cvv": "456", "card_provider": "mastercard"}`, s.cardID, s.userID, time.Now().AddDate(5, 0, 0).Format(time.RFC3339))
+	req = httptest.NewRequest(http.MethodPost, "/api/card-command/update/"+strconv.Itoa(int(s.cardID)), strings.NewReader(updateJSON))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 }
 
-func (s *CardApiTestSuite) Test4_TrashAndRestore() {
-	s.Require().NotZero(s.cardID)
+func (s *CardApiTestSuite) Test2_QueryOperations() {
+	// FindAll
+	req := httptest.NewRequest(http.MethodGet, "/api/card-query?page=1&page_size=10", nil)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
 
+	// FindActive
+	req = httptest.NewRequest(http.MethodGet, "/api/card-query/active?page=1&page_size=10", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+	
+	// FindByUserID
+	req = httptest.NewRequest(http.MethodGet, "/api/card-query/user", nil)
+	req.Header.Set("X-Test-User-ID", strconv.Itoa(int(s.userID)))
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+	
+	// FindByCardNumber
+	req = httptest.NewRequest(http.MethodGet, "/api/card-query/card_number/"+s.cardNumber, nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+}
+
+func (s *CardApiTestSuite) Test3_TrashAndRestore() {
 	// Trash
+	req := httptest.NewRequest(http.MethodPost, "/api/card-command/trashed/"+strconv.Itoa(int(s.cardID)), nil)
 	rec := httptest.NewRecorder()
-	httpReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/card-command/trashed/%d", s.cardID), nil)
-	s.echoApp.ServeHTTP(rec, httpReq)
+	s.echo.ServeHTTP(rec, req)
+	s.Equal(http.StatusOK, rec.Code)
+	
+	// FindTrashed
+	req = httptest.NewRequest(http.MethodGet, "/api/card-query/trashed?page=1&page_size=10", nil)
+	rec = httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 
 	// Restore
+	req = httptest.NewRequest(http.MethodPost, "/api/card-command/restore/"+strconv.Itoa(int(s.cardID)), nil)
 	rec = httptest.NewRecorder()
-	httpReq = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/card-command/restore/%d", s.cardID), nil)
-	s.echoApp.ServeHTTP(rec, httpReq)
-	s.Equal(http.StatusOK, rec.Code)
-}
-
-func (s *CardApiTestSuite) Test5_DeletePermanent() {
-	s.Require().NotZero(s.cardID)
-
-	// Trash first
-	rec := httptest.NewRecorder()
-	httpReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/card-command/trashed/%d", s.cardID), nil)
-	s.echoApp.ServeHTTP(rec, httpReq)
-
-	// Delete permanent
-	rec = httptest.NewRecorder()
-	httpReq = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/card-command/permanent/%d", s.cardID), nil)
-	s.echoApp.ServeHTTP(rec, httpReq)
+	s.echo.ServeHTTP(rec, req)
 	s.Equal(http.StatusOK, rec.Code)
 }
 

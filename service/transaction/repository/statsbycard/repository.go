@@ -5,22 +5,23 @@ import (
 )
 
 type TransactionStatsByCardRepository interface {
-	TransactonStatsByCardAmountRepository
+	TransactionStatsByCardAmountRepository
 	TransactionStatsByCardMethodRepository
-	TransactonStatsByCardStatusRepository
+	TransactionStatsByCardStatusRepository
 }
 
 type repository struct {
-	TransactonStatsByCardAmountRepository
+	TransactionStatsByCardAmountRepository
 	TransactionStatsByCardMethodRepository
-	TransactonStatsByCardStatusRepository
+	TransactionStatsByCardStatusRepository
 }
 
 func NewTransactionStatsRepository(db *db.Queries) TransactionStatsByCardRepository {
 
 	return &repository{
-		TransactonStatsByCardAmountRepository:  NewTransactionStatsByCardAmountRepository(db),
+		TransactionStatsByCardAmountRepository:  NewTransactionStatsByCardAmountRepository(db),
 		TransactionStatsByCardMethodRepository: NewTransactionStatsByCardMethodRepository(db),
-		TransactonStatsByCardStatusRepository:  NewTransactionStatsByCardStatusRepository(db),
+		TransactionStatsByCardStatusRepository:  NewTransactionStatsByCardStatusRepository(db),
 	}
 }
+
