@@ -1,29 +1,53 @@
-FROM golang:1.25.3-alpine3.22 AS builder
-
+FROM golang:1.25.7-bookworm AS builder
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod tidy && go mod download
+# Copy dependency manifests first (cache friendly)
+COPY shared/go.mod shared/go.sum ./shared/
+COPY pkg/go.mod pkg/go.sum ./pkg/
+COPY pb/go.mod pb/go.sum ./pb/
+# Copy all service go.mod files because they are inter-dependent
+COPY service/ ./service/
+RUN find service -type f ! -name "go.mod" ! -name "go.sum" -delete
 
-COPY . .
+# Copy workspace configuration
+COPY go.work ./
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o role ./cmd/main.go
+WORKDIR /app/service/role
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
+
+WORKDIR /app
+
+# Copy source
+COPY shared/ ./shared/
+COPY pkg/ ./pkg/
+COPY pb/ ./pb/
+COPY service/ ./service/
+
+WORKDIR /app/service/role
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/role_bin ./cmd/main.go
+
 
 FROM alpine:latest
 
+RUN apk --no-cache add ca-certificates
+
 RUN addgroup -g 1000 appuser && \
     adduser -D -s /bin/sh -u 1000 -G appuser appuser
-
-RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
 RUN mkdir -p /var/log/app && chown -R 1000:1000 /var/log/app
 
-COPY --from=builder /app/role .
+COPY --from=builder /app/role_bin ./role
 
-RUN chown 1000:1000 ./role
+RUN chown -R 1000:1000 ./role 
 
 USER appuser
 

@@ -101,3 +101,9 @@ require (
 	golang.org/x/tools v0.40.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace (
+	github.com/MamangRust/monolith-payment-gateway-pb => ../../pb
+	github.com/MamangRust/monolith-payment-gateway-pkg => ../../pkg
+	github.com/MamangRust/monolith-payment-gateway-shared => ../../shared
+)

@@ -150,6 +150,3 @@ replace (
 	github.com/MamangRust/monolith-payment-gateway-user => ../service/user
 	github.com/MamangRust/monolith-payment-gateway-withdraw => ../service/withdraw
 )
-replace github.com/MamangRust/monolith-payment-gateway-pb => pb
-replace github.com/MamangRust/monolith-payment-gateway-pkg => pkg
-replace github.com/MamangRust/monolith-payment-gateway-shared => shared

@@ -1,15 +1,38 @@
-FROM golang:1.23.9-alpine3.21 AS builder
+FROM golang:1.25.7-bookworm AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache git
+# Copy dependency manifests first (cache friendly)
+COPY shared/go.mod shared/go.sum ./shared/
+COPY pkg/go.mod pkg/go.sum ./pkg/
+COPY pb/go.mod pb/go.sum ./pb/
+# Copy all service go.mod files because they are inter-dependent
+COPY service/ ./service/
+RUN find service -type f ! -name "go.mod" ! -name "go.sum" -delete
 
-COPY go.mod go.sum ./
-RUN go mod tidy && go mod download
+# Copy workspace configuration
+COPY go.work ./
 
-COPY . .
+WORKDIR /app/service/migrate
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o migrate ./cmd/main.go
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
+
+WORKDIR /app
+
+# Copy source
+COPY shared/ ./shared/
+COPY pkg/ ./pkg/
+COPY pb/ ./pb/
+COPY service/ ./service/
+
+WORKDIR /app/service/migrate
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/migrate_bin ./cmd/main.go
+
 
 FROM alpine:latest
 
@@ -20,11 +43,11 @@ RUN addgroup -g 1000 appuser && \
 
 WORKDIR /app
 
-COPY --from=builder /app/migrate ./migrate
-RUN chown appuser:appuser ./migrate
+RUN mkdir -p /var/log/app && chown -R 1000:1000 /var/log/app
 
-COPY --from=builder /app/migrations ./migrations
-RUN chown -R appuser:appuser ./migrations 
+COPY --from=builder /app/migrate_bin ./migrate
+COPY --from=builder /app/service/migrate/migrations ./migrations
+RUN chown -R 1000:1000 ./migrate ./migrations
 
 USER appuser
 

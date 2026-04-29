@@ -75,3 +75,9 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 )
+
+replace (
+	github.com/MamangRust/monolith-payment-gateway-pb => ../../pb
+	github.com/MamangRust/monolith-payment-gateway-pkg => ../../pkg
+	github.com/MamangRust/monolith-payment-gateway-shared => ../../shared
+)

@@ -74,3 +74,9 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace (
+	github.com/MamangRust/monolith-payment-gateway-pb => ../../pb
+	github.com/MamangRust/monolith-payment-gateway-pkg => ../../pkg
+	github.com/MamangRust/monolith-payment-gateway-shared => ../../shared
+)
