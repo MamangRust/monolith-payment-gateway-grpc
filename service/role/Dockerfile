@@ -7,9 +7,10 @@ COPY go.work go.work.sum* ./
 COPY pb/go.mod pb/go.sum* ./pb/
 COPY pkg/go.mod pkg/go.sum* ./pkg/
 COPY shared/go.mod shared/go.sum* ./shared/
+COPY tests/go.mod tests/go.sum* ./tests/
 
 # Copy all service go.mod files
-COPY service service
+COPY service/ ./service/
 RUN find service -type f ! -name "go.mod" ! -name "go.sum" -delete
 
 WORKDIR /app/service/role
@@ -21,10 +22,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 WORKDIR /app
 
 # Copy source code
-COPY pb pb
-COPY pkg pkg
-COPY shared shared
-COPY service/role service/role
+COPY pb/ ./pb/
+COPY pkg/ ./pkg/
+COPY shared/ ./shared/
+COPY service/role/ ./service/role/
 
 WORKDIR /app/service/role
 
